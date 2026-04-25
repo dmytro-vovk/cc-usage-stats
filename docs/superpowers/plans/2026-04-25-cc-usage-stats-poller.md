@@ -708,12 +708,13 @@ enum AnthropicAPI {
     }
 
     private static func window(from any: Any?) -> WindowSnapshot? {
-        guard let dict = any as? [String: Any],
-              let pct = dict["used_percentage"] as? Double,
-              let reset = dict["resets_at"] as? Int64 ?? (dict["resets_at"] as? Int).map(Int64.init) else {
+        guard let dict = any as? [String: Any] else { return nil }
+        // JSONSerialization decodes JSON numbers as NSNumber.
+        guard let pctNum = dict["used_percentage"] as? NSNumber,
+              let resetNum = dict["resets_at"] as? NSNumber else {
             return nil
         }
-        return WindowSnapshot(usedPercentage: pct, resetsAt: reset)
+        return WindowSnapshot(usedPercentage: pctNum.doubleValue, resetsAt: resetNum.int64Value)
     }
 
     // MARK: - header path
@@ -782,7 +783,37 @@ struct LiveAnthropicAPIClient: AnthropicAPIClient {
 
 - [ ] **Step 6.5: Run tests, expect 7/7 PASS.**
 
-- [ ] **Step 6.6: Commit**
+- [ ] **Step 6.6: Add Haiku→Sonnet model fallback**
+
+Anthropic may reject the cheaper Haiku model on some plan tiers with a 400. Add a fallback to `claude-sonnet-4-5` for the next call only, recorded by `LiveAnthropicAPIClient`:
+
+```swift
+struct LiveAnthropicAPIClient: AnthropicAPIClient {
+    let token: String
+    let session: URLSession
+    var preferredModel: String = "claude-haiku-4-5"
+    let fallbackModel: String = "claude-sonnet-4-5"
+    let useBetaHeader: Bool
+
+    // ... existing init etc.
+
+    func fetchRateLimits() async -> AnthropicAPI.Result {
+        let first = await fetch(model: preferredModel)
+        if case .transient(let msg) = first, msg.contains("model") {
+            return await fetch(model: fallbackModel)
+        }
+        return first
+    }
+
+    private func fetch(model: String) async -> AnthropicAPI.Result {
+        // existing body of fetchRateLimits, parameterized on `model`
+    }
+}
+```
+
+(Detection heuristic: Anthropic's 400 response typically includes "model" in the JSON error message. If the heuristic is unreliable, plan Task 1 verification can refine the trigger string.)
+
+- [ ] **Step 6.7: Commit**
 
 ```bash
 git add CCUsageStats/CCUsageStats/Poller/AnthropicAPI.swift CCUsageStats/CCUsageStatsTests/AnthropicAPITests.swift
@@ -872,14 +903,17 @@ final class UsagePollerTests: XCTestCase {
     }
 
     func testRateLimitedTriggersBackoff() async {
+        // Initial value is 60 (base interval). First 429 doubles to 120, second
+        // to 240, third to 480 (still under the 600 cap).
         let api = StubAPI(); api.queue = [.rateLimited, .rateLimited, .rateLimited]
         let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 1 })
-        await poller.tickForTest()
-        XCTAssertEqual(poller.currentBackoffSeconds, 60)
+        XCTAssertEqual(poller.currentBackoffSeconds, 60, "initial value before any tick")
         await poller.tickForTest()
         XCTAssertEqual(poller.currentBackoffSeconds, 120)
         await poller.tickForTest()
         XCTAssertEqual(poller.currentBackoffSeconds, 240)
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 480)
     }
 
     func testBackoffResetsOnSuccess() async {
@@ -1057,7 +1091,8 @@ final class SettingsViewModel: ObservableObject {
     }
 
     /// Returns true if window should close.
-    func saveAndTest(testFire: () async -> AnthropicAPI.Result) async -> Bool {
+    /// `testFire` is given the trimmed token and is responsible for using it.
+    func saveAndTest(testFire: (String) async -> AnthropicAPI.Result) async -> Bool {
         let t = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard t.hasPrefix("sk-ant-oat01-") else {
             if t.hasPrefix("sk-ant-api03-") {
@@ -1067,12 +1102,14 @@ final class SettingsViewModel: ObservableObject {
             }
             return false
         }
+        // Normalize stored value too.
+        token = t
         busy = true
         defer { busy = false }
         do { try TokenStore.write(t) }
         catch { self.error = "Keychain write failed: \(error)"; return false }
 
-        let result = await testFire()
+        let result = await testFire(t)
         switch result {
         case .success, .notSubscriber:
             // .notSubscriber is still a valid token (we tested it answered) — caller decides UI.
@@ -1114,7 +1151,9 @@ struct SettingsView: View {
                 Button(saving ? "Testing…" : "Save & Test") {
                     saving = true
                     Task {
-                        let close = await vm.saveAndTest { await LiveAnthropicAPIClient(token: vm.token).fetchRateLimits() }
+                        let close = await vm.saveAndTest { t in
+                            await LiveAnthropicAPIClient(token: t).fetchRateLimits()
+                        }
                         saving = false
                         if close { onClose() }
                     }
@@ -1299,8 +1338,8 @@ struct MenuBarLabel: View {
     private func color() -> Color {
         switch vm.authState {
         case .invalidToken: return .red
-        case .notSubscriber, .offline: return .secondary
-        default: break
+        case .notSubscriber: return .secondary
+        case .offline, .ok, .unknown: break // last-known tier color (per spec)
         }
         if vm.displayState.isStale { return .secondary }
         switch vm.displayState.tier {
@@ -1324,15 +1363,7 @@ struct MenuBarDropdown: View {
             Text("No data captured yet.").foregroundStyle(.secondary)
         }
         Divider()
-        switch vm.authState {
-        case .invalidToken:
-            Text("Token rejected. Set Token…").foregroundStyle(.red).font(.caption)
-        case .notSubscriber:
-            Text("No Claude.ai subscription rate-limit data.").foregroundStyle(.secondary).font(.caption)
-        case .offline:
-            Text("Offline").foregroundStyle(.secondary).font(.caption)
-        case .ok, .unknown: EmptyView()
-        }
+        authStatusRow
         if let err = vm.lastError { Text(err).foregroundStyle(.red).font(.caption) }
 
         Divider()
@@ -1351,6 +1382,20 @@ struct MenuBarDropdown: View {
     }
 
     private var now: Int64 { Int64(Date().timeIntervalSince1970) }
+
+    @ViewBuilder
+    private var authStatusRow: some View {
+        switch vm.authState {
+        case .invalidToken:
+            Text("Token rejected. Set Token…").foregroundStyle(.red).font(.caption)
+        case .notSubscriber:
+            Text("No Claude.ai subscription rate-limit data.").foregroundStyle(.secondary).font(.caption)
+        case .offline:
+            Text("Offline").foregroundStyle(.secondary).font(.caption)
+        case .ok, .unknown:
+            EmptyView()
+        }
+    }
 }
 
 private struct WindowRow: View {
@@ -1474,6 +1519,24 @@ rm CCUsageStats/CCUsageStatsTests/Fixtures/statusline-*.json
 rmdir CCUsageStats/CCUsageStatsTests/Fixtures
 ```
 
+- [ ] **Step 11.1.5: Stage deletions explicitly**
+
+Per CLAUDE.md, prefer explicit `git add` over `git add -A`. Use:
+
+```bash
+git add \
+  CCUsageStats/CCUsageStats/Statusline \
+  CCUsageStats/CCUsageStats/Tray/Installer.swift \
+  CCUsageStats/CCUsageStats/Tray/CacheWatcher.swift \
+  CCUsageStats/CCUsageStatsTests/StatuslineModeTests.swift \
+  CCUsageStats/CCUsageStatsTests/WrappedCommandTests.swift \
+  CCUsageStats/CCUsageStatsTests/InstallerTests.swift \
+  CCUsageStats/CCUsageStatsTests/CacheWatcherTests.swift \
+  CCUsageStats/CCUsageStatsTests/Fixtures
+```
+
+Note: git tracks the deletions when paths no longer exist on disk; explicit listing keeps the audit trail clear.
+
 - [ ] **Step 11.2: Run full test suite**
 
 `xcodebuild test -scheme CCUsageStats -destination 'platform=macOS' -project CCUsageStats/CCUsageStats.xcodeproj 2>&1 | tail -20`
@@ -1482,10 +1545,9 @@ Expect `** TEST SUCCEEDED **` with the new tests (AuthState, TokenStore, Phase1C
 
 If anything fails because dead references remain, fix forward and reflect changes here.
 
-- [ ] **Step 11.3: Commit**
+- [ ] **Step 11.3: Commit (deletions already staged in 11.1.5)**
 
 ```bash
-git add -A CCUsageStats/CCUsageStats/Statusline CCUsageStats/CCUsageStats/Tray CCUsageStats/CCUsageStatsTests
 git commit -m "chore: remove Phase 1 statusline integration source
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
