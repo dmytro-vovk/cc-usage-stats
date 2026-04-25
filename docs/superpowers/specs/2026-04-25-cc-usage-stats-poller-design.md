@@ -23,9 +23,11 @@ This phase removes the Phase 1 Claude Code statusline integration:
 - Code: `Statusline/StatuslineMode.swift`, `Statusline/WrappedCommand.swift`, `Tray/Installer.swift`, `Tray/CacheWatcher.swift`, all corresponding tests, and the mode-dispatch branch in `CCUsageStatsApp.swift`.
 - Behavior: the binary is no longer invoked by Claude Code; there's no `cc-usage-stats statusline` subcommand.
 - User state cleanup on first launch of v2.0:
-  1. If `~/.claude/settings.json` `statusLine.command` ends with `cc-usage-stats statusline`, restore the wrapped command (read from our `config.json`) by performing the same edit `Installer.uninstall` does today, then delete `config.json`.
-  2. If the path-mismatch case applies (configured path differs from running binary but still ends with `cc-usage-stats statusline`), still restore by removing the `statusLine` key entirely (our config.json is the only source of truth for the previous command).
-  3. Otherwise leave `~/.claude/settings.json` alone.
+  1. Check the migration sentinel `~/Library/Application Support/cc-usage-stats/v2-migrated`. If present, skip the rest of this list.
+  2. If `~/.claude/settings.json` `statusLine.command` ends with `cc-usage-stats statusline`, restore the wrapped command (read from our `config.json`) by performing the same edit `Installer.uninstall` does today, then delete `config.json`.
+  3. If the path-mismatch case applies (configured path differs from running binary but still ends with `cc-usage-stats statusline`), still restore by removing the `statusLine` key entirely (our config.json is the only source of truth for the previous command).
+  4. Otherwise leave `~/.claude/settings.json` alone.
+  5. Touch the sentinel file so step 1 short-circuits on subsequent launches.
 
 The cache file `~/Library/Application Support/cc-usage-stats/state.json` keeps the same schema (`captured_at`, `five_hour`, `seven_day` fields). Existing UI logic is unchanged downstream of the cache.
 
@@ -153,7 +155,7 @@ If both paths are present, prefer JSON body. If neither is present after a succe
 - Single `SecureField` (masked) for the token.
 - "Paste from Claude Code Keychain" button: re-runs `ClaudeCodeKeychainProbe.read()`. On success, populates the field. (The user can press it after revoking the prompt earlier.)
 - "Save & Test" button:
-  1. Token-format check: must start with `sk-ant-oat01-`. Reject `sk-ant-api03-` (developer API keys) with the error "Use a long-lived OAuth token from `claude setup-token`, not an API key."
+  1. Token-format check (heuristic — Anthropic may rotate the prefix): must start with `sk-ant-oat01-`. Reject `sk-ant-api03-` (developer API keys) with the error "Use a long-lived OAuth token from `claude setup-token`, not an API key." If a future prefix breaks this check, the user can bypass with a "Use anyway" affordance — out of scope for v2.0; today the check is hard.
   2. Write to our Keychain entry via `TokenStore.write`.
   3. Synchronously fire one `UsagePoller.tick()`. On 200 → close window, set `authState = .ok`, schedule the regular timer. On 401/403/parse-error → keep window open, show error inline; do not start the timer.
 - "Cancel" → close, no changes.
@@ -197,7 +199,7 @@ digraph poller {
 | 200 + missing `rate_limits` (body and headers) | Log once at info; `authState = .notSubscriber`; stop the timer. Dropdown row: "Account has no Claude.ai subscription rate limits." |
 | 401 / 403 | `authState = .invalidToken`; stop the timer. Red `exclamationmark.gauge` icon. Dropdown row: "Token rejected. Set Token…" |
 | 429 | Exponential backoff: 60s → 120s → 240s, capped 600s. On next 200 reset to 60s. |
-| Network down / DNS / timeout | Silent retry on next tick. After 5 consecutive failures, dropdown shows "Offline" tag (no icon-color change, no state-machine transition). |
+| Network down / DNS / timeout | Silent retry on next tick. After 5 consecutive failures, set `authState = .offline` (icon stays its last-known tier color; dropdown shows an "Offline" tag). On next 200, transition back to `.ok`. |
 | Body parse error | Log; treat as transient, same as network error. |
 | App resumed from sleep | `NSWorkspace.didWakeNotification` triggers an immediate `tick()`. |
 | User pasted API key (`sk-ant-api03-…`) | Reject in `SettingsWindow` before writing Keychain. |
