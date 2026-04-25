@@ -5,18 +5,18 @@ struct CCUsageStatsApp: App {
     @StateObject private var vm = MenuViewModel()
 
     init() {
-        let args = CommandLine.arguments
-        if args.count >= 2 && args[1] == "statusline" {
-            StatuslineMode.runFromCLI() // exits.
-        }
+        // Phase 1 cleanup migration. One-shot; sentinel guards re-runs.
+        try? Phase1Cleanup.run(
+            settingsURL: Paths.claudeSettings,
+            configURL: Paths.configFile,
+            sentinelURL: Paths.appSupportDir.appendingPathComponent("v2-migrated")
+        )
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarDropdown(vm: vm)
-                .onAppear {
-                    vm.start()
-                }
+                .onAppear { vm.start() }
         } label: {
             MenuBarLabel(vm: vm)
         }
