@@ -1,23 +1,26 @@
 # cc-usage-stats
 
-macOS menubar app that shows Claude Code's current 5-hour and 7-day rate-limit
-usage in your menubar — the same numbers you see in the Claude Desktop app's
-Settings → Usage screen. Live-updates whenever Claude Code runs.
+macOS menubar app showing Claude.ai 5-hour and 7-day rate-limit usage —
+the same numbers Claude Desktop's **Settings → Usage** screen displays.
+Live-updates every 60 seconds regardless of whether you use Claude via
+the desktop app, the web, or the CLI.
 
 ## How it works
 
-Claude Code invokes a configured `statusLine.command` once per prompt update
-with a JSON payload on stdin. That payload includes a server-side
-`rate_limits` block. This app installs itself as that command, captures the
-`rate_limits` into a local cache file, and forwards stdin to whatever
-statusline command you had configured before — so your existing statusline
-(e.g. caveman) keeps working.
+The app polls Anthropic's official `POST /v1/messages` endpoint with a
+long-lived OAuth token bound to your Claude.ai subscription. Anthropic
+includes rate-limit headers (`anthropic-ratelimit-unified-{5h,7d}-…`)
+on every successful response. The app parses those, writes them to a
+local cache file, and renders them as a gauge icon + percentage in the
+menubar.
 
-A SwiftUI `MenuBarExtra` watches the cache file via FSEvents and renders a
-gauge icon + percentage in the menubar. Click for full breakdown and reset
-countdowns.
+The token is stored in macOS Keychain under service `cc-usage-stats`,
+account `oauth-token`. It is never logged or written outside Keychain.
 
-See [docs/superpowers/specs/2026-04-25-cc-usage-stats-tray-design.md](docs/superpowers/specs/2026-04-25-cc-usage-stats-tray-design.md)
+Roughly 9 input tokens per poll × 1440 polls/day on Haiku ≈ **sub-cent
+per day** of API spend.
+
+See [docs/superpowers/specs/2026-04-25-cc-usage-stats-poller-design.md](docs/superpowers/specs/2026-04-25-cc-usage-stats-poller-design.md)
 for the full design.
 
 ## Install
@@ -28,35 +31,37 @@ Requires macOS 13+ and Xcode.
 ./scripts/install-dev.sh
 ```
 
-This builds a Release `.app` into `dist/`, copies it to `~/Applications/`, and
-launches it. The menubar gauge icon will appear and read `—` until the
-statusline integration is hooked up.
+This builds a Release `.app` into `dist/`, copies it to `~/Applications/`,
+and launches it.
 
-Then click the icon → **Install Statusline Integration…** and confirm the
-dialog. This:
+On first launch:
+1. The app tries to read your existing **Claude Code-credentials** Keychain
+   entry. macOS shows a one-time access prompt — allow it. The token is
+   copied into our own Keychain entry; subsequent runs don't prompt.
+2. If there is no Claude Code keychain entry (or you deny access), click
+   the menubar icon → **Set Token…** and paste a token from
+   `claude setup-token` (run it in a terminal first).
 
-1. Backs up `~/.claude/settings.json` to `~/.claude/settings.json.bak.<ts>-<rand>`.
-2. Captures your existing `statusLine.command` into the app's config.
-3. Replaces `statusLine.command` with the path to the bundled binary
-   (followed by ` statusline`).
-
-The next Claude Code session will start updating the menubar within seconds.
+If you previously installed this app's Phase 1 statusline integration,
+v2.0 automatically restores your `~/.claude/settings.json` to its
+previous statusline command on first launch. A sentinel file at
+`~/Library/Application Support/cc-usage-stats/v2-migrated` prevents
+the migration from running twice.
 
 ## Uninstall
 
-Click menubar → **Uninstall Statusline Integration…**. This restores your
-previous `statusLine.command`, or removes the `statusLine` key entirely if
-none was configured before.
-
-To remove the app itself: `rm -rf ~/Applications/CCUsageStats.app`.
+1. Click the menubar icon → **Reset Token…** → Cancel the resulting
+   paste window. (This wipes our Keychain entry.)
+2. Quit the app from the menubar.
+3. `rm -rf ~/Applications/CCUsageStats.app`
 
 ## Privacy
 
-- No network calls. The app reads only what Claude Code itself feeds it via
-  stdin (`rate_limits` block) and the configuration files it owns.
-- Cache file: `~/Library/Application Support/cc-usage-stats/state.json`.
-- App config: `~/Library/Application Support/cc-usage-stats/config.json`
-  (holds the wrapped previous statusline command).
+- One outbound network connection per minute to `api.anthropic.com`.
+- No telemetry, no analytics, no third-party servers.
+- Token in Keychain only.
+- Cache file at `~/Library/Application Support/cc-usage-stats/state.json`
+  (rate-limit numbers + capture timestamp; nothing identifying).
 
 ## Build only
 

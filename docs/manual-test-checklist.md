@@ -1,88 +1,102 @@
-# Manual Test Checklist
+# Manual Test Checklist (v2 — OAuth poller)
 
-End-to-end smoke tests that automated tests can't cover (FSEvents, menubar
-rendering, real Claude Code session integration). Run these before shipping a
-build.
+End-to-end smoke tests covering things automated tests can't (Keychain
+prompts, real network, menubar rendering). Run before shipping a build.
 
 ## Prerequisites
 
-- A Claude.ai subscription (Pro / Max) — without one, Claude Code never
-  produces a `rate_limits` block and the app will only ever show `—`.
+- A Claude.ai subscription (Pro / Max). Without one, the poller will get
+  a 200 with no rate-limit headers and the app will mark `notSubscriber`.
 - Xcode + macOS 13 or later.
+- A long-lived OAuth token from `claude setup-token` (or a working
+  Claude Code login that left a `Claude Code-credentials` Keychain entry).
 - Build and install via `./scripts/install-dev.sh`.
 
 ## Checklist
 
-### 1. Fresh launch with no cache
+### 1. Phase 1 → 2 migration on first launch
 
-- Quit the app if running. Delete `~/Library/Application Support/cc-usage-stats/state.json`.
-- Launch via Xcode or `open ~/Applications/CCUsageStats.app`.
-- **Expect:** menubar shows `—`. Dropdown reads "No data captured yet — install statusline integration below."
+If you had the previous (Phase 1) statusline integration installed:
 
-### 2. Install statusline integration
+- Before launching v2: `cat ~/.claude/settings.json` shows `statusLine.command`
+  ending in ` cc-usage-stats statusline`.
+- Launch v2 (`./scripts/install-dev.sh`).
+- After launch: `cat ~/.claude/settings.json` shows the original wrapped
+  statusline command (e.g. caveman) restored, OR the `statusLine` key is
+  removed if no wrapped command had been stored.
+- `~/Library/Application Support/cc-usage-stats/config.json` is gone.
+- `~/Library/Application Support/cc-usage-stats/v2-migrated` exists.
+- A timestamped backup `~/.claude/settings.json.bak.*` was created
+  during the original Phase 1 install — leave it alone.
 
-- Click menubar → **Install Statusline Integration…**.
-- Confirmation dialog appears showing current and planned `statusLine.command`. Click **Install**.
-- **Expect:**
-  - `~/.claude/settings.json` `statusLine.command` now points at the running binary path with ` statusline` suffix.
-  - `~/.claude/settings.json.bak.<timestamp>-<rand>` exists and contains the pre-install JSON.
-  - `~/Library/Application Support/cc-usage-stats/config.json` contains your previous `statusLine.command` in `wrappedCommand`.
+### 2. Token auto-discovery
 
-### 3. Live update during real Claude Code session
+- macOS shows a Keychain access prompt for `Claude Code-credentials`.
+- Allow → menubar icon updates from the placeholder to a real percentage
+  within ~5–10 seconds (one /v1/messages poll cycle).
+- If you deny → menubar shows the red `exclamationmark.gauge` icon and the
+  dropdown reads "Token rejected. Set Token…".
 
-- Run any Claude Code session (`claude` in a terminal).
-- **Expect:** within ~5 seconds of the first model response, the menubar updates from `—` to the real `<NN>%`. Your previous statusline (if any) still renders inside Claude Code.
+### 3. Manual paste
 
-### 4. Color thresholds
+- Click menubar → **Set Token…**.
+- Window opens with a `SecureField` and "Paste from Claude Code Keychain" button.
+- Paste the `sk-ant-oat01-…` value → click **Save & Test**.
+- On 200: window closes, menubar updates within ~5s.
+- Pasting an `sk-ant-api03-…` (developer API key) → inline error
+  "Use a long-lived OAuth token from `claude setup-token`, not an API key."
+- Pasting random text → "Token must start with sk-ant-oat01-".
 
-- Mock different percentages by writing `state.json` directly:
+### 4. Live update
+
+- Run `claude` in a terminal, send a message.
+- Within 60s the menubar percentage updates.
+- Open Claude Desktop's Settings → Usage screen — the percentage should
+  match (within rounding).
+
+### 5. Color thresholds
+
+- Hard to test live without burning quota. Use a debugger or write a
+  fake `state.json` directly:
   ```bash
-  NOW=$(date +%s)
-  RESET=$((NOW + 3600))
+  NOW=$(date +%s); RESET=$((NOW + 3600))
   cat > "$HOME/Library/Application Support/cc-usage-stats/state.json.tmp" <<EOF
   {"captured_at": $NOW, "five_hour": {"used_percentage": 65.0, "resets_at": $RESET}}
   EOF
   mv "$HOME/Library/Application Support/cc-usage-stats/state.json.tmp" "$HOME/Library/Application Support/cc-usage-stats/state.json"
   ```
-  - **Expect:** within ~1s, menubar shows `65%` with yellow tint.
-- Repeat with `90.0` → red tint.
-- Repeat with `12.0` → neutral tint.
+  - Note: file is overwritten on next poll, so observe within ~60s.
+- 65% → yellow tint. 90% → red tint. 12% → neutral.
 
-### 5. Stale data
+### 6. Token rejection
 
-- After step 4, wait 31 minutes (or alternately set `captured_at` to `now - 1900`).
-- **Expect:** icon greys out, text dims. Dropdown still shows last value.
+- Click **Reset Token…** → window opens with empty field.
+- Paste a malformed `sk-ant-oat01-NOTREAL` → Save & Test.
+- Anthropic returns 401 → window stays open, error: "Anthropic rejected
+  the token (401/403). Check it and try again."
+- Cancel → menubar shows red icon + "Token rejected. Set Token…".
 
-### 6. Stop Claude Code mid-session, last value persists
+### 7. Offline detection
 
-- Run a session that builds up some usage, then quit Claude Code.
-- **Expect:** menubar continues to show the last observed percentage indefinitely (until either fresh data arrives or the cache is manually cleared).
+- Disconnect network. Wait ~5 minutes (5 × 60s polls).
+- Dropdown gains an "Offline" tag. Icon stays its last-known tier color.
+- Reconnect → tag clears within 60s of next successful poll.
 
-### 7. Launch at Login toggle
+### 8. Launch at Login
 
-- Click menubar → toggle **Launch at Login** ON.
-- Reboot or log out + back in.
-- **Expect:** app starts automatically and the menubar icon appears.
-- Toggle OFF, reboot again to confirm it no longer auto-starts.
+- Toggle **Launch at Login** ON. Reboot or log out + back in.
+- App auto-starts, menubar icon appears.
+- Toggle OFF, reboot → no auto-start.
 
-### 8. Uninstall
+### 9. Wake from sleep
 
-- Click menubar → **Uninstall Statusline Integration…** → confirm.
-- **Expect:**
-  - `~/.claude/settings.json` `statusLine.command` restored to your original (e.g. caveman path), or `statusLine` key removed entirely if none was previously set.
-  - A new backup file with current timestamp.
-  - The next Claude Code session no longer updates the menubar (the app no longer intercepts).
+(Built into the spec but the implementation does not yet wire
+`NSWorkspace.didWakeNotification` — the timer keeps firing across short
+sleeps. Long sleeps may take up to 60s to refresh after wake.)
 
-### 9. Reinstall after moving the app bundle
+### 10. Resilience
 
-- With integration installed, quit the app and move `~/Applications/CCUsageStats.app` to a different location.
-- Launch from the new location.
-- Open dropdown.
-- **Expect:** an orange caption appears: `⚠︎ Configured at a different path. Click Install to update.`
-- Click **Install Statusline Integration…** → confirm.
-- **Expect:** warning disappears. `~/.claude/settings.json` now points at the new binary path.
-
-### 10. Invariants for the install dialog
-
-- Confirm the install dialog displays both the current `statusLine.command` and the planned new one.
-- Cancel button leaves `~/.claude/settings.json` and `config.json` unchanged.
+- Force-quit the app while polling — re-launch should resume cleanly,
+  Keychain entry still readable, no stale state.
+- Delete `state.json` while running — within 60s the poller writes a
+  fresh one.
