@@ -7,25 +7,45 @@ final class MenuViewModel: ObservableObject {
         menuBarText: "—", tier: .neutral, isStale: false, hasFiveHourData: false
     )
     @Published private(set) var cached: CachedState?
-    @Published var installState: Installer.State = .notInstalled
+    @Published private(set) var authState: AuthState = .unknown
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
     @Published var lastError: String?
-    @Published var pathMismatch: Bool = false
 
-    private var watcher: CacheWatcher?
+    private var poller: UsagePoller?
     private var clockTimer: Timer?
-
-    private var binaryPath: String {
-        Bundle.main.executableURL?.path ?? "cc-usage-stats"
-    }
+    private var cancellables: Set<AnyCancellable> = []
 
     func start() {
-        guard watcher == nil else { return }
-        reload()
-        watcher = CacheWatcher(url: Paths.stateFile) { [weak self] in
-            Task { @MainActor in self?.reload() }
+        guard poller == nil else { return }
+        // Load any cache from previous run.
+        reloadCache()
+
+        // Discover token.
+        let token: String? = TokenStore.read() ?? {
+            // Try Claude Code keychain once.
+            if let probed = ClaudeCodeKeychainProbe.read() {
+                try? TokenStore.write(probed)
+                return probed
+            }
+            return nil
+        }()
+
+        if let token {
+            let api = LiveAnthropicAPIClient(token: token)
+            let p = UsagePoller(api: api, cacheURL: Paths.stateFile)
+            // Mirror published state + reload cache after each tick.
+            p.$authState
+                .receive(on: RunLoop.main)
+                .sink { [weak self] in
+                    self?.authState = $0
+                    self?.reloadCache()
+                }
+                .store(in: &cancellables)
+            poller = p
+            p.start()
+        } else {
+            authState = .invalidToken
         }
-        watcher?.start()
 
         // Tick once a minute so freshness/countdowns update without a write.
         clockTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
@@ -34,35 +54,23 @@ final class MenuViewModel: ObservableObject {
     }
 
     func stop() {
-        watcher?.stop()
-        watcher = nil
-        clockTimer?.invalidate()
-        clockTimer = nil
+        poller?.stop(); poller = nil
+        clockTimer?.invalidate(); clockTimer = nil
+        cancellables.removeAll()
     }
 
-    func refreshSettingsState() {
-        installState = (try? Installer.currentState(settingsURL: Paths.claudeSettings, binaryPath: binaryPath)) ?? .notInstalled
-        launchAtLogin = LaunchAtLoginService.isEnabled
-        let installed = (try? Installer.installedBinaryPath(settingsURL: Paths.claudeSettings)) ?? nil
-        pathMismatch = (installed != nil) && (installed != binaryPath)
-    }
-
-    func install() {
-        do {
-            try Installer.install(settingsURL: Paths.claudeSettings, configURL: Paths.configFile, binaryPath: binaryPath)
-            refreshSettingsState()
-        } catch {
-            lastError = "Install failed: \(error)"
+    func openSettings() {
+        let vm = SettingsViewModel { [weak self] _ in
+            self?.restartPolling()
         }
+        SettingsWindowController.shared.show(viewModel: vm)
     }
 
-    func uninstall() {
-        do {
-            try Installer.uninstall(settingsURL: Paths.claudeSettings, configURL: Paths.configFile, binaryPath: binaryPath)
-            refreshSettingsState()
-        } catch {
-            lastError = "Uninstall failed: \(error)"
-        }
+    func resetToken() {
+        try? TokenStore.delete()
+        authState = .invalidToken
+        poller?.stop(); poller = nil
+        openSettings()
     }
 
     func toggleLaunchAtLogin() {
@@ -71,16 +79,24 @@ final class MenuViewModel: ObservableObject {
         catch { lastError = "Launch-at-login toggle failed: \(error)" }
     }
 
-    /// Builds a human-readable preview of the change Install would make.
-    /// Returns (currentCommand, plannedCommand). currentCommand may be nil.
-    func installPreview() -> (current: String?, planned: String) {
-        let current: String? = (try? Data(contentsOf: Paths.claudeSettings))
-            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-            .flatMap { ($0["statusLine"] as? [String: Any])?["command"] as? String }
-        return (current, "\(binaryPath) statusline")
+    private func restartPolling() {
+        poller?.stop(); poller = nil
+        cancellables.removeAll()
+        guard let token = TokenStore.read() else { authState = .invalidToken; return }
+        let api = LiveAnthropicAPIClient(token: token)
+        let p = UsagePoller(api: api, cacheURL: Paths.stateFile)
+        p.$authState
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in
+                self?.authState = $0
+                self?.reloadCache()
+            }
+            .store(in: &cancellables)
+        poller = p
+        p.start()
     }
 
-    private func reload() {
+    private func reloadCache() {
         cached = (try? CacheStore.read(at: Paths.stateFile)) ?? nil
         recomputeFromCachedOnly()
     }

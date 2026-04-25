@@ -16,7 +16,6 @@ struct CCUsageStatsApp: App {
             MenuBarDropdown(vm: vm)
                 .onAppear {
                     vm.start()
-                    vm.refreshSettingsState()
                 }
         } label: {
             MenuBarLabel(vm: vm)
