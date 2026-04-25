@@ -10,11 +10,16 @@ final class MenuViewModel: ObservableObject {
     @Published private(set) var authState: AuthState = .unknown
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
     @Published var lastError: String?
+    @Published var muteSounds: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.muteSoundsKey) {
+        didSet { UserDefaults.standard.set(muteSounds, forKey: Self.muteSoundsKey) }
+    }
+    private static let muteSoundsKey = "cc-usage-stats.muteSounds"
 
     private var poller: UsagePoller?
     private var clockTimer: Timer?
     private var cacheWatcher: CacheWatcher?
     private var cancellables: Set<AnyCancellable> = []
+    private var lastFiveHour: WindowSnapshot?
 
     func start() {
         guard poller == nil else { return }
@@ -52,8 +57,10 @@ final class MenuViewModel: ObservableObject {
             authState = .invalidToken
         }
 
-        // Tick once a minute so freshness/countdowns update without a write.
-        clockTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+        // Tick once a second so the "Last update Xs ago" caption and reset
+        // countdowns update smoothly without waiting for a poll. Cost is a
+        // struct recomputation; negligible.
+        clockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.recomputeFromCachedOnly() }
         }
     }
@@ -63,6 +70,16 @@ final class MenuViewModel: ObservableObject {
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
         cancellables.removeAll()
+    }
+
+    /// Whether the dropdown should show the "Refresh now" button.
+    /// Hidden when polling is terminally stopped (invalid token / not a subscriber).
+    var canRefresh: Bool {
+        poller != nil
+    }
+
+    func refreshNow() {
+        Task { @MainActor in await poller?.refreshNow() }
     }
 
     func openSettings() {
@@ -103,8 +120,20 @@ final class MenuViewModel: ObservableObject {
     }
 
     private func reloadCache() {
-        cached = (try? CacheStore.read(at: Paths.stateFile)) ?? nil
+        let newCached = (try? CacheStore.read(at: Paths.stateFile)) ?? nil
+        let newFive = newCached?.snapshot.fiveHour
+        let events = UsageEventDetector.detect(previous: lastFiveHour, current: newFive)
+        lastFiveHour = newFive
+        cached = newCached
         recomputeFromCachedOnly()
+        if !muteSounds {
+            for event in events {
+                switch event {
+                case .reachedLimit: SoundPlayer.playReachedLimit()
+                case .windowReset:  SoundPlayer.playLimitReset()
+                }
+            }
+        }
     }
 
     private func recomputeFromCachedOnly() {

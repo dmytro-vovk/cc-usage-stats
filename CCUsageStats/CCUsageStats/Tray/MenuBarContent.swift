@@ -15,11 +15,13 @@ struct MenuBarLabel: View {
         let nsColor = NSColor(tint()).withAlphaComponent(vm.displayState.isStale ? 0.5 : 1.0)
         let showText = vm.authState != .invalidToken
 
-        // Icon
+        // Icon. If the chosen SF Symbol isn't available, fall back to the
+        // generic `gauge` so we never end up with an invisible 0-sized image.
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [nsColor]))
-        let icon = NSImage(systemSymbolName: glyph(), accessibilityDescription: nil)?
-            .withSymbolConfiguration(iconConfig) ?? NSImage()
+        let symbol = NSImage(systemSymbolName: glyph(), accessibilityDescription: nil)
+            ?? NSImage(systemSymbolName: "gauge", accessibilityDescription: nil)
+        let icon = symbol?.withSymbolConfiguration(iconConfig) ?? NSImage(size: NSSize(width: 14, height: 14))
 
         // Text
         let attrs: [NSAttributedString.Key: Any] = [
@@ -55,7 +57,7 @@ struct MenuBarLabel: View {
 
     private func glyph() -> String {
         switch vm.authState {
-        case .invalidToken: return "exclamationmark.gauge"
+        case .invalidToken: return "exclamationmark.triangle.fill"
         case .notSubscriber: return "gauge.with.dots.needle.0percent"
         case .offline, .ok, .unknown: break
         }
@@ -87,33 +89,80 @@ struct MenuBarLabel: View {
 
 struct MenuBarDropdown: View {
     @ObservedObject var vm: MenuViewModel
-    var body: some View {
-        if let cached = vm.cached {
-            WindowRow(title: "5h session", window: cached.snapshot.fiveHour, now: now)
-            WindowRow(title: "7-day window", window: cached.snapshot.sevenDay, now: now)
-            Divider()
-            Text("Last update \(RelativeTime.format(seconds: now - cached.capturedAt)) ago")
-                .foregroundStyle(.secondary)
-        } else {
-            Text("No data captured yet.").foregroundStyle(.secondary)
-        }
-        Divider()
-        authStatusRow
-        if let err = vm.lastError { Text(err).foregroundStyle(.red).font(.caption) }
 
-        Divider()
-        Toggle("Launch at Login", isOn: Binding(
-            get: { vm.launchAtLogin },
-            set: { _ in vm.toggleLaunchAtLogin() }
-        ))
-        if vm.authState == .invalidToken || TokenStore.read() == nil {
-            Button("Set Token…") { vm.openSettings() }
-        } else {
-            Button("Reset Token…") { vm.resetToken() }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Window rows.
+            if let cached = vm.cached {
+                WindowSection(title: "5-hour session", window: cached.snapshot.fiveHour, now: now)
+                WindowSection(title: "7-day window", window: cached.snapshot.sevenDay, now: now)
+
+                Divider()
+
+                HStack(spacing: 4) {
+                    Text("Last updated")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(RelativeTime.format(seconds: now - cached.capturedAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    Text("ago")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if vm.canRefresh {
+                        Button {
+                            vm.refreshNow()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderless)
+                        .keyboardShortcut("r")
+                        .help("Refresh now (⌘R)")
+                    }
+                }
+            } else {
+                Text("No data captured yet.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // Auth / connectivity status.
+            authStatusRow
+            if let err = vm.lastError {
+                Text(err).foregroundStyle(.red).font(.caption)
+            }
+
+            Divider()
+
+            // Settings.
+            Toggle("Launch at Login", isOn: Binding(
+                get: { vm.launchAtLogin },
+                set: { _ in vm.toggleLaunchAtLogin() }
+            ))
+            .toggleStyle(.checkbox)
+            Toggle("Mute Sounds", isOn: Binding(
+                get: { vm.muteSounds },
+                set: { vm.muteSounds = $0 }
+            ))
+            .toggleStyle(.checkbox)
+
+            HStack {
+                if vm.authState == .invalidToken || TokenStore.read() == nil {
+                    Button("Set Token…") { vm.openSettings() }
+                } else {
+                    Button("Reset Token…") { vm.resetToken() }
+                }
+                Spacer()
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .keyboardShortcut("q")
+            }
+            .controlSize(.small)
         }
-        Divider()
-        Button("Quit") { NSApplication.shared.terminate(nil) }
-            .keyboardShortcut("q")
+        .padding(14)
+        .frame(width: 280, alignment: .leading)
     }
 
     private var now: Int64 { Int64(Date().timeIntervalSince1970) }
@@ -122,36 +171,71 @@ struct MenuBarDropdown: View {
     private var authStatusRow: some View {
         switch vm.authState {
         case .invalidToken:
-            Text("Token rejected. Set Token…").foregroundStyle(.red).font(.caption)
+            Label("Token rejected. Click Set Token below.", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+                .font(.caption)
         case .notSubscriber:
-            Text("No Claude.ai subscription rate-limit data.").foregroundStyle(.secondary).font(.caption)
+            Label("No Claude.ai subscription rate-limit data.", systemImage: "info.circle")
+                .foregroundStyle(.secondary)
+                .font(.caption)
         case .offline:
-            Text("Offline").foregroundStyle(.secondary).font(.caption)
+            Label("Offline — last value shown.", systemImage: "wifi.slash")
+                .foregroundStyle(.secondary)
+                .font(.caption)
         case .ok, .unknown:
             EmptyView()
         }
     }
 }
 
-private struct WindowRow: View {
+private struct WindowSection: View {
     let title: String
     let window: WindowSnapshot?
     let now: Int64
+
     var body: some View {
         if let w = window {
             let pct = Int(w.usedPercentage.rounded())
+            let fraction = max(0.0, min(1.0, w.usedPercentage / 100.0))
+            let color = UsageColor.gradient(t: fraction)
             let delta = w.resetsAt - now
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(title): \(pct)%")
-                Text(resetCaption(delta: delta)).foregroundStyle(.secondary).font(.caption)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(pct)%")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(color)
+                }
+                ProgressView(value: fraction)
+                    .progressViewStyle(.linear)
+                    .tint(color)
+                Text(resetCaption(delta: delta))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         } else {
-            Text("\(title): not yet observed").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Not yet observed")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
     private func resetCaption(delta: Int64) -> String {
-        if delta >= 0 { return "resets in \(RelativeTime.format(seconds: delta))" }
-        else { return "reset \(RelativeTime.format(seconds: -delta)) ago, awaiting fresh data" }
+        if delta >= 0 {
+            return "Resets in \(RelativeTime.format(seconds: delta))"
+        } else {
+            return "Reset \(RelativeTime.format(seconds: -delta)) ago — awaiting fresh data"
+        }
     }
 }

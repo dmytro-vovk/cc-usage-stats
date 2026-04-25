@@ -20,6 +20,9 @@ struct CCUsageStatsApp: App {
             MenuBarLabel(vm: vm)
                 .onAppear { vm.start() }
         }
-        .menuBarExtraStyle(.menu)
+        // .window style draws a SwiftUI panel that re-renders live, so the
+        // "Last update Xs ago" caption ticks each second while open. .menu
+        // style snapshots the items at open time and never updates.
+        .menuBarExtraStyle(.window)
     }
 }

@@ -45,6 +45,14 @@ final class UsagePoller: ObservableObject {
         await tick()
     }
 
+    /// User-initiated immediate refresh. Ticks now and resets the next-poll
+    /// timer to a full base interval so we don't double up.
+    func refreshNow() async {
+        guard isPolling else { return }
+        await tick()
+        scheduleTimer(after: Self.baseInterval)
+    }
+
     private func tick() async {
         let result = await api.fetchRateLimits()
         switch result {
