@@ -29,13 +29,20 @@ If you had the previous (Phase 1) statusline integration installed:
 - A timestamped backup `~/.claude/settings.json.bak.*` was created
   during the original Phase 1 install — leave it alone.
 
-### 2. Token auto-discovery
+### 2. Token discovery via the Settings window
 
-- macOS shows a Keychain access prompt for `Claude Code-credentials`.
-- Allow → menubar icon updates from the placeholder to a real percentage
-  within ~5–10 seconds (one /v1/messages poll cycle).
-- If you deny → menubar shows the red `exclamationmark.gauge` icon and the
-  dropdown reads "Token rejected. Set Token…".
+- On first launch with no token, menubar shows red `exclamationmark.gauge`.
+- Click it → dropdown shows **Set Token…**. Click that.
+- Settings window opens.
+- **Path A — auto-fill from Claude Code Keychain:** click **Paste from
+  Claude Code Keychain**. macOS shows a one-time access prompt; allow it.
+  Token field populates. Click **Save & Test**.
+  - On allow + valid token → window closes; menubar updates within ~5–10s.
+  - If you deny the prompt → field shows error, window stays open. You can
+    paste manually instead.
+- **Path B — paste manually:** run `claude setup-token` in a terminal,
+  paste the `sk-ant-oat01-…` value into the SecureField, click
+  **Save & Test**.
 
 ### 3. Manual paste
 

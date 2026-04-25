@@ -34,13 +34,19 @@ Requires macOS 13+ and Xcode.
 This builds a Release `.app` into `dist/`, copies it to `~/Applications/`,
 and launches it.
 
-On first launch:
-1. The app tries to read your existing **Claude Code-credentials** Keychain
-   entry. macOS shows a one-time access prompt — allow it. The token is
-   copied into our own Keychain entry; subsequent runs don't prompt.
-2. If there is no Claude Code keychain entry (or you deny access), click
-   the menubar icon → **Set Token…** and paste a token from
-   `claude setup-token` (run it in a terminal first).
+On first launch the menubar shows a red gauge icon with `!` (no token yet).
+Click it → **Set Token…**. Two ways to provide a token:
+
+- **Paste manually:** in a terminal run `claude setup-token`, copy the
+  resulting `sk-ant-oat01-…` value, paste it into the SecureField, click
+  **Save & Test**.
+- **Read from Claude Code Keychain:** click **Paste from Claude Code Keychain**.
+  macOS will show a system access prompt asking permission to read the
+  existing Claude Code OAuth token; allow it. The field auto-populates,
+  then click **Save & Test**.
+
+The token is stored in our own Keychain entry; subsequent app launches
+don't prompt.
 
 If you previously installed this app's Phase 1 statusline integration,
 v2.0 automatically restores your `~/.claude/settings.json` to its

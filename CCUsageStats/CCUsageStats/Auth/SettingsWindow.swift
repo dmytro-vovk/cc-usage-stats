@@ -3,13 +3,15 @@ import SwiftUI
 import AppKit
 
 @MainActor
-final class SettingsWindowController {
+final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
     private var hostingController: NSHostingController<SettingsView>?
 
     func show(viewModel: SettingsViewModel) {
-        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        // Always create a fresh window with the current viewModel — never
+        // re-use a stale window with an obsolete onSaveSuccess closure.
+        window?.close()
 
         let host = NSHostingController(rootView: SettingsView(vm: viewModel) { [weak self] in
             self?.window?.performClose(nil)
@@ -20,10 +22,18 @@ final class SettingsWindowController {
         win.setContentSize(NSSize(width: 480, height: 220))
         win.center()
         win.isReleasedWhenClosed = false
+        win.delegate = self
         self.window = win
         self.hostingController = host
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    nonisolated func windowWillClose(_ notification: Notification) {
+        Task { @MainActor in
+            self.window = nil
+            self.hostingController = nil
+        }
     }
 }
 

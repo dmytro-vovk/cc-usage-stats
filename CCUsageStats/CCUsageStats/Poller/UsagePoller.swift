@@ -76,7 +76,9 @@ final class UsagePoller: ObservableObject {
 
     private func scheduleTimer(after seconds: TimeInterval) {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: true) { [weak self] _ in
+        // One-shot timer that re-schedules itself only after the tick completes.
+        // Prevents a slow network tick (>60s) from being overlapped by the next fire.
+        timer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isPolling else { return }
                 await self.tick()
