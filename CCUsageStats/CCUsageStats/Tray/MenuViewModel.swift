@@ -12,6 +12,7 @@ final class MenuViewModel: ObservableObject {
     private var clockTimer: Timer?
 
     func start() {
+        guard watcher == nil else { return }
         reload()
         watcher = CacheWatcher(url: Paths.stateFile) { [weak self] in
             Task { @MainActor in self?.reload() }
