@@ -4,7 +4,7 @@ import Combine
 @MainActor
 final class MenuViewModel: ObservableObject {
     @Published private(set) var displayState: DisplayState = .init(
-        menuBarText: "—", tier: .neutral, isStale: false, hasFiveHourData: false
+        menuBarText: "—", utilizationFraction: nil, isStale: false, hasFiveHourData: false
     )
     @Published private(set) var cached: CachedState?
     @Published private(set) var authState: AuthState = .unknown
@@ -13,12 +13,21 @@ final class MenuViewModel: ObservableObject {
 
     private var poller: UsagePoller?
     private var clockTimer: Timer?
+    private var cacheWatcher: CacheWatcher?
     private var cancellables: Set<AnyCancellable> = []
 
     func start() {
         guard poller == nil else { return }
         // Load any cache from previous run.
         reloadCache()
+
+        // Watch state.json for any writes (poller's own atomic-rename writes,
+        // plus manual edits during testing). Reload whenever it changes.
+        let watcher = CacheWatcher(url: Paths.stateFile) { [weak self] in
+            Task { @MainActor in self?.reloadCache() }
+        }
+        watcher.start()
+        cacheWatcher = watcher
 
         // Token discovery: ONLY check our own Keychain entry. The Claude Code
         // probe is gated behind the user explicitly clicking the
@@ -52,6 +61,7 @@ final class MenuViewModel: ObservableObject {
     func stop() {
         poller?.stop(); poller = nil
         clockTimer?.invalidate(); clockTimer = nil
+        cacheWatcher?.stop(); cacheWatcher = nil
         cancellables.removeAll()
     }
 

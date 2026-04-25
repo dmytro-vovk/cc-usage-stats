@@ -16,9 +16,9 @@ struct CCUsageStatsApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarDropdown(vm: vm)
-                .onAppear { vm.start() }
         } label: {
             MenuBarLabel(vm: vm)
+                .onAppear { vm.start() }
         }
         .menuBarExtraStyle(.menu)
     }

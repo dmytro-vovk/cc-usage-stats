@@ -1,10 +1,10 @@
 import Foundation
 
 struct DisplayState: Equatable {
-    enum Tier { case neutral, warning, danger }
-
     let menuBarText: String
-    let tier: Tier
+    /// 0..1 utilization fraction for the 5-hour window, or nil when no data.
+    /// Drives the gradient color applied to the menubar icon + text.
+    let utilizationFraction: Double?
     let isStale: Bool
     let hasFiveHourData: Bool
 
@@ -12,16 +12,11 @@ struct DisplayState: Equatable {
 
     static func compute(now: Int64, cached: CachedState?) -> DisplayState {
         guard let cached, let five = cached.snapshot.fiveHour else {
-            return .init(menuBarText: "—", tier: .neutral, isStale: false, hasFiveHourData: false)
+            return .init(menuBarText: "—", utilizationFraction: nil, isStale: false, hasFiveHourData: false)
         }
         let pct = Int(five.usedPercentage.rounded())
-        let tier: Tier
-        switch pct {
-        case ..<50:  tier = .neutral
-        case 50..<80: tier = .warning
-        default:      tier = .danger
-        }
+        let fraction = max(0.0, min(1.0, five.usedPercentage / 100.0))
         let stale = (now - cached.capturedAt) > staleThresholdSeconds
-        return .init(menuBarText: "\(pct)%", tier: tier, isStale: stale, hasFiveHourData: true)
+        return .init(menuBarText: "\(pct)%", utilizationFraction: fraction, isStale: stale, hasFiveHourData: true)
     }
 }

@@ -4,40 +4,84 @@ import AppKit
 struct MenuBarLabel: View {
     @ObservedObject var vm: MenuViewModel
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: glyph()).symbolRenderingMode(.hierarchical).foregroundStyle(color())
-            if vm.authState != .invalidToken {
-                Text(vm.displayState.menuBarText)
-                    .opacity(vm.displayState.isStale ? 0.5 : 1.0)
-                    .monospacedDigit()
-            }
+        // Render the whole icon+text combination as a single NSImage with
+        // isTemplate=false — that's the only reliable way to keep custom
+        // colors in the macOS menubar (SwiftUI's MenuBarExtra otherwise
+        // repaints both the symbol and the text monochrome).
+        Image(nsImage: renderedLabel())
+    }
+
+    private func renderedLabel() -> NSImage {
+        let nsColor = NSColor(tint()).withAlphaComponent(vm.displayState.isStale ? 0.5 : 1.0)
+        let showText = vm.authState != .invalidToken
+
+        // Icon
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [nsColor]))
+        let icon = NSImage(systemSymbolName: glyph(), accessibilityDescription: nil)?
+            .withSymbolConfiguration(iconConfig) ?? NSImage()
+
+        // Text
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: nsColor,
+            .font: NSFont.menuBarFont(ofSize: 0),
+        ]
+        let attr = showText
+            ? NSAttributedString(string: vm.displayState.menuBarText, attributes: attrs)
+            : NSAttributedString(string: "", attributes: attrs)
+        let textSize = attr.size()
+
+        let iconSize = icon.size
+        let spacing: CGFloat = showText && !attr.string.isEmpty ? 4 : 0
+        let width = iconSize.width + spacing + textSize.width
+        let height = max(iconSize.height, textSize.height)
+
+        let composite = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            icon.draw(in: NSRect(
+                x: 0,
+                y: (height - iconSize.height) / 2,
+                width: iconSize.width,
+                height: iconSize.height
+            ))
+            attr.draw(at: NSPoint(
+                x: iconSize.width + spacing,
+                y: (height - textSize.height) / 2
+            ))
+            return true
         }
+        composite.isTemplate = false
+        return composite
     }
 
     private func glyph() -> String {
         switch vm.authState {
         case .invalidToken: return "exclamationmark.gauge"
         case .notSubscriber: return "gauge.with.dots.needle.0percent"
-        default: switch vm.displayState.tier {
-            case .neutral: return "gauge.with.dots.needle.33percent"
-            case .warning: return "gauge.with.dots.needle.50percent"
-            case .danger: return "gauge.with.dots.needle.67percent"
+        case .offline, .ok, .unknown: break
         }
+        // Pick a needle position that mirrors the percentage band.
+        guard let f = vm.displayState.utilizationFraction else {
+            return "gauge.with.dots.needle.33percent"
+        }
+        switch f {
+        case ..<0.125: return "gauge.with.dots.needle.0percent"
+        case ..<0.375: return "gauge.with.dots.needle.33percent"
+        case ..<0.625: return "gauge.with.dots.needle.50percent"
+        case ..<0.875: return "gauge.with.dots.needle.67percent"
+        default:       return "gauge.with.dots.needle.100percent"
         }
     }
 
-    private func color() -> Color {
+    private func tint() -> Color {
         switch vm.authState {
         case .invalidToken: return .red
         case .notSubscriber: return .secondary
-        case .offline, .ok, .unknown: break // last-known tier color (per spec)
+        case .offline, .ok, .unknown: break
         }
         if vm.displayState.isStale { return .secondary }
-        switch vm.displayState.tier {
-        case .neutral: return .primary
-        case .warning: return .yellow
-        case .danger: return .red
-        }
+        // No data yet (first run or no five_hour) → neutral system color.
+        guard let f = vm.displayState.utilizationFraction else { return .primary }
+        return UsageColor.gradient(t: f)
     }
 }
 

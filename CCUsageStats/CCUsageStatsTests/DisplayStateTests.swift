@@ -5,7 +5,7 @@ final class DisplayStateTests: XCTestCase {
     func testNoCacheGivesPlaceholder() {
         let s = DisplayState.compute(now: 100, cached: nil)
         XCTAssertEqual(s.menuBarText, "—")
-        XCTAssertEqual(s.tier, .neutral)
+        XCTAssertNil(s.utilizationFraction)
         XCTAssertFalse(s.isStale)
         XCTAssertFalse(s.hasFiveHourData)
     }
@@ -17,24 +17,32 @@ final class DisplayStateTests: XCTestCase {
         )
         let s = DisplayState.compute(now: 200, cached: cached)
         XCTAssertEqual(s.menuBarText, "12%")
-        XCTAssertEqual(s.tier, .neutral)
+        XCTAssertEqual(s.utilizationFraction ?? -1, 0.124, accuracy: 0.001)
         XCTAssertFalse(s.isStale)
     }
 
-    func testYellowTier() {
+    func testFractionAtFiftyPercent() {
         let cached = CachedState(
             capturedAt: 100,
-            snapshot: .init(fiveHour: .init(usedPercentage: 65, resetsAt: 1000), sevenDay: nil)
+            snapshot: .init(fiveHour: .init(usedPercentage: 50, resetsAt: 1000), sevenDay: nil)
         )
-        XCTAssertEqual(DisplayState.compute(now: 100, cached: cached).tier, .warning)
+        XCTAssertEqual(DisplayState.compute(now: 100, cached: cached).utilizationFraction ?? -1, 0.5, accuracy: 0.001)
     }
 
-    func testRedTier() {
+    func testFractionAtNinety() {
         let cached = CachedState(
             capturedAt: 100,
             snapshot: .init(fiveHour: .init(usedPercentage: 90, resetsAt: 1000), sevenDay: nil)
         )
-        XCTAssertEqual(DisplayState.compute(now: 100, cached: cached).tier, .danger)
+        XCTAssertEqual(DisplayState.compute(now: 100, cached: cached).utilizationFraction ?? -1, 0.9, accuracy: 0.001)
+    }
+
+    func testFractionClampsAboveOne() {
+        let cached = CachedState(
+            capturedAt: 100,
+            snapshot: .init(fiveHour: .init(usedPercentage: 150, resetsAt: 1000), sevenDay: nil)
+        )
+        XCTAssertEqual(DisplayState.compute(now: 100, cached: cached).utilizationFraction, 1.0)
     }
 
     func testStaleAfter30Min() {
@@ -53,6 +61,7 @@ final class DisplayStateTests: XCTestCase {
         )
         let s = DisplayState.compute(now: 100, cached: cached)
         XCTAssertEqual(s.menuBarText, "—")
+        XCTAssertNil(s.utilizationFraction)
         XCTAssertFalse(s.hasFiveHourData)
     }
 }
