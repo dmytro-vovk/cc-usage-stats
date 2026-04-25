@@ -2,13 +2,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-xcodebuild \
+arch -arm64 xcodebuild \
   -scheme CCUsageStats \
   -configuration Release \
   -derivedDataPath build \
   -project CCUsageStats/CCUsageStats.xcodeproj \
   CODE_SIGN_IDENTITY=- \
   CODE_SIGNING_REQUIRED=NO \
+  ONLY_ACTIVE_ARCH=NO \
+  ARCHS=arm64 \
   build
 
 mkdir -p dist

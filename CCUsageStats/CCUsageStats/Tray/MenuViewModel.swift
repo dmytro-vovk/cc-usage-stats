@@ -20,15 +20,11 @@ final class MenuViewModel: ObservableObject {
         // Load any cache from previous run.
         reloadCache()
 
-        // Discover token.
-        let token: String? = TokenStore.read() ?? {
-            // Try Claude Code keychain once.
-            if let probed = ClaudeCodeKeychainProbe.read() {
-                try? TokenStore.write(probed)
-                return probed
-            }
-            return nil
-        }()
+        // Token discovery: ONLY check our own Keychain entry. The Claude Code
+        // probe is gated behind the user explicitly clicking the
+        // "Paste from Claude Code Keychain" button in SettingsWindow — we
+        // don't want to surface a system Keychain prompt unprompted.
+        let token = TokenStore.read()
 
         if let token {
             let api = LiveAnthropicAPIClient(token: token)
