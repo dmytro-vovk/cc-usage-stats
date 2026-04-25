@@ -53,6 +53,11 @@ struct MenuBarDropdown: View {
             set: { _ in vm.toggleLaunchAtLogin() }
         ))
 
+        if vm.pathMismatch {
+            Text("⚠︎ Configured at a different path. Click Install to update.")
+                .foregroundStyle(.orange).font(.caption)
+        }
+
         if vm.installState == .installed {
             Button("Uninstall Statusline Integration…") { confirmAndUninstall() }
         } else {

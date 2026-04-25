@@ -10,6 +10,7 @@ final class MenuViewModel: ObservableObject {
     @Published var installState: Installer.State = .notInstalled
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
     @Published var lastError: String?
+    @Published var pathMismatch: Bool = false
 
     private var watcher: CacheWatcher?
     private var clockTimer: Timer?
@@ -42,6 +43,8 @@ final class MenuViewModel: ObservableObject {
     func refreshSettingsState() {
         installState = (try? Installer.currentState(settingsURL: Paths.claudeSettings, binaryPath: binaryPath)) ?? .notInstalled
         launchAtLogin = LaunchAtLoginService.isEnabled
+        let installed = (try? Installer.installedBinaryPath(settingsURL: Paths.claudeSettings)) ?? nil
+        pathMismatch = (installed != nil) && (installed != binaryPath)
     }
 
     func install() {

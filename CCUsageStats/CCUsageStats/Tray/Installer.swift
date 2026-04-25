@@ -15,6 +15,17 @@ enum Installer {
         return cmd == ourCommand(for: binaryPath) ? .installed : .notInstalled
     }
 
+    /// Returns the binary path currently configured in settings.json's statusLine.command,
+    /// stripped of trailing " statusline". Nil if no statusLine.
+    static func installedBinaryPath(settingsURL: URL) throws -> String? {
+        let dict = try readDictionary(settingsURL)
+        guard let sl = dict["statusLine"] as? [String: Any],
+              let cmd = sl["command"] as? String else { return nil }
+        let suffix = " statusline"
+        guard cmd.hasSuffix(suffix) else { return nil }
+        return String(cmd.dropLast(suffix.count))
+    }
+
     /// Wrap the existing statusLine.command (if any) and replace with ours.
     /// Idempotent: if already installed, does NOT overwrite wrappedCommand.
     static func install(settingsURL: URL, configURL: URL, binaryPath: String) throws {
