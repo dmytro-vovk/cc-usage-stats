@@ -1,0 +1,8 @@
+{
+  "session_id": "abc",
+  "model": { "id": "claude-opus-4-7", "display_name": "Opus 4.7" },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 42.7, "resets_at": 1714075200 },
+    "seven_day": { "used_percentage": 18.3, "resets_at": 1714665600 }
+  }
+}
