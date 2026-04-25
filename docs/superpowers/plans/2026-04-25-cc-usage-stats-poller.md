@@ -71,63 +71,43 @@ Tests added:
 
 ---
 
-## Task 1: Verify the API protocol (BLOCKING for downstream parser)
+## Task 1: Protocol verification — DONE 2026-04-25
 
-This task **must** happen before Task 6 (`AnthropicAPI`). It empirically determines whether `rate_limits` arrives in the response body, in headers, or both — and what the field names actually are.
+Empirical curl probing of `/v1/messages` with a real OAuth long-lived token. Findings:
 
-**No code, no commit.** Output is a paragraph in this plan or a TODO note in the eventual `AnthropicAPI.swift`.
+**Required headers for a successful call:**
+- `Authorization: Bearer sk-ant-oat01-…`
+- `anthropic-version: 2023-06-01`
+- `anthropic-beta: oauth-2025-04-20`  ← REQUIRED for OAuth tokens. Without it, 401 "OAuth authentication is currently not supported."
+- `content-type: application/json`
 
-- [ ] **Step 1.1: Get a long-lived OAuth token**
+**Smallest acceptable body:**
+```json
+{"model":"claude-haiku-4-5","max_tokens":1,"messages":[{"role":"user","content":"."}]}
+```
+Returns 200 with usage `{input_tokens: 8, output_tokens: 1}`. Roughly 9 tokens × 1440 polls/day ≈ 13k tokens/day on Haiku — sub-cent.
 
-If not already done: `claude setup-token` in a terminal. Copy the resulting `sk-ant-oat01-…` value to a safe place. **Do not paste it into source files, do not commit it, do not log it in this conversation when running curl — use a shell variable.**
+**Rate-limit data location:** **response headers only**. The response body is the standard `/v1/messages` envelope (id, content, usage, etc.) and does NOT contain a `rate_limits` field. Headers prefix `anthropic-ratelimit-unified-`:
 
-```bash
-read -r TOKEN
-# paste the sk-ant-oat01-... token, press enter
+```
+anthropic-ratelimit-unified-status: allowed
+anthropic-ratelimit-unified-5h-status: allowed
+anthropic-ratelimit-unified-5h-reset: 1777150200          ← Unix epoch seconds
+anthropic-ratelimit-unified-5h-utilization: 0.2           ← FRACTION (0..1), not percent
+anthropic-ratelimit-unified-7d-status: allowed
+anthropic-ratelimit-unified-7d-reset: 1777284000
+anthropic-ratelimit-unified-7d-utilization: 0.17
 ```
 
-- [ ] **Step 1.2: Probe `/v1/messages`**
+**Schema differences vs. the Phase 1 spec assumption:**
+- Header keys are `anthropic-ratelimit-unified-{5h,7d}-{utilization,reset}` (NOT `anthropic-ratelimit-five-hour-percentage` / `-resets-at`).
+- `utilization` is a fraction `0..1` (multiply by 100 to render as `%`).
+- `reset` is `Unix epoch seconds` (matches our existing `WindowSnapshot.resetsAt: Int64`).
+- The body has no `rate_limits` field, so Path A (body parsing) is unused on this endpoint.
 
-```bash
-curl -isS https://api.anthropic.com/v1/messages \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "anthropic-version: 2023-06-01" \
-  -H "content-type: application/json" \
-  -d '{"model":"claude-haiku-4-5","max_tokens":1,"messages":[{"role":"user","content":"."}]}' \
-  | tee /tmp/probe-no-beta.txt
-```
+**Implication for plan Task 6:** AnthropicAPI's body parser is unnecessary — drop it. Header parser uses the verified key shape above.
 
-If the response is 4xx with a message about beta access, retry with `-H "anthropic-beta: oauth-2025-04-20"` (the header observed for OAuth in past Anthropic docs); save to `/tmp/probe-with-beta.txt`.
-
-- [ ] **Step 1.3: Inspect headers and body for rate-limit data**
-
-```bash
-echo "=== HEADERS ==="
-sed -n '1,/^\r$/p' /tmp/probe-no-beta.txt | grep -i -E "anthropic|rate|limit"
-echo "=== BODY (rate-related keys) ==="
-sed -n '/^\r$/,$p' /tmp/probe-no-beta.txt | grep -o '"[a-z_]*\(rate\|limit\|usage\|five_hour\|seven_day\|reset\)[a-z_]*"' | sort -u
-```
-
-Repeat for `/tmp/probe-with-beta.txt` if it was produced.
-
-- [ ] **Step 1.4: Record the result**
-
-In a short note appended to this plan file (under a new "Protocol Verification Result" subsection in Task 1), write:
-
-- Which header was needed (none, or `anthropic-beta: oauth-2025-04-20`).
-- Whether `rate_limits` is in the JSON body, the response headers, or both.
-- Exact field names (`used_percentage` vs `utilization`, `resets_at` epoch-int vs ISO-8601 string, etc.).
-- Any unexpected response codes or required headers.
-
-This locks the parser implementation in Task 6.
-
-- [ ] **Step 1.5: Wipe the probe files**
-
-```bash
-shred -u /tmp/probe-no-beta.txt /tmp/probe-with-beta.txt 2>/dev/null || rm -f /tmp/probe-no-beta.txt /tmp/probe-with-beta.txt
-```
-
-(macOS `shred` doesn't ship by default; `rm` is acceptable on the local machine.)
+**Alternative observation:** `x-api-key: <oauth-token>` (no beta header) also returns 200 with the same headers. Bearer + beta is more aligned with documented OAuth semantics; use that.
 
 ---
 
@@ -563,7 +543,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - Create: `CCUsageStats/CCUsageStats/Poller/AnthropicAPI.swift`
 - Create: `CCUsageStats/CCUsageStatsTests/AnthropicAPITests.swift`
 
-**Pre-condition:** Task 1 verification complete. Field names below assume the schema documented in the Phase 1 spec (`five_hour.used_percentage` Double, `five_hour.resets_at` Int64 epoch). If Task 1 reveals different field names, adjust the decoder accordingly **before** writing tests.
+**Pre-condition:** Task 1 verification complete (see above). Field names locked to the verified header schema: `anthropic-ratelimit-unified-{5h,7d}-{utilization,reset}` with `utilization` as a fraction 0..1 and `reset` as Unix epoch seconds. The response body has no `rate_limits` field on this endpoint; drop body parsing entirely.
 
 - [ ] **Step 6.1: Define the protocol so UsagePoller can stub it**
 
@@ -580,46 +560,49 @@ import XCTest
 @testable import CCUsageStats
 
 final class AnthropicAPITests: XCTestCase {
-    private func sampleBody(withRateLimits: Bool, includeFiveHour: Bool = true) -> Data {
-        var rateLimits: [String: Any] = [:]
-        if includeFiveHour {
-            rateLimits["five_hour"] = ["used_percentage": 42.7, "resets_at": 1714075200]
-        }
-        rateLimits["seven_day"] = ["used_percentage": 18.3, "resets_at": 1714665600]
-        var body: [String: Any] = [
-            "id": "msg_x", "type": "message", "role": "assistant",
-            "content": [["type": "text", "text": ""]], "model": "claude-haiku-4-5", "stop_reason": "end_turn"
-        ]
-        if withRateLimits { body["rate_limits"] = rateLimits }
-        return try! JSONSerialization.data(withJSONObject: body)
-    }
+    private let okBody = Data(#"{"id":"msg_x","type":"message","role":"assistant","content":[{"type":"text","text":""}],"model":"claude-haiku-4-5","stop_reason":"end_turn","usage":{"input_tokens":8,"output_tokens":1}}"#.utf8)
 
-    func testParseBodyWithRateLimits() throws {
-        let body = sampleBody(withRateLimits: true)
-        let result = AnthropicAPI.parse(status: 200, headers: [:], body: body)
-        guard case let .success(snap) = result else { return XCTFail() }
-        XCTAssertEqual(snap.fiveHour?.usedPercentage, 42.7, accuracy: 0.001)
-        XCTAssertEqual(snap.sevenDay?.usedPercentage, 18.3, accuracy: 0.001)
-    }
+    private let validHeaders: [String: String] = [
+        "anthropic-ratelimit-unified-5h-utilization": "0.42",
+        "anthropic-ratelimit-unified-5h-reset": "1714075200",
+        "anthropic-ratelimit-unified-7d-utilization": "0.18",
+        "anthropic-ratelimit-unified-7d-reset": "1714665600",
+    ]
 
-    func testParseHeadersWhenBodyMissing() throws {
-        let body = sampleBody(withRateLimits: false)
-        let headers: [String: String] = [
-            "anthropic-ratelimit-five-hour-percentage": "55.5",
-            "anthropic-ratelimit-five-hour-resets-at": "1714075200",
-            "anthropic-ratelimit-seven-day-percentage": "20.0",
-            "anthropic-ratelimit-seven-day-resets-at": "1714665600"
-        ]
-        let result = AnthropicAPI.parse(status: 200, headers: headers, body: body)
-        guard case let .success(snap) = result else { return XCTFail() }
-        XCTAssertEqual(snap.fiveHour?.usedPercentage, 55.5, accuracy: 0.001)
+    func testParseHeadersConvertsFractionToPercent() throws {
+        let result = AnthropicAPI.parse(status: 200, headers: validHeaders, body: okBody)
+        guard case let .success(snap) = result else { return XCTFail("got \(result)") }
+        XCTAssertEqual(snap.fiveHour?.usedPercentage, 42.0, accuracy: 0.001)
         XCTAssertEqual(snap.fiveHour?.resetsAt, 1714075200)
-        XCTAssertEqual(snap.sevenDay?.usedPercentage, 20.0, accuracy: 0.001)
+        XCTAssertEqual(snap.sevenDay?.usedPercentage, 18.0, accuracy: 0.001)
+        XCTAssertEqual(snap.sevenDay?.resetsAt, 1714665600)
     }
 
-    func testNoRateLimitsAnywhereYieldsNotSubscriber() {
-        let body = sampleBody(withRateLimits: false)
-        let result = AnthropicAPI.parse(status: 200, headers: [:], body: body)
+    func testHeaderKeyLookupIsCaseInsensitive() throws {
+        // URLResponse on macOS may give us mixed-case keys; the parser must accept any case.
+        let mixedCase: [String: String] = [
+            "Anthropic-RateLimit-Unified-5h-Utilization": "0.5",
+            "ANTHROPIC-RATELIMIT-UNIFIED-5H-RESET": "100",
+        ]
+        let result = AnthropicAPI.parse(status: 200, headers: mixedCase, body: okBody)
+        guard case let .success(snap) = result else { return XCTFail("got \(result)") }
+        XCTAssertEqual(snap.fiveHour?.usedPercentage, 50.0, accuracy: 0.001)
+        XCTAssertNil(snap.sevenDay)
+    }
+
+    func testFiveHourOnly() throws {
+        let headers: [String: String] = [
+            "anthropic-ratelimit-unified-5h-utilization": "0.1",
+            "anthropic-ratelimit-unified-5h-reset": "200",
+        ]
+        let result = AnthropicAPI.parse(status: 200, headers: headers, body: okBody)
+        guard case let .success(snap) = result else { return XCTFail() }
+        XCTAssertNotNil(snap.fiveHour)
+        XCTAssertNil(snap.sevenDay)
+    }
+
+    func testNoRateLimitHeadersYieldsNotSubscriber() {
+        let result = AnthropicAPI.parse(status: 200, headers: [:], body: okBody)
         if case .notSubscriber = result { return }
         XCTFail("expected .notSubscriber, got \(result)")
     }
@@ -627,7 +610,7 @@ final class AnthropicAPITests: XCTestCase {
     func test401YieldsInvalidToken() {
         let result = AnthropicAPI.parse(status: 401, headers: [:], body: Data())
         if case .invalidToken = result { return }
-        XCTFail("expected .invalidToken, got \(result)")
+        XCTFail()
     }
 
     func test403YieldsInvalidToken() {
@@ -642,8 +625,8 @@ final class AnthropicAPITests: XCTestCase {
         XCTFail()
     }
 
-    func testMalformedBodyYieldsTransient() {
-        let result = AnthropicAPI.parse(status: 200, headers: [:], body: Data("garbage".utf8))
+    func test5xxYieldsTransient() {
+        let result = AnthropicAPI.parse(status: 503, headers: [:], body: Data())
         if case .transient = result { return }
         XCTFail()
     }
@@ -663,7 +646,7 @@ enum AnthropicAPI {
         case invalidToken
         case notSubscriber
         case rateLimited
-        case transient(String) // network, malformed body, 5xx
+        case transient(String) // network, malformed body, 5xx, 4xx other
     }
 
     static func parse(status: Int, headers: [String: String], body: Data) -> Result {
@@ -673,20 +656,10 @@ enum AnthropicAPI {
         case 429:
             return .rateLimited
         case 200:
-            // Path A: JSON body.
-            if let bodySnapshot = parseBody(body) {
-                return .success(bodySnapshot)
+            if let snap = parseHeaders(headers) {
+                return .success(snap)
             }
-            // Path B: response headers.
-            if let headerSnapshot = parseHeaders(headers) {
-                return .success(headerSnapshot)
-            }
-            // 200 with no rate limit info anywhere — likely non-subscriber token.
-            // But ensure the body was at least a valid message envelope.
-            if (try? JSONSerialization.jsonObject(with: body)) != nil {
-                return .notSubscriber
-            }
-            return .transient("malformed 200 body")
+            return .notSubscriber
         case 500...599:
             return .transient("server \(status)")
         default:
@@ -694,48 +667,27 @@ enum AnthropicAPI {
         }
     }
 
-    // MARK: - body path
-
-    private static func parseBody(_ data: Data) -> RateLimitsSnapshot? {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let rl = obj["rate_limits"] as? [String: Any] else {
-            return nil
-        }
-        return RateLimitsSnapshot(
-            fiveHour: window(from: rl["five_hour"]),
-            sevenDay: window(from: rl["seven_day"])
-        )
-    }
-
-    private static func window(from any: Any?) -> WindowSnapshot? {
-        guard let dict = any as? [String: Any] else { return nil }
-        // JSONSerialization decodes JSON numbers as NSNumber.
-        guard let pctNum = dict["used_percentage"] as? NSNumber,
-              let resetNum = dict["resets_at"] as? NSNumber else {
-            return nil
-        }
-        return WindowSnapshot(usedPercentage: pctNum.doubleValue, resetsAt: resetNum.int64Value)
-    }
-
-    // MARK: - header path
-
     private static func parseHeaders(_ headers: [String: String]) -> RateLimitsSnapshot? {
+        // HTTPURLResponse keys are case-insensitive on the wire; lowercase for stable lookup.
         let lc = headers.reduce(into: [String: String]()) { $0[$1.key.lowercased()] = $1.value }
 
-        let five = window(headers: lc, prefix: "anthropic-ratelimit-five-hour")
-        let seven = window(headers: lc, prefix: "anthropic-ratelimit-seven-day")
+        let five = window(headers: lc, suffix: "5h")
+        let seven = window(headers: lc, suffix: "7d")
         if five == nil && seven == nil { return nil }
         return RateLimitsSnapshot(fiveHour: five, sevenDay: seven)
     }
 
-    private static func window(headers: [String: String], prefix: String) -> WindowSnapshot? {
-        guard let pctStr = headers["\(prefix)-percentage"],
-              let pct = Double(pctStr),
-              let resetStr = headers["\(prefix)-resets-at"],
+    private static func window(headers: [String: String], suffix: String) -> WindowSnapshot? {
+        let utilKey = "anthropic-ratelimit-unified-\(suffix)-utilization"
+        let resetKey = "anthropic-ratelimit-unified-\(suffix)-reset"
+        guard let utilStr = headers[utilKey],
+              let util = Double(utilStr),
+              let resetStr = headers[resetKey],
               let reset = Int64(resetStr) else {
             return nil
         }
-        return WindowSnapshot(usedPercentage: pct, resetsAt: reset)
+        // Anthropic reports utilization as a fraction (0..1); we store percent.
+        return WindowSnapshot(usedPercentage: util * 100.0, resetsAt: reset)
     }
 }
 
@@ -744,13 +696,11 @@ struct LiveAnthropicAPIClient: AnthropicAPIClient {
     let token: String
     let session: URLSession
     let model: String
-    let useBetaHeader: Bool
 
-    init(token: String, session: URLSession = .shared, model: String = "claude-haiku-4-5", useBetaHeader: Bool = false) {
+    init(token: String, session: URLSession = .shared, model: String = "claude-haiku-4-5") {
         self.token = token
         self.session = session
         self.model = model
-        self.useBetaHeader = useBetaHeader
     }
 
     func fetchRateLimits() async -> AnthropicAPI.Result {
@@ -758,7 +708,7 @@ struct LiveAnthropicAPIClient: AnthropicAPIClient {
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        if useBetaHeader { req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta") }
+        req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta") // REQUIRED for OAuth tokens
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         let body: [String: Any] = [
             "model": model,
@@ -781,39 +731,9 @@ struct LiveAnthropicAPIClient: AnthropicAPIClient {
 }
 ```
 
-- [ ] **Step 6.5: Run tests, expect 7/7 PASS.**
+- [ ] **Step 6.5: Run tests, expect 8/8 PASS.**
 
-- [ ] **Step 6.6: Add Haiku→Sonnet model fallback**
-
-Anthropic may reject the cheaper Haiku model on some plan tiers with a 400. Add a fallback to `claude-sonnet-4-5` for the next call only, recorded by `LiveAnthropicAPIClient`:
-
-```swift
-struct LiveAnthropicAPIClient: AnthropicAPIClient {
-    let token: String
-    let session: URLSession
-    var preferredModel: String = "claude-haiku-4-5"
-    let fallbackModel: String = "claude-sonnet-4-5"
-    let useBetaHeader: Bool
-
-    // ... existing init etc.
-
-    func fetchRateLimits() async -> AnthropicAPI.Result {
-        let first = await fetch(model: preferredModel)
-        if case .transient(let msg) = first, msg.contains("model") {
-            return await fetch(model: fallbackModel)
-        }
-        return first
-    }
-
-    private func fetch(model: String) async -> AnthropicAPI.Result {
-        // existing body of fetchRateLimits, parameterized on `model`
-    }
-}
-```
-
-(Detection heuristic: Anthropic's 400 response typically includes "model" in the JSON error message. If the heuristic is unreliable, plan Task 1 verification can refine the trigger string.)
-
-- [ ] **Step 6.7: Commit**
+- [ ] **Step 6.6: Commit**
 
 ```bash
 git add CCUsageStats/CCUsageStats/Poller/AnthropicAPI.swift CCUsageStats/CCUsageStatsTests/AnthropicAPITests.swift
