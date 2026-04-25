@@ -115,15 +115,23 @@ private struct WindowRow: View {
     var body: some View {
         if let w = window {
             let pct = Int(w.usedPercentage.rounded())
-            let resetIn = w.resetsAt - now
+            let delta = w.resetsAt - now
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(title): \(pct)%")
-                Text("resets in \(RelativeTime.format(seconds: resetIn))")
+                Text(resetCaption(delta: delta))
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
         } else {
             Text("\(title): not yet observed").foregroundStyle(.secondary)
+        }
+    }
+
+    private func resetCaption(delta: Int64) -> String {
+        if delta >= 0 {
+            return "resets in \(RelativeTime.format(seconds: delta))"
+        } else {
+            return "reset \(RelativeTime.format(seconds: -delta)) ago, awaiting fresh data"
         }
     }
 }
