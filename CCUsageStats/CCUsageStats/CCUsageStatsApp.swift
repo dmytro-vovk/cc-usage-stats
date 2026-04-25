@@ -14,7 +14,10 @@ struct CCUsageStatsApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarDropdown(vm: vm)
-                .onAppear { vm.start() }
+                .onAppear {
+                    vm.start()
+                    vm.refreshSettingsState()
+                }
         } label: {
             MenuBarLabel(vm: vm)
         }
