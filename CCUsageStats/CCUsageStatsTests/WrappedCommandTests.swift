@@ -16,7 +16,7 @@ final class WrappedCommandTests: XCTestCase {
         let out = WrappedCommand.run(
             command: "printf 'first'; sleep 5; printf 'never'",
             stdin: Data(),
-            timeout: 6.0
+            timeout: 0.5
         )
         XCTAssertEqual(out, "first")
     }
