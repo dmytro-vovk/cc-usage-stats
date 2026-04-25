@@ -10,7 +10,7 @@ struct WindowSnapshot: Codable, Equatable {
     }
 }
 
-/// Just the rate_limits block — what the cache stores.
+/// The rate-limit windows cached for the menubar UI.
 struct RateLimitsSnapshot: Codable, Equatable {
     let fiveHour: WindowSnapshot?
     let sevenDay: WindowSnapshot?
@@ -18,16 +18,5 @@ struct RateLimitsSnapshot: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
-    }
-
-    /// Returns nil if the payload is valid JSON but lacks a `rate_limits` field.
-    /// Throws if the JSON itself is malformed.
-    static func parse(statuslineJSON data: Data) throws -> RateLimitsSnapshot? {
-        struct Envelope: Decodable {
-            let rateLimits: RateLimitsSnapshot?
-            enum CodingKeys: String, CodingKey { case rateLimits = "rate_limits" }
-        }
-        let env = try JSONDecoder().decode(Envelope.self, from: data)
-        return env.rateLimits
     }
 }
