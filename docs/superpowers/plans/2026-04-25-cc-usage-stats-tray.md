@@ -1573,6 +1573,27 @@ final class InstallerTests: XCTestCase {
         try Data("{}".utf8).write(to: settings)
         XCTAssertEqual(try Installer.currentState(settingsURL: settings, binaryPath: stubBinary), .notInstalled)
     }
+
+    func testInstallFollowsSymlink() throws {
+        // Real file lives elsewhere; `settings` is a symlink to it.
+        let realFile = dir.appendingPathComponent("real-settings.json")
+        try Data("{}".utf8).write(to: realFile)
+        try FileManager.default.createSymbolicLink(at: settings, withDestinationURL: realFile)
+
+        try Installer.install(settingsURL: settings, configURL: config, binaryPath: stubBinary)
+
+        // The symlink itself should still be a symlink — we should have edited the target, not replaced the link.
+        let attrs = try FileManager.default.attributesOfItem(atPath: settings.path)
+        // attributesOfItem follows symlinks, so check via lstat:
+        var st = stat()
+        XCTAssertEqual(lstat(settings.path, &st), 0)
+        XCTAssertTrue((st.st_mode & S_IFMT) == S_IFLNK, "settings.json must remain a symlink after install")
+        _ = attrs
+
+        // Real file got the new content.
+        let parsed = try JSONSerialization.jsonObject(with: Data(contentsOf: realFile)) as! [String: Any]
+        XCTAssertNotNil(parsed["statusLine"])
+    }
 }
 ```
 
@@ -1645,10 +1666,14 @@ enum Installer {
 
     // MARK: - helpers
 
+    /// Resolve POSIX symlinks (NOT Finder aliases) so we edit the actual target file.
+    private static func resolved(_ url: URL) -> URL {
+        URL(fileURLWithPath: url.resolvingSymlinksInPath().path)
+    }
+
     private static func readDictionary(_ url: URL) throws -> [String: Any] {
-        // Follow symlinks.
-        let resolved = (try? URL(resolvingAliasFileAt: url)) ?? url
-        guard let data = try? Data(contentsOf: resolved) else { return [:] }
+        let r = resolved(url)
+        guard let data = try? Data(contentsOf: r) else { return [:] }
         if data.isEmpty { return [:] }
         guard let obj = try? JSONSerialization.jsonObject(with: data),
               let dict = obj as? [String: Any] else {
@@ -1658,21 +1683,21 @@ enum Installer {
     }
 
     private static func writeDictionary(_ dict: [String: Any], to url: URL) throws {
-        let resolved = (try? URL(resolvingAliasFileAt: url)) ?? url
+        let r = resolved(url)
         let data = try JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys])
-        let tmp = resolved.appendingPathExtension("tmp")
+        let tmp = r.appendingPathExtension("tmp")
         try data.write(to: tmp, options: .atomic)
-        _ = try FileManager.default.replaceItemAt(resolved, withItemAt: tmp)
+        _ = try FileManager.default.replaceItemAt(r, withItemAt: tmp)
     }
 
     private static func createBackup(_ url: URL) throws {
-        let resolved = (try? URL(resolvingAliasFileAt: url)) ?? url
-        guard FileManager.default.fileExists(atPath: resolved.path) else { return }
+        let r = resolved(url)
+        guard FileManager.default.fileExists(atPath: r.path) else { return }
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyyMMdd-HHmmss"
         let ts = fmt.string(from: Date())
-        let backup = resolved.appendingPathExtension("bak.\(ts)")
-        try FileManager.default.copyItem(at: resolved, to: backup)
+        let backup = r.appendingPathExtension("bak.\(ts)")
+        try FileManager.default.copyItem(at: r, to: backup)
     }
 }
 ```
@@ -1781,7 +1806,28 @@ func toggleLaunchAtLogin() {
 
 Call `refreshSettingsState()` from `start()` and on each menu open (handled in the view).
 
-- [ ] **Step 15.2: Add menu rows**
+- [ ] **Step 15.2: Add menu rows with confirmation dialog**
+
+The spec requires a confirmation dialog with a diff preview before mutating
+`settings.json`. We use `NSAlert` with the diff in its `informativeText`.
+
+Add to `MenuViewModel`:
+
+```swift
+/// Builds a human-readable preview of the change Install would make.
+/// Returns (currentCommand, plannedCommand). Either may be nil.
+func installPreview() -> (current: String?, planned: String) {
+    let current = (try? Installer.installedBinaryPath(settingsURL: Paths.claudeSettings))
+        .flatMap { _ in
+            // Read raw command, not just binary path.
+            (try? Data(contentsOf: Paths.claudeSettings))
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                .flatMap { $0["statusLine"] as? [String: Any] }
+                .flatMap { $0["command"] as? String }
+        }
+    return (current, "\(binaryPath) statusline")
+}
+```
 
 In `MenuBarDropdown`, replace the placeholder "Settings" line with:
 
@@ -1792,13 +1838,48 @@ Toggle("Launch at Login", isOn: Binding(
 ))
 
 if vm.installState == .installed {
-    Button("Uninstall Statusline Integration…") { vm.uninstall() }
+    Button("Uninstall Statusline Integration…") { confirmAndUninstall() }
 } else {
-    Button("Install Statusline Integration…") { vm.install() }
+    Button("Install Statusline Integration…") { confirmAndInstall() }
 }
 
 if let err = vm.lastError {
     Text(err).foregroundStyle(.red).font(.caption)
+}
+```
+
+Add helper functions in `MenuBarDropdown`:
+
+```swift
+private func confirmAndInstall() {
+    let preview = vm.installPreview()
+    let alert = NSAlert()
+    alert.messageText = "Install Statusline Integration"
+    alert.informativeText = """
+    This will modify ~/.claude/settings.json. A timestamped backup will be created.
+
+    Current statusLine.command:
+      \(preview.current ?? "(none)")
+
+    New statusLine.command:
+      \(preview.planned)
+
+    \(preview.current.map { _ in "Your previous command will be wrapped and continue to run." } ?? "")
+    """
+    alert.addButton(withTitle: "Install")
+    alert.addButton(withTitle: "Cancel")
+    NSApp.activate(ignoringOtherApps: true)
+    if alert.runModal() == .alertFirstButtonReturn { vm.install() }
+}
+
+private func confirmAndUninstall() {
+    let alert = NSAlert()
+    alert.messageText = "Uninstall Statusline Integration"
+    alert.informativeText = "This will restore your previous statusLine command (or remove it entirely if there was none). A backup will be created."
+    alert.addButton(withTitle: "Uninstall")
+    alert.addButton(withTitle: "Cancel")
+    NSApp.activate(ignoringOtherApps: true)
+    if alert.runModal() == .alertFirstButtonReturn { vm.uninstall() }
 }
 ```
 
