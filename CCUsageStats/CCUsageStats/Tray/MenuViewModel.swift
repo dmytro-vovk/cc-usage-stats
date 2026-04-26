@@ -13,7 +13,29 @@ final class MenuViewModel: ObservableObject {
     @Published var muteSounds: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.muteSoundsKey) {
         didSet { UserDefaults.standard.set(muteSounds, forKey: Self.muteSoundsKey) }
     }
-    private static let muteSoundsKey = "cc-usage-stats.muteSounds"
+    @Published var warningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.warningEnabledKey) {
+        didSet { UserDefaults.standard.set(warningEnabled, forKey: Self.warningEnabledKey) }
+    }
+    @Published var warningThreshold: Int = MenuViewModel.readWarningThreshold() {
+        didSet { UserDefaults.standard.set(warningThreshold, forKey: Self.warningThresholdKey) }
+    }
+    @Published var warningSound: String = MenuViewModel.readWarningSound() {
+        didSet { UserDefaults.standard.set(warningSound, forKey: Self.warningSoundKey) }
+    }
+    private static let muteSoundsKey       = "cc-usage-stats.muteSounds"
+    private static let warningEnabledKey   = "cc-usage-stats.warningEnabled"
+    private static let warningThresholdKey = "cc-usage-stats.warningThreshold"
+    private static let warningSoundKey     = "cc-usage-stats.warningSound"
+
+    private static func readWarningThreshold() -> Int {
+        let v = UserDefaults.standard.integer(forKey: warningThresholdKey)
+        return (v >= 1 && v <= 99) ? v : 80
+    }
+
+    private static func readWarningSound() -> String {
+        let v = UserDefaults.standard.string(forKey: warningSoundKey) ?? ""
+        return SoundPlayer.availableSounds.contains(v) ? v : "Tink"
+    }
 
     private var poller: UsagePoller?
     private var clockTimer: Timer?
@@ -122,15 +144,31 @@ final class MenuViewModel: ObservableObject {
     private func reloadCache() {
         let newCached = (try? CacheStore.read(at: Paths.stateFile)) ?? nil
         let newFive = newCached?.snapshot.fiveHour
-        let events = UsageEventDetector.detect(previous: lastFiveHour, current: newFive)
+
+        // 100 always fires (Bottle). User-configurable warning threshold
+        // adds a second crossing event with a user-chosen sound.
+        var thresholds: [Int] = [100]
+        if warningEnabled, warningThreshold >= 1, warningThreshold < 100 {
+            thresholds.insert(warningThreshold, at: 0)
+        }
+        let events = UsageEventDetector.detect(
+            previous: lastFiveHour,
+            current: newFive,
+            thresholds: thresholds
+        )
         lastFiveHour = newFive
         cached = newCached
         recomputeFromCachedOnly()
+
         if !muteSounds {
             for event in events {
                 switch event {
-                case .reachedLimit: SoundPlayer.playReachedLimit()
-                case .windowReset:  SoundPlayer.playLimitReset()
+                case .crossedThreshold(let p) where p == 100:
+                    SoundPlayer.playReachedLimit()
+                case .crossedThreshold:
+                    SoundPlayer.play(named: warningSound)
+                case .windowReset:
+                    SoundPlayer.playLimitReset()
                 }
             }
         }

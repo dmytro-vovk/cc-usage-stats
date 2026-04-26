@@ -18,6 +18,29 @@ final class UsagePoller: ObservableObject {
     private static let baseInterval: TimeInterval = 60
     private static let maxBackoff: TimeInterval = 600
     private static let offlineThreshold = 5
+    /// Adaptive cadence thresholds for the 5-hour window.
+    private static let approachingFraction: Double = 0.98
+    private static let approachingInterval: TimeInterval = 10
+    private static let leadBeforeReset: TimeInterval = 30
+    private static let minimumIntervalAtCap: TimeInterval = 10
+
+    /// Pure: pick the next-poll delay after a successful tick.
+    /// Cadence:
+    ///   <= 98%   → 60s baseline
+    ///   > 98% & < 100% → 10s (about to hit the cap)
+    ///   >= 100%   → sleep until 30s before resets_at (clamped to 10s minimum)
+    static func nextDelayAfterSuccess(snapshot: RateLimitsSnapshot, now: Int64) -> TimeInterval {
+        guard let five = snapshot.fiveHour else { return baseInterval }
+        let fraction = five.usedPercentage / 100.0
+        if fraction >= 1.0 {
+            let untilReset = TimeInterval(five.resetsAt - now)
+            return max(minimumIntervalAtCap, untilReset - leadBeforeReset)
+        }
+        if fraction > approachingFraction {
+            return approachingInterval
+        }
+        return baseInterval
+    }
 
     init(api: AnthropicAPIClient, cacheURL: URL, clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }) {
         self.api = api
@@ -60,7 +83,7 @@ final class UsagePoller: ObservableObject {
             try? CacheStore.update(at: cacheURL, with: snapshot, now: clock())
             authState = .ok
             transientFailureCount = 0
-            currentBackoffSeconds = Self.baseInterval
+            currentBackoffSeconds = Self.nextDelayAfterSuccess(snapshot: snapshot, now: clock())
 
         case .invalidToken:
             authState = .invalidToken

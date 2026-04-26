@@ -1,13 +1,18 @@
 import AppKit
 
-/// Plays the two notification sounds used by the app. Built-in macOS
-/// system sounds; no bundled audio resources.
+/// Plays macOS system sounds. Built-in only; no bundled audio resources.
 enum SoundPlayer {
-    static func playReachedLimit() {
-        NSSound(named: NSSound.Name("Bottle"))?.play()
+    /// Names of built-in sounds available in `/System/Library/Sounds/`.
+    static let availableSounds: [String] = [
+        "Basso", "Blow", "Bottle", "Frog", "Funk", "Glass", "Hero",
+        "Morse", "Ping", "Pop", "Purr", "Sosumi", "Submarine", "Tink",
+    ]
+
+    /// Plays the sound of the given name. No-op if the name isn't recognized.
+    static func play(named name: String) {
+        NSSound(named: NSSound.Name(name))?.play()
     }
 
-    static func playLimitReset() {
-        NSSound(named: NSSound.Name("Hero"))?.play()
-    }
+    static func playReachedLimit() { play(named: "Bottle") }
+    static func playLimitReset()   { play(named: "Hero") }
 }

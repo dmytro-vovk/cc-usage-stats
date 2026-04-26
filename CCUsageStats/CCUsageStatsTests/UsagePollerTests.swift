@@ -82,11 +82,76 @@ final class UsagePollerTests: XCTestCase {
     func testBackoffResetsOnSuccess() async {
         let api = StubAPI()
         api.queue = [.rateLimited, .rateLimited, .success(.init(
-            fiveHour: WindowSnapshot(usedPercentage: 1, resetsAt: 0), sevenDay: nil))]
-        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 1 })
+            fiveHour: WindowSnapshot(usedPercentage: 1, resetsAt: 1_000), sevenDay: nil))]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 0 })
         await poller.tickForTest()
         await poller.tickForTest()
         await poller.tickForTest()
         XCTAssertEqual(poller.currentBackoffSeconds, 60)
+    }
+
+    // MARK: - Adaptive cadence
+
+    func testCadenceBaselineWhenLowUsage() {
+        let snap = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 50, resetsAt: 10_000),
+            sevenDay: nil)
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: snap, now: 0), 60)
+    }
+
+    func testCadenceBaselineAtBoundary98() {
+        let snap = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 98, resetsAt: 10_000),
+            sevenDay: nil)
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: snap, now: 0), 60)
+    }
+
+    func testCadenceAcceleratesAbove98() {
+        let snap = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 99.5, resetsAt: 10_000),
+            sevenDay: nil)
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: snap, now: 0), 10)
+    }
+
+    func testCadenceSleepsUntilNearResetAtCap() {
+        let snap = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: 600),
+            sevenDay: nil)
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: snap, now: 0), 570)
+    }
+
+    func testCadenceClampsTo10AtCapWhenResetIsImminent() {
+        // Reset only 5s away — naive `5 - 30 = -25` clamps to 10.
+        let snap = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: 5),
+            sevenDay: nil)
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: snap, now: 0), 10)
+    }
+
+    func testCadenceFallsBackToBaselineWhenNoFiveHour() {
+        let snap = RateLimitsSnapshot(
+            fiveHour: nil,
+            sevenDay: WindowSnapshot(usedPercentage: 99, resetsAt: 10_000))
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: snap, now: 0), 60)
+    }
+
+    func testTickStoresAcceleratedCadence() async {
+        let api = StubAPI()
+        api.queue = [.success(.init(
+            fiveHour: WindowSnapshot(usedPercentage: 99, resetsAt: 100_000),
+            sevenDay: nil))]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 0 })
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 10)
+    }
+
+    func testTickStoresSleepCadenceAtCap() async {
+        let api = StubAPI()
+        api.queue = [.success(.init(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: 1_000),
+            sevenDay: nil))]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 0 })
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 970) // 1000 - 30
     }
 }

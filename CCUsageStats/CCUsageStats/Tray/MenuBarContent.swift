@@ -149,6 +149,41 @@ struct MenuBarDropdown: View {
             ))
             .toggleStyle(.checkbox)
 
+            Toggle("Warn at threshold", isOn: Binding(
+                get: { vm.warningEnabled },
+                set: { vm.warningEnabled = $0 }
+            ))
+            .toggleStyle(.checkbox)
+
+            if vm.warningEnabled {
+                HStack(spacing: 8) {
+                    Stepper(value: Binding(
+                        get: { vm.warningThreshold },
+                        set: { vm.warningThreshold = $0 }
+                    ), in: 1...99, step: 1) {
+                        Text("\(vm.warningThreshold)%")
+                            .monospacedDigit()
+                            .frame(width: 40, alignment: .leading)
+                    }
+                    Picker("", selection: Binding(
+                        get: { vm.warningSound },
+                        set: { newValue in
+                            vm.warningSound = newValue
+                            // Preview on change so the user hears their pick.
+                            if !vm.muteSounds { SoundPlayer.play(named: newValue) }
+                        }
+                    )) {
+                        ForEach(SoundPlayer.availableSounds, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.leading, 18)
+                .controlSize(.small)
+            }
+
             HStack {
                 if vm.authState == .invalidToken || TokenStore.read() == nil {
                     Button("Set Token…") { vm.openSettings() }
