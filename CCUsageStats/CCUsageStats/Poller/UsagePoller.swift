@@ -90,8 +90,13 @@ final class UsagePoller: ObservableObject {
             stop()
 
         case .notSubscriber:
+            // Surface the state but keep polling. A missing rate-limit
+            // header on a single response can be transient (brief Anthropic
+            // hiccup, etc.). When headers return on a later poll the
+            // .success branch flips authState back to .ok automatically.
             authState = .notSubscriber
-            stop()
+            transientFailureCount = 0
+            currentBackoffSeconds = Self.baseInterval
 
         case .rateLimited:
             currentBackoffSeconds = min(Self.maxBackoff, currentBackoffSeconds * 2)

@@ -40,12 +40,29 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertFalse(poller.isPolling)
     }
 
-    func testNotSubscriberSetsStateAndStops() async {
+    func testNotSubscriberSetsStateButKeepsPolling() async {
+        // .notSubscriber is non-terminal: missing rate-limit headers may be
+        // transient, so polling continues and recovers on the next .success.
         let api = StubAPI(); api.queue = [.notSubscriber]
         let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 1 })
         await poller.tickForTest()
         XCTAssertEqual(poller.authState, .notSubscriber)
-        XCTAssertFalse(poller.isPolling)
+        XCTAssertTrue(poller.isPolling)
+    }
+
+    func testNotSubscriberRecoversOnNextSuccess() async {
+        let api = StubAPI()
+        api.queue = [
+            .notSubscriber,
+            .success(.init(
+                fiveHour: WindowSnapshot(usedPercentage: 5, resetsAt: 1_000),
+                sevenDay: nil)),
+        ]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 0 })
+        await poller.tickForTest()
+        XCTAssertEqual(poller.authState, .notSubscriber)
+        await poller.tickForTest()
+        XCTAssertEqual(poller.authState, .ok)
     }
 
     func testFiveTransientFailuresSetOffline() async {

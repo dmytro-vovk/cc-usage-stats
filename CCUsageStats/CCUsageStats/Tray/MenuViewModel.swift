@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 @MainActor
 final class MenuViewModel: ObservableObject {
@@ -42,6 +43,7 @@ final class MenuViewModel: ObservableObject {
     private var cacheWatcher: CacheWatcher?
     private var cancellables: Set<AnyCancellable> = []
     private var lastFiveHour: WindowSnapshot?
+    private var wakeObserver: NSObjectProtocol?
 
     func start() {
         guard poller == nil else { return }
@@ -85,12 +87,27 @@ final class MenuViewModel: ObservableObject {
         clockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.recomputeFromCachedOnly() }
         }
+
+        // Force an immediate refresh when the Mac wakes from sleep —
+        // otherwise the menubar may show stale data for up to one full
+        // poll interval after wake.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshNow() }
+        }
     }
 
     func stop() {
         poller?.stop(); poller = nil
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
+        if let obs = wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
+            wakeObserver = nil
+        }
         cancellables.removeAll()
     }
 
