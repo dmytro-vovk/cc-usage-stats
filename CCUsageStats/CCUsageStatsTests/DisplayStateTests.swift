@@ -54,6 +54,43 @@ final class DisplayStateTests: XCTestCase {
         XCTAssertTrue(s.isStale)
     }
 
+    func testAt100PercentTextBecomesCountdown() {
+        // 1h 30m until reset → "1:30:00"
+        let cached = CachedState(
+            capturedAt: 0,
+            snapshot: .init(
+                fiveHour: .init(usedPercentage: 100, resetsAt: 5400),
+                sevenDay: nil)
+        )
+        let s = DisplayState.compute(now: 0, cached: cached)
+        XCTAssertEqual(s.menuBarText, "1:30:00")
+        XCTAssertEqual(s.utilizationFraction, 1.0)
+    }
+
+    func testAbove100PercentAlsoShowsCountdown() {
+        // Defensive: resets_at countdown clamps at 0:00:00 (reset just passed).
+        let cached = CachedState(
+            capturedAt: 0,
+            snapshot: .init(
+                fiveHour: .init(usedPercentage: 105, resetsAt: 0),
+                sevenDay: nil)
+        )
+        let s = DisplayState.compute(now: 10, cached: cached)
+        XCTAssertEqual(s.menuBarText, "0:00:00")
+    }
+
+    func testCountdownShortensAsTimeAdvances() {
+        let cached = CachedState(
+            capturedAt: 0,
+            snapshot: .init(
+                fiveHour: .init(usedPercentage: 100, resetsAt: 600),
+                sevenDay: nil)
+        )
+        XCTAssertEqual(DisplayState.compute(now: 0,   cached: cached).menuBarText, "0:10:00")
+        XCTAssertEqual(DisplayState.compute(now: 540, cached: cached).menuBarText, "0:01:00")
+        XCTAssertEqual(DisplayState.compute(now: 590, cached: cached).menuBarText, "0:00:10")
+    }
+
     func testNoFiveHourFallsBackToPlaceholder() {
         let cached = CachedState(
             capturedAt: 100,

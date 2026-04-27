@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Background: deep navy → purple, lit from above -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#2a3146"/>
+      <stop offset="0.5" stop-color="#1f2233"/>
+      <stop offset="1"   stop-color="#1a1828"/>
+    </linearGradient>
+
+    <!-- Subtle top highlight for "glass" / lit-from-above feel -->
+    <radialGradient id="topHighlight" cx="0.5" cy="0.0" r="0.7" fx="0.5" fy="0.0">
+      <stop offset="0"   stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Gradient ring: green → orange → red, matches the menubar -->
+    <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0"    stop-color="#34C759"/>
+      <stop offset="0.55" stop-color="#FF9500"/>
+      <stop offset="1"    stop-color="#FF3B30"/>
+    </linearGradient>
+
+    <!-- Subtle vertical tint on the sparkle: lighter top, deeper bottom -->
+    <linearGradient id="sparkleGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#FFF0D6"/>
+      <stop offset="1" stop-color="#FFC78A"/>
+    </linearGradient>
+
+    <!-- Soft glow behind the sparkle, kept narrow so small sizes stay crisp -->
+    <radialGradient id="sparkleGlow" cx="0.5" cy="0.5" r="0.42">
+      <stop offset="0"   stop-color="#FFD9AA" stop-opacity="0.35"/>
+      <stop offset="0.7" stop-color="#FFD9AA" stop-opacity="0.05"/>
+      <stop offset="1"   stop-color="#FFD9AA" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Squircle path. Rounded rect with rx≈22% approximates Apple's
+         continuous-corner shape closely; the difference is invisible at
+         standard icon sizes. Keep the icon mask baked in (legacy macOS
+         convention). -->
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background gradient inside the squircle -->
+  <g clip-path="url(#squircle)">
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bgGrad)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#topHighlight)"/>
+
+    <!-- Soft halo behind the focal element -->
+    <circle cx="512" cy="512" r="420" fill="url(#sparkleGlow)"/>
+
+    <!-- Background ring (subtle, stays inside HIG safe area) -->
+    <circle cx="512" cy="512" r="312"
+            fill="none"
+            stroke="#3c3a52"
+            stroke-width="36"/>
+
+    <!-- Progress ring (~70% filled, top-anchored, clockwise) -->
+    <circle cx="512" cy="512" r="312"
+            fill="none"
+            stroke="url(#ringGrad)"
+            stroke-width="36"
+            stroke-linecap="round"
+            stroke-dasharray="1372 588"
+            stroke-dashoffset="0"
+            transform="rotate(-90 512 512)"/>
+
+    <!-- Sparkle: 8-point Anthropic-style asterisk, two crossed stars.
+         Bigger diagonal star, smaller axis star rotated 45°.
+         Drawn within ~36% of icon size for ~14% padding from squircle edge,
+         well inside the HIG-recommended 10% safe area. -->
+    <g fill="url(#sparkleGrad)">
+      <!-- Diagonal 4-point star (cardinal axes) -->
+      <path d="M 512 312
+               C 540 484 540 484 712 512
+               C 540 540 540 540 512 712
+               C 484 540 484 540 312 512
+               C 484 484 484 484 512 312 Z"/>
+      <!-- Smaller axis star, rotated 45° -->
+      <g transform="rotate(45 512 512)">
+        <path d="M 512 392
+                 C 528 496 528 496 632 512
+                 C 528 528 528 528 512 632
+                 C 496 528 496 528 392 512
+                 C 496 496 496 496 512 392 Z"/>
+      </g>
+    </g>
+
+    <!-- Inner top highlight stroke for the "glass surface" look -->
+    <rect x="6" y="6" width="1012" height="1012" rx="222" ry="222"
+          fill="none"
+          stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
+  </g>
+</svg>

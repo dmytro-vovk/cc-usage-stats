@@ -17,6 +17,19 @@ struct DisplayState: Equatable {
         let pct = Int(five.usedPercentage.rounded())
         let fraction = max(0.0, min(1.0, five.usedPercentage / 100.0))
         let stale = (now - cached.capturedAt) > staleThresholdSeconds
-        return .init(menuBarText: "\(pct)%", utilizationFraction: fraction, isStale: stale, hasFiveHourData: true)
+
+        // At cap, swap the percentage for a live countdown to reset. The
+        // gauge icon's 100%-needle position + red gradient still conveys
+        // "capped"; the text becomes the more useful "2h 14m" instead of
+        // a stuck "100%".
+        let text: String
+        if pct >= 100 {
+            let secondsToReset = max(0, five.resetsAt - now)
+            text = RelativeTime.formatHMS(seconds: secondsToReset)
+        } else {
+            text = "\(pct)%"
+        }
+
+        return .init(menuBarText: text, utilizationFraction: fraction, isStale: stale, hasFiveHourData: true)
     }
 }

@@ -13,4 +13,14 @@ enum RelativeTime {
         let remH = h % 24
         return "\(d)d \(remH)h"
     }
+
+    /// Digital-clock style for the menubar countdown when at 100%.
+    /// Always shows H:MM:SS (e.g. `1:30:45`, `0:00:09`).
+    static func formatHMS(seconds raw: Int64) -> String {
+        let s = max(0, raw)
+        let h = s / 3600
+        let m = (s % 3600) / 60
+        let sec = s % 60
+        return String(format: "%d:%02d:%02d", h, m, sec)
+    }
 }
