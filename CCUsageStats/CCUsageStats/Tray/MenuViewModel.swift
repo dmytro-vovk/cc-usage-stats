@@ -38,15 +38,22 @@ final class MenuViewModel: ObservableObject {
         return SoundPlayer.availableSounds.contains(v) ? v : "Tink"
     }
 
+    @Published private(set) var historySamples: [UsageSample] = []
+    @Published private(set) var forecastSecondsToCap: Int64?
+
     private var poller: UsagePoller?
     private var clockTimer: Timer?
     private var cacheWatcher: CacheWatcher?
     private var cancellables: Set<AnyCancellable> = []
     private var lastFiveHour: WindowSnapshot?
     private var wakeObserver: NSObjectProtocol?
+    private var history: UsageHistory?
 
     func start() {
         guard poller == nil else { return }
+        // Load history once at startup; it persists across app restarts.
+        history = UsageHistory(url: Paths.historyFile)
+        historySamples = history?.samples ?? []
         // Load any cache from previous run.
         reloadCache()
 
@@ -176,6 +183,20 @@ final class MenuViewModel: ObservableObject {
         lastFiveHour = newFive
         cached = newCached
         recomputeFromCachedOnly()
+
+        // Append a sample to history if we have fresh five-hour data.
+        if let cached = newCached, let five = cached.snapshot.fiveHour, let history {
+            let sample = UsageSample(t: cached.capturedAt, p: five.usedPercentage)
+            // Trim to current 5h window.
+            let windowStart = five.resetsAt - 5 * 3600
+            history.append(sample, keepFromEpoch: windowStart)
+            historySamples = history.samples
+            // Recompute forecast.
+            let m = UsageForecast.slope(samples: historySamples)
+            forecastSecondsToCap = UsageForecast.secondsToCap(
+                currentPercent: five.usedPercentage, slope: m
+            )
+        }
 
         if !muteSounds {
             for event in events {

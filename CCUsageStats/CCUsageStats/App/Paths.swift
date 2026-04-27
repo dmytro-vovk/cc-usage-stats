@@ -10,6 +10,7 @@ enum Paths {
 
     static var stateFile: URL { appSupportDir.appendingPathComponent("state.json") }
     static var configFile: URL { appSupportDir.appendingPathComponent("config.json") }
+    static var historyFile: URL { appSupportDir.appendingPathComponent("history.jsonl") }
 
     static var claudeSettings: URL {
         FileManager.default.homeDirectoryForCurrentUser

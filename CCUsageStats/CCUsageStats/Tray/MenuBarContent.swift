@@ -94,7 +94,19 @@ struct MenuBarDropdown: View {
         VStack(alignment: .leading, spacing: 12) {
             // Window rows.
             if let cached = vm.cached {
-                WindowSection(title: "5-hour session", window: cached.snapshot.fiveHour, now: now)
+                WindowSection(
+                    title: "5-hour session",
+                    window: cached.snapshot.fiveHour,
+                    now: now,
+                    sparkline: cached.snapshot.fiveHour.map { five in
+                        SparklineData(
+                            samples: vm.historySamples,
+                            windowStart: five.resetsAt - 5 * 3600,
+                            windowEnd: five.resetsAt,
+                            forecastSecondsToCap: vm.forecastSecondsToCap
+                        )
+                    }
+                )
                 WindowSection(title: "7-day window", window: cached.snapshot.sevenDay, now: now)
 
                 Divider()
@@ -223,10 +235,18 @@ struct MenuBarDropdown: View {
     }
 }
 
+struct SparklineData {
+    let samples: [UsageSample]
+    let windowStart: Int64
+    let windowEnd: Int64
+    let forecastSecondsToCap: Int64?
+}
+
 private struct WindowSection: View {
     let title: String
     let window: WindowSnapshot?
     let now: Int64
+    var sparkline: SparklineData? = nil
 
     var body: some View {
         if let w = window {
@@ -250,7 +270,17 @@ private struct WindowSection: View {
                 ProgressView(value: fraction)
                     .progressViewStyle(.linear)
                     .tint(color)
-                Text(resetCaption(delta: delta))
+                if let sl = sparkline, sl.samples.count >= 2 {
+                    SparklineView(
+                        samples: sl.samples,
+                        windowStart: sl.windowStart,
+                        windowEnd: sl.windowEnd,
+                        color: color,
+                        forecastSecondsToCap: sl.forecastSecondsToCap
+                    )
+                    .frame(height: 32)
+                }
+                Text(resetCaption(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -266,11 +296,16 @@ private struct WindowSection: View {
         }
     }
 
-    private func resetCaption(delta: Int64) -> String {
+    private func resetCaption(delta: Int64, forecastSecs: Int64?) -> String {
+        let resetPart: String
         if delta >= 0 {
-            return "Resets in \(RelativeTime.format(seconds: delta))"
+            resetPart = "Resets in \(RelativeTime.format(seconds: delta))"
         } else {
-            return "Reset \(RelativeTime.format(seconds: -delta)) ago — awaiting fresh data"
+            resetPart = "Reset \(RelativeTime.format(seconds: -delta)) ago — awaiting fresh data"
         }
+        if let f = forecastSecs, f > 0, f < delta {
+            return "\(resetPart) · forecast 100% in \(RelativeTime.format(seconds: f))"
+        }
+        return resetPart
     }
 }
