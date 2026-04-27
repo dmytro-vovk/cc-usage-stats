@@ -1,7 +1,7 @@
 # Claude Code Usage Stats Menubar App — Design Spec
 
 **Date:** 2026-04-25
-**Status:** Design approved, ready for planning
+**Status:** Phase 1 design — **superseded** by [Phase 2 spec](2026-04-25-cc-usage-stats-poller-design.md). The Phase 1 statusline integration described here is no longer present in the codebase; v2.0+ removes it on first launch via `Phase1Cleanup`. Kept for historical reference.
 **Scope:** macOS-only menubar app showing live Claude Code session usage limits
 
 ## Goal

@@ -1,8 +1,22 @@
 # cc-usage-stats Phase 2 — OAuth Poller — Design Spec
 
 **Date:** 2026-04-25
-**Status:** Design approved, ready for planning
+**Status:** Original v0.2 design — historical. Subsequent releases have diverged; the [README](../../../README.md) is the current source of truth.
 **Scope:** Replace the Claude Code statusline integration with a self-polling client of the official Anthropic `/v1/messages` API, so usage is shown regardless of how the user accesses Claude (Desktop, web, or CLI).
+
+> **Divergences since v0.2 (not retroactively edited into the body below):**
+>
+> - **Polling cadence is adaptive**, not fixed 60s: 60s baseline, 10s when >98%, sleep until 30s before reset at 100%. (v0.3.0)
+> - **Threshold notifications shipped** as a configurable warning sound at a user-set %, plus Bottle at 100% and Hero on reset. Originally listed as out-of-scope. (v0.3.0)
+> - **5-hour history persistence + sparkline + linear-regression forecast.** Originally listed as out-of-scope. (v0.5.0)
+> - **`.notSubscriber` is no longer terminal** — the poller keeps polling at the baseline cadence and recovers automatically. (v0.3.1)
+> - **Token discovery on launch only reads our own Keychain entry.** The Claude Code Keychain probe runs only via the explicit "Paste from Claude Code Keychain" button in SettingsWindow. (v0.3.1)
+> - **Wake-from-sleep handler** observes `NSWorkspace.didWakeNotification` and triggers an immediate poll. (v0.3.1)
+> - **Menubar text shows an `H:MM:SS` countdown** when 5h utilization is at 100%, instead of stuck "100%". (v0.4.0)
+> - **OKLab continuous gradient color** (flat green ≤50%, blending through orange to red at 100%) replaces the discrete `tier { neutral, warning, danger }` model.
+> - **Invalid-token glyph** is `exclamationmark.triangle.fill`, not `exclamationmark.gauge`.
+> - **MenuBarExtra style is `.window`** (not `.menu`) so the dropdown re-renders live.
+> - **`Tray/CacheWatcher.swift` was re-introduced** after the Phase 1 cleanup deleted it — useful for picking up manual `state.json` edits during testing and as a defensive measure.
 
 ## Goal
 
