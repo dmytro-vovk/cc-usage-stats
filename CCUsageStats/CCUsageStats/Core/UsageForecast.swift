@@ -27,11 +27,21 @@ enum UsageForecast {
     }
 
     /// Estimated seconds from now until utilization hits 100%, given the
-    /// current value and a slope. Returns nil if the slope is missing or
-    /// utilization is already at/above the cap.
-    static func secondsToCap(currentPercent p: Double, slope: Double?) -> Int64? {
+    /// current value and a slope. Returns nil if the slope is missing,
+    /// utilization is already at/above the cap, or the projection exceeds
+    /// `maxHorizonSeconds` (default: a week — anything past that is
+    /// meaningless for a 5-hour rolling window AND would overflow Int64
+    /// for tiny non-zero slopes).
+    static func secondsToCap(
+        currentPercent p: Double,
+        slope: Double?,
+        maxHorizonSeconds: Int64 = 7 * 24 * 3600
+    ) -> Int64? {
         guard let m = slope, m > 0, p < 100 else { return nil }
         let secs = (100.0 - p) / m
-        return secs.isFinite ? Int64(secs.rounded()) : nil
+        guard secs.isFinite, secs >= 0, secs <= Double(maxHorizonSeconds) else {
+            return nil
+        }
+        return Int64(secs.rounded())
     }
 }

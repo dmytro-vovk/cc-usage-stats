@@ -49,4 +49,24 @@ final class UsageForecastTests: XCTestCase {
             200
         )
     }
+
+    func testSecondsToCapNilForTinySlopeBeyondHorizon() {
+        // Microscopic slope would produce a projection of years — and Int64
+        // bridging would trap at runtime. Should return nil instead.
+        XCTAssertNil(
+            UsageForecast.secondsToCap(currentPercent: 0, slope: 1e-20)
+        )
+    }
+
+    func testSecondsToCapRespectsCustomHorizon() {
+        // Slope projects 200s → within a 1000s horizon → returned.
+        XCTAssertEqual(
+            UsageForecast.secondsToCap(currentPercent: 80, slope: 0.1, maxHorizonSeconds: 1000),
+            200
+        )
+        // Slope projects 200s → outside a 100s horizon → nil.
+        XCTAssertNil(
+            UsageForecast.secondsToCap(currentPercent: 80, slope: 0.1, maxHorizonSeconds: 100)
+        )
+    }
 }
