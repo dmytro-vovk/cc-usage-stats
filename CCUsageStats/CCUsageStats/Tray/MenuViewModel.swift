@@ -40,8 +40,10 @@ final class MenuViewModel: ObservableObject {
 
     @Published private(set) var historySamples: [UsageSample] = []
     @Published private(set) var forecastSecondsToCap: Int64?
+    @Published private(set) var statusReport: StatusReport?
 
     private var poller: UsagePoller?
+    private var statusPoller: StatusPoller?
     private var clockTimer: Timer?
     private var cacheWatcher: CacheWatcher?
     private var cancellables: Set<AnyCancellable> = []
@@ -103,12 +105,28 @@ final class MenuViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshNow() }
+            Task { @MainActor in
+                self?.refreshNow()
+                await self?.statusPoller?.refreshNow()
+            }
         }
+
+        // status.claude.com poller — coarse 5-minute cadence, surfaces
+        // outages in the dropdown without affecting the usage data path.
+        let sp = StatusPoller(client: LiveStatusPollerClient())
+        sp.$report
+            .receive(on: RunLoop.main)
+            .sink { [weak self] new in
+                self?.handleStatusReport(new)
+            }
+            .store(in: &cancellables)
+        statusPoller = sp
+        sp.start()
     }
 
     func stop() {
         poller?.stop(); poller = nil
+        statusPoller?.stop(); statusPoller = nil
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
         if let obs = wakeObserver {
@@ -209,6 +227,19 @@ final class MenuViewModel: ObservableObject {
                     SoundPlayer.playLimitReset()
                 }
             }
+        }
+    }
+
+    private func handleStatusReport(_ new: StatusReport?) {
+        let previous = statusReport
+        statusReport = new
+        // Fire the alert sound on the transition from operational (or no
+        // data) to any non-operational state. Subsequent updates within
+        // an outage (e.g., minor → major) don't refire so we don't spam.
+        let wasOperational = (previous?.indicator ?? .none) == .none
+        let isOperational  = (new?.indicator ?? .none) == .none
+        if wasOperational, !isOperational, !muteSounds {
+            SoundPlayer.playOutageDetected()
         }
     }
 

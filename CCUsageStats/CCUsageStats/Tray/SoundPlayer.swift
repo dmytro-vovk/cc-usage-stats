@@ -13,6 +13,7 @@ enum SoundPlayer {
         NSSound(named: NSSound.Name(name))?.play()
     }
 
-    static func playReachedLimit() { play(named: "Bottle") }
-    static func playLimitReset()   { play(named: "Hero") }
+    static func playReachedLimit()    { play(named: "Bottle") }
+    static func playLimitReset()      { play(named: "Hero") }
+    static func playOutageDetected()  { play(named: "Sosumi") }
 }

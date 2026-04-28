@@ -33,10 +33,25 @@ struct MenuBarLabel: View {
             : NSAttributedString(string: "", attributes: attrs)
         let textSize = attr.size()
 
+        // Outage badge — only when status.claude.com reports anything
+        // beyond "All Systems Operational". Drawn after the percentage in
+        // its severity color so the user knows there's an outage without
+        // having to open the dropdown.
+        let outageIcon: NSImage? = {
+            guard let r = vm.statusReport, r.indicator != .none else { return nil }
+            let color = NSColor(outageColor(for: r.indicator))
+            let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+            return NSImage(systemSymbolName: outageSymbol(for: r.indicator), accessibilityDescription: nil)?
+                .withSymbolConfiguration(cfg)
+        }()
+
         let iconSize = icon.size
-        let spacing: CGFloat = showText && !attr.string.isEmpty ? 4 : 0
-        let width = iconSize.width + spacing + textSize.width
-        let height = max(iconSize.height, textSize.height)
+        let textSpacing: CGFloat = showText && !attr.string.isEmpty ? 4 : 0
+        let outageSpacing: CGFloat = outageIcon != nil ? 6 : 0
+        let outageW = outageIcon?.size.width ?? 0
+        let width = iconSize.width + textSpacing + textSize.width + outageSpacing + outageW
+        let height = max(iconSize.height, textSize.height, outageIcon?.size.height ?? 0)
 
         let composite = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
             icon.draw(in: NSRect(
@@ -46,13 +61,41 @@ struct MenuBarLabel: View {
                 height: iconSize.height
             ))
             attr.draw(at: NSPoint(
-                x: iconSize.width + spacing,
+                x: iconSize.width + textSpacing,
                 y: (height - textSize.height) / 2
             ))
+            if let oi = outageIcon {
+                oi.draw(in: NSRect(
+                    x: iconSize.width + textSpacing + textSize.width + outageSpacing,
+                    y: (height - oi.size.height) / 2,
+                    width: oi.size.width,
+                    height: oi.size.height
+                ))
+            }
             return true
         }
         composite.isTemplate = false
         return composite
+    }
+
+    private func outageSymbol(for ind: StatusReport.Indicator) -> String {
+        switch ind {
+        case .minor:       return "exclamationmark.circle.fill"
+        case .major:       return "exclamationmark.triangle.fill"
+        case .critical:    return "xmark.octagon.fill"
+        case .maintenance: return "wrench.adjustable.fill"
+        case .none:        return "checkmark.circle.fill"
+        }
+    }
+
+    private func outageColor(for ind: StatusReport.Indicator) -> Color {
+        switch ind {
+        case .minor:       return .yellow
+        case .major:       return .orange
+        case .critical:    return .red
+        case .maintenance: return .blue
+        case .none:        return .secondary
+        }
     }
 
     private func glyph() -> String {
@@ -92,6 +135,10 @@ struct MenuBarDropdown: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Outage banner (only when status.claude.com reports anything
+            // beyond "All Systems Operational").
+            statusBanner
+
             // Window rows.
             if let cached = vm.cached {
                 WindowSection(
@@ -213,6 +260,57 @@ struct MenuBarDropdown: View {
     }
 
     private var now: Int64 { Int64(Date().timeIntervalSince1970) }
+
+    @ViewBuilder
+    private var statusBanner: some View {
+        if let r = vm.statusReport, r.indicator != .none {
+            VStack(alignment: .leading, spacing: 2) {
+                Label {
+                    Text(r.description)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                } icon: {
+                    Image(systemName: statusBannerSymbol(for: r.indicator))
+                        .font(.caption)
+                }
+                .foregroundStyle(statusBannerColor(for: r.indicator))
+                if let inc = r.activeIncident {
+                    Text(inc)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Link("Details on status.claude.com",
+                     destination: URL(string: "https://status.claude.com")!)
+                    .font(.caption2)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(statusBannerColor(for: r.indicator).opacity(0.10))
+            .cornerRadius(6)
+            Divider()
+        }
+    }
+
+    private func statusBannerSymbol(for ind: StatusReport.Indicator) -> String {
+        switch ind {
+        case .minor:       return "exclamationmark.circle.fill"
+        case .major:       return "exclamationmark.triangle.fill"
+        case .critical:    return "xmark.octagon.fill"
+        case .maintenance: return "wrench.adjustable.fill"
+        case .none:        return "checkmark.circle.fill"
+        }
+    }
+
+    private func statusBannerColor(for ind: StatusReport.Indicator) -> Color {
+        switch ind {
+        case .minor:       return .yellow
+        case .major:       return .orange
+        case .critical:    return .red
+        case .maintenance: return .blue
+        case .none:        return .secondary
+        }
+    }
 
     @ViewBuilder
     private var authStatusRow: some View {
