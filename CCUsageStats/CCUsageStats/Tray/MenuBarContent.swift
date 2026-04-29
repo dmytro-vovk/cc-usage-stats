@@ -250,18 +250,14 @@ struct MenuBarDropdown: View {
                     Button("Reset Token…") { vm.resetToken() }
                 }
                 Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .keyboardShortcut("q")
-            }
-            .controlSize(.small)
-
-            HStack {
-                Spacer()
                 Text(versionString)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                 Spacer()
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .keyboardShortcut("q")
             }
+            .controlSize(.small)
         }
         .padding(14)
         .frame(width: 280, alignment: .leading)

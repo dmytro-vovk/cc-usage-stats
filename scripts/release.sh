@@ -6,28 +6,11 @@ VERSION="${1:?usage: release.sh <version>  e.g. release.sh v0.1.0}"
 SHORT_VERSION="${VERSION#v}"
 
 echo "==> Building Release for $VERSION"
-# Inject MARKETING_VERSION + CURRENT_PROJECT_VERSION so the bundle and
-# the in-app dropdown show the actual release version, not the
-# pbxproj's hardcoded 1.0.
-BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
-arch -arm64 xcodebuild \
-    -scheme CCUsageStats \
-    -configuration Release \
-    -derivedDataPath build \
-    -project CCUsageStats/CCUsageStats.xcodeproj \
-    CODE_SIGN_IDENTITY=- \
-    CODE_SIGNING_REQUIRED=NO \
-    ONLY_ACTIVE_ARCH=NO \
-    ARCHS=arm64 \
-    MARKETING_VERSION="$SHORT_VERSION" \
-    CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-    build
-
-mkdir -p dist
-APP="$(find build/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
-rm -rf "dist/CCUsageStats.app"
-cp -R "$APP" "dist/"
-echo "Built: dist/CCUsageStats.app (v$SHORT_VERSION build $BUILD_NUMBER)"
+# Pin the version explicitly for release builds; build.sh would otherwise
+# fall back to the latest existing tag (which is the *previous* release
+# at this point in time).
+export MARKETING_VERSION_OVERRIDE="$SHORT_VERSION"
+./scripts/build.sh
 
 ARTIFACTS_DIR="dist/$VERSION"
 mkdir -p "$ARTIFACTS_DIR"
