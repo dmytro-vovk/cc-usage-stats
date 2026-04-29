@@ -22,8 +22,21 @@ struct SparklineView: View {
     @ViewBuilder
     private func content(size: CGSize) -> some View {
         let pts = points(in: size)
+        let hourXs = hourBoundaries(width: size.width)
 
         ZStack {
+            // Faint hour gridlines (local-time hour marks within the window).
+            if !hourXs.isEmpty {
+                Path { p in
+                    for x in hourXs {
+                        p.move(to: CGPoint(x: x, y: 0))
+                        p.addLine(to: CGPoint(x: x, y: size.height))
+                    }
+                }
+                .stroke(Color.secondary.opacity(0.18),
+                        style: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
+            }
+
             if pts.count >= 2 {
                 fillPath(points: pts, height: size.height)
                     .fill(LinearGradient(
@@ -59,14 +72,48 @@ struct SparklineView: View {
         }
     }
 
+    /// Returns the X positions of every wall-clock hour boundary that
+    /// falls inside `[windowStart, windowEnd]`, in chart-local pixels.
+    private func hourBoundaries(width: CGFloat) -> [CGFloat] {
+        let cal = Calendar.current
+        let startDate = Date(timeIntervalSince1970: TimeInterval(windowStart))
+        let comps = cal.dateComponents([.year, .month, .day, .hour], from: startDate)
+        guard let firstHour = cal.date(from: comps) else { return [] }
+        var t = Int64(firstHour.timeIntervalSince1970)
+        if t < windowStart { t += 3600 }
+
+        let xRange = max(1.0, Double(windowEnd - windowStart))
+        var out: [CGFloat] = []
+        while t <= windowEnd {
+            let xClamp = max(0.0, min(1.0, Double(t - windowStart) / xRange))
+            out.append(CGFloat(xClamp) * width)
+            t += 3600
+        }
+        return out
+    }
+
     private func points(in size: CGSize) -> [CGPoint] {
         samples.map { pointFor(t: $0.t, p: $0.p, in: size) }
+    }
+
+    /// Y-axis ceiling. Tier-zooms based on the max observed sample so the
+    /// fill stays visible at low utilization. Tiers: 25 / 50 / 75 / 100.
+    /// At ~7% the chart shows 0–25 scale → line lives in the upper third
+    /// of the chart instead of glued to the bottom edge.
+    private var yMax: Double {
+        let m = samples.map(\.p).max() ?? 0
+        if m > 75 { return 100 }
+        if m > 50 { return 75 }
+        if m > 25 { return 50 }
+        return 25
     }
 
     private func pointFor(t: Int64, p: Double, in size: CGSize) -> CGPoint {
         let xRange = max(1.0, Double(windowEnd - windowStart))
         let xClamp = max(0.0, min(1.0, Double(t - windowStart) / xRange))
-        let yClamp = max(0.0, min(100.0, p)) / 100.0
+        // Clamp p to yMax so the forecast line (which projects to 100%)
+        // exits cleanly off the top edge when the chart is zoomed in.
+        let yClamp = max(0.0, min(yMax, p)) / yMax
         return CGPoint(x: xClamp * size.width, y: size.height - yClamp * size.height)
     }
 
