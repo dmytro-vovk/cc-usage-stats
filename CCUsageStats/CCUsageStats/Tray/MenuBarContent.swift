@@ -254,9 +254,24 @@ struct MenuBarDropdown: View {
                     .keyboardShortcut("q")
             }
             .controlSize(.small)
+
+            HStack {
+                Spacer()
+                Text(versionString)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
         }
         .padding(14)
         .frame(width: 280, alignment: .leading)
+    }
+
+    private var versionString: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let short = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        return "v\(short) (\(build))"
     }
 
     private var now: Int64 { Int64(Date().timeIntervalSince1970) }
