@@ -12,31 +12,43 @@ struct MenuBarLabel: View {
     }
 
     private func renderedLabel() -> NSImage {
-        let nsColor = NSColor(tint()).withAlphaComponent(vm.displayState.isStale ? 0.5 : 1.0)
+        let staleAlpha: CGFloat = vm.displayState.isStale ? 0.5 : 1.0
+        let pillColor = tintNSColor().withAlphaComponent(staleAlpha)
+        // Icon + text sit on top of the colored pill. Light menubar →
+        // white-on-color (max contrast against the bright pill). Dark
+        // menubar → near-black-on-color so the gauge doesn't glow as a
+        // bright white blob; the dark glyph reads well on the slightly
+        // brighter dark-mode anchors.
+        let isDark = NSApp.effectiveAppearance
+            .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let onColor = (isDark ? NSColor.black : NSColor.white)
+            .withAlphaComponent(staleAlpha)
         let showText = vm.authState != .invalidToken
+        // The pill is drawn for normal (gauge) states. For invalid token
+        // we drop the pill — the bare red triangle is the alarm.
+        let usePill = vm.authState != .invalidToken
 
-        // Icon. If the chosen SF Symbol isn't available, fall back to the
-        // generic `gauge` so we never end up with an invisible 0-sized image.
-        let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [nsColor]))
+        // Icon.
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [usePill ? onColor : pillColor]))
         let symbol = NSImage(systemSymbolName: glyph(), accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "gauge", accessibilityDescription: nil)
         let icon = symbol?.withSymbolConfiguration(iconConfig) ?? NSImage(size: NSSize(width: 14, height: 14))
 
-        // Text
+        // Text — use a slightly heavier weight so it's punchy on the pill.
+        let textColor = usePill ? onColor : NSColor.labelColor.withAlphaComponent(staleAlpha)
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small), weight: .semibold)
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: nsColor,
-            .font: NSFont.menuBarFont(ofSize: 0),
+            .foregroundColor: textColor,
+            .font: font,
         ]
         let attr = showText
             ? NSAttributedString(string: vm.displayState.menuBarText, attributes: attrs)
             : NSAttributedString(string: "", attributes: attrs)
         let textSize = attr.size()
 
-        // Outage badge — only when status.claude.com reports anything
-        // beyond "All Systems Operational". Drawn after the percentage in
-        // its severity color so the user knows there's an outage without
-        // having to open the dropdown.
+        // Outage badge sits OUTSIDE the colored pill so its severity
+        // color doesn't clash with the gauge's gradient color.
         let outageIcon: NSImage? = {
             guard let r = vm.statusReport, r.indicator != .none else { return nil }
             let color = NSColor(outageColor(for: r.indicator))
@@ -46,27 +58,56 @@ struct MenuBarLabel: View {
                 .withSymbolConfiguration(cfg)
         }()
 
+        // Pill geometry.
         let iconSize = icon.size
         let textSpacing: CGFloat = showText && !attr.string.isEmpty ? 4 : 0
+        let pillInnerWidth = iconSize.width + textSpacing + textSize.width
+        let pillInnerHeight = max(iconSize.height, textSize.height)
+        let pillPaddingX: CGFloat = usePill ? 7 : 0
+        let pillPaddingY: CGFloat = usePill ? 2 : 0
+        let pillWidth = pillInnerWidth + 2 * pillPaddingX
+        let pillHeight = pillInnerHeight + 2 * pillPaddingY
+        let pillCornerRadius: CGFloat = pillHeight / 2
+
         let outageSpacing: CGFloat = outageIcon != nil ? 6 : 0
         let outageW = outageIcon?.size.width ?? 0
-        let width = iconSize.width + textSpacing + textSize.width + outageSpacing + outageW
-        let height = max(iconSize.height, textSize.height, outageIcon?.size.height ?? 0)
+        let width = pillWidth + outageSpacing + outageW
+        let height = max(pillHeight, outageIcon?.size.height ?? 0)
 
         let composite = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            // Pill background.
+            if usePill {
+                let pillRect = NSRect(
+                    x: 0,
+                    y: (height - pillHeight) / 2,
+                    width: pillWidth,
+                    height: pillHeight
+                )
+                let path = NSBezierPath(
+                    roundedRect: pillRect,
+                    xRadius: pillCornerRadius,
+                    yRadius: pillCornerRadius
+                )
+                pillColor.setFill()
+                path.fill()
+            }
+
+            // Icon
             icon.draw(in: NSRect(
-                x: 0,
+                x: pillPaddingX,
                 y: (height - iconSize.height) / 2,
                 width: iconSize.width,
                 height: iconSize.height
             ))
+            // Text
             attr.draw(at: NSPoint(
-                x: iconSize.width + textSpacing,
+                x: pillPaddingX + iconSize.width + textSpacing,
                 y: (height - textSize.height) / 2
             ))
+            // Outage badge (outside the pill, on its own).
             if let oi = outageIcon {
                 oi.draw(in: NSRect(
-                    x: iconSize.width + textSpacing + textSize.width + outageSpacing,
+                    x: pillWidth + outageSpacing,
                     y: (height - oi.size.height) / 2,
                     width: oi.size.width,
                     height: oi.size.height
@@ -118,15 +159,30 @@ struct MenuBarLabel: View {
     }
 
     private func tint() -> Color {
+        // Kept for the SwiftUI side (badges, link colors). NSImage rendering
+        // uses tintNSColor() so it can pick mode-aware anchors.
         switch vm.authState {
         case .invalidToken: return .red
         case .notSubscriber: return .secondary
         case .offline, .ok, .unknown: break
         }
         if vm.displayState.isStale { return .secondary }
-        // No data yet (first run or no five_hour) → neutral system color.
         guard let f = vm.displayState.utilizationFraction else { return .primary }
         return UsageColor.gradient(t: f)
+    }
+
+    /// Picks the menubar gauge color with anchors that adapt to the
+    /// system's effective appearance (light vs dark) so the gauge stays
+    /// readable on a light menubar / wallpaper as well as a dark one.
+    private func tintNSColor() -> NSColor {
+        switch vm.authState {
+        case .invalidToken: return .systemRed
+        case .notSubscriber: return .secondaryLabelColor
+        case .offline, .ok, .unknown: break
+        }
+        if vm.displayState.isStale { return .secondaryLabelColor }
+        guard let f = vm.displayState.utilizationFraction else { return .labelColor }
+        return UsageColor.nsColor(t: f)
     }
 }
 
@@ -356,12 +412,13 @@ private struct WindowSection: View {
     let window: WindowSnapshot?
     let now: Int64
     var sparkline: SparklineData? = nil
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         if let w = window {
             let pct = Int(w.usedPercentage.rounded())
             let fraction = max(0.0, min(1.0, w.usedPercentage / 100.0))
-            let color = UsageColor.gradient(t: fraction)
+            let color = UsageColor.gradient(t: fraction, scheme: colorScheme)
             let delta = w.resetsAt - now
 
             VStack(alignment: .leading, spacing: 4) {

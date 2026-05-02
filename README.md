@@ -18,8 +18,11 @@ desktop app, the web, or the CLI.
 &nbsp;&nbsp;&nbsp;&nbsp;
 ![menubar outage indicator](docs/screenshots/menubar-outage.png)
 
-- A gauge icon + percentage, both colour-shifted along an OKLab gradient
-  (flat green ≤50%, then blending through orange to red at 100%).
+- A gauge icon + percentage rendered on a colour-shifted pill — the
+  pill background follows an OKLab gradient (flat green ≤50%, blending
+  through orange to red at 100%), with the icon+text inverted (white in
+  light mode, dark in dark mode) for high contrast against any menubar
+  background.
 - At 100% the percentage swaps to a live `H:MM:SS` countdown to the
   window reset.
 - A severity-tinted SF Symbol appended to the right when
