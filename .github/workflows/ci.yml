@@ -27,7 +27,8 @@ jobs:
             -destination 'platform=macOS' \
             -project CCUsageStats/CCUsageStats.xcodeproj \
             CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO \
+            MACOSX_DEPLOYMENT_TARGET=13.5
 
       - name: Run unit tests
         run: |
@@ -37,4 +38,5 @@ jobs:
             -project CCUsageStats/CCUsageStats.xcodeproj \
             -only-testing:CCUsageStatsTests \
             CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO \
+            MACOSX_DEPLOYMENT_TARGET=13.5
