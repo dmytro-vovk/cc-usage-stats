@@ -71,19 +71,29 @@ final class SettingsViewModel: ObservableObject {
         token = t
         busy = true
         defer { busy = false }
-        do { try TokenStore.write(t) }
-        catch { self.error = "Keychain write failed: \(error)"; return false }
 
+        // Verify FIRST. Only write to Keychain if the token actually
+        // works (or if the verification is inconclusive due to network
+        // / rate-limit). A 401/403 must never overwrite the existing
+        // good token.
         let result = await testFire(t)
         switch result {
         case .success, .notSubscriber:
-            onSaveSuccess(t); return true
+            do { try TokenStore.write(t) }
+            catch { self.error = "Keychain write failed: \(error)"; return false }
+            onSaveSuccess(t)
+            return true
         case .invalidToken:
             self.error = "Anthropic rejected the token (401/403). Check it and try again."
-            return false
+            return false  // existing token left intact
         case .rateLimited, .transient:
+            // Couldn't verify — accept optimistically so the user isn't
+            // blocked by transient outages, but the user is told.
+            do { try TokenStore.write(t) }
+            catch { self.error = "Keychain write failed: \(error)"; return false }
             self.error = "Couldn't verify token (network or rate-limit). Saved anyway; the poller will retry."
-            onSaveSuccess(t); return true
+            onSaveSuccess(t)
+            return true
         }
     }
 }

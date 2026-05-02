@@ -247,7 +247,7 @@ struct MenuBarDropdown: View {
                 if vm.authState == .invalidToken || TokenStore.read() == nil {
                     Button("Set Token…") { vm.openSettings() }
                 } else {
-                    Button("Reset Token…") { vm.resetToken() }
+                    Button("Change Token…") { vm.changeToken() }
                 }
                 Spacer()
                 Text(versionString)

@@ -153,10 +153,11 @@ final class MenuViewModel: ObservableObject {
         SettingsWindowController.shared.show(viewModel: vm)
     }
 
-    func resetToken() {
-        try? TokenStore.delete()
-        authState = .invalidToken
-        poller?.stop(); poller = nil
+    /// Opens the settings dialog so the user can paste a new token.
+    /// The existing token is left intact in Keychain until a new one is
+    /// successfully verified — cancelling the dialog leaves everything
+    /// unchanged.
+    func changeToken() {
         openSettings()
     }
 

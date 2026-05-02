@@ -10,6 +10,22 @@ usage — the same numbers Claude Desktop's **Settings → Usage** screen
 displays. Live-updates regardless of whether you use Claude via the
 desktop app, the web, or the CLI.
 
+## Screenshots
+
+In the menubar:
+
+![menubar gauge at 9%](docs/screenshots/menubar.png)
+&nbsp;&nbsp;&nbsp;&nbsp;
+![menubar outage indicator](docs/screenshots/menubar-outage.png)
+
+Click for the full dropdown:
+
+![dropdown panel](docs/screenshots/dropdown.png)
+
+Set/change OAuth token:
+
+![Set OAuth Token window](docs/screenshots/settings.png)
+
 ## What you see
 
 In the menubar:
