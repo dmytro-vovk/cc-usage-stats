@@ -10,56 +10,66 @@ usage — the same numbers Claude Desktop's **Settings → Usage** screen
 displays. Live-updates regardless of whether you use Claude via the
 desktop app, the web, or the CLI.
 
-## Screenshots
-
-In the menubar:
-
-![menubar gauge at 9%](docs/screenshots/menubar.png)
-&nbsp;&nbsp;&nbsp;&nbsp;
-![menubar outage indicator](docs/screenshots/menubar-outage.png)
-
-Click for the full dropdown:
-
-![dropdown panel](docs/screenshots/dropdown.png)
-
-Set/change OAuth token:
-
-![Set OAuth Token window](docs/screenshots/settings.png)
-
 ## What you see
 
-In the menubar:
+### Menubar
+
+![menubar gauge](docs/screenshots/menubar.png)
+&nbsp;&nbsp;&nbsp;&nbsp;
+![menubar outage indicator](docs/screenshots/menubar-outage.png)
 
 - A gauge icon + percentage, both colour-shifted along an OKLab gradient
   (flat green ≤50%, then blending through orange to red at 100%).
 - At 100% the percentage swaps to a live `H:MM:SS` countdown to the
   window reset.
-- A red `⚠︎` triangle if the OAuth token is rejected.
+- A severity-tinted SF Symbol appended to the right when
+  status.claude.com reports a non-operational state, so you see an
+  outage without opening the dropdown.
+- A red `⚠︎` triangle (in place of the gauge) if the OAuth token is
+  rejected.
 
-In the dropdown:
+### Dropdown
+
+![dropdown panel](docs/screenshots/dropdown.png)
 
 - 5-hour and 7-day windows: title + bold gradient-coloured percentage,
   a tinted progress bar, and a `Resets in …` caption.
 - For the 5-hour row, a **filled-area sparkline** of the last samples
   with a dashed forecast line projecting toward 100% based on a linear
-  regression of the recent trend. The caption appends
-  `· forecast 100% in Nm` when the slope predicts a cap before reset.
+  regression of the recent trend. Y-axis auto-zooms (25 / 50 / 75 /
+  100% tiers) so the fill stays visible at low utilization. The
+  caption appends `· forecast 100% in Nm` when the slope predicts a
+  cap before reset. Faint dashed vertical gridlines at every wall-clock
+  hour boundary inside the window.
 - "Last updated Xs ago" with a small ↻ refresh button (⌘R).
-- Auth/connectivity rows when relevant (`Token rejected`, `Offline`,
-  `No subscription rate-limit data`).
+- Auth / connectivity / outage rows when relevant
+  (`Token rejected`, `Offline`, `No subscription rate-limit data`,
+  the status.claude.com banner).
 - Settings: **Launch at Login**, **Mute Sounds**, **Warn at threshold**
   (with stepper 1–99% and a sound picker covering all 14 macOS system
   sounds).
-- Footer: **Set/Reset Token…** + **Quit**.
+- Footer: **Set Token… / Change Token…** + version label + **Quit**.
 
-Notification sounds:
+### Notification sounds
 
 - **Bottle** — fired once when 5-hour utilization first crosses 100%.
 - **Hero** — fired when the 5-hour window resets (`resets_at` advances).
+- **Sosumi** — fired once on the operational → outage transition
+  reported by status.claude.com.
 - **Configurable** — your chosen sound at your chosen threshold (e.g.
   Tink at 80%). Selection previews the sound on change.
 
 All sounds respect the **Mute Sounds** toggle.
+
+### Set / Change OAuth Token
+
+![Set OAuth Token window](docs/screenshots/settings.png)
+
+The dialog opens via **Set Token…** / **Change Token…** in the
+dropdown. The existing Keychain entry is left untouched until a new
+token is successfully verified — cancelling leaves everything as it
+was. A 401/403 from Anthropic surfaces inline; the existing-good token
+is not overwritten by a bad new one.
 
 ## How it works
 
@@ -128,10 +138,17 @@ to make the migration idempotent.
 
 ## Uninstall
 
-1. Click the menubar icon → **Reset Token…** → Cancel the paste window.
-   That wipes our Keychain entry.
-2. Quit the app from the menubar.
-3. `rm -rf ~/Applications/CCUsageStats.app ~/Library/Application\ Support/cc-usage-stats/`
+```bash
+# Quit + remove the app
+killall CCUsageStats 2>/dev/null
+rm -rf ~/Applications/CCUsageStats.app
+
+# Forget the OAuth token in Keychain
+security delete-generic-password -s cc-usage-stats -a oauth-token
+
+# Remove cache + history + sentinel
+rm -rf ~/Library/Application\ Support/cc-usage-stats/
+```
 
 ## Privacy
 
