@@ -1,5 +1,9 @@
 # cc-usage-stats
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/dmytro-vovk/cc-usage-stats)](https://github.com/dmytro-vovk/cc-usage-stats/releases/latest)
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-lightgrey)](#install)
+
 macOS menubar app that shows your Claude.ai 5-hour and 7-day rate-limit
 usage — the same numbers Claude Desktop's **Settings → Usage** screen
 displays. Live-updates regardless of whether you use Claude via the
@@ -135,3 +139,15 @@ to make the migration idempotent.
 ## Manual test checklist
 
 See [docs/manual-test-checklist.md](docs/manual-test-checklist.md).
+
+## Contributing
+
+PRs welcome. Run `xcodebuild test -scheme CCUsageStats -destination 'platform=macOS' -project CCUsageStats/CCUsageStats.xcodeproj -only-testing:CCUsageStatsTests` before submitting; the unit suite covers all the pure pieces (parser, store, poller state machine, forecast, history).
+
+This is a personal-use app shipped to scratch one specific itch (a menubar reminder of Claude.ai usage). Don't expect a roadmap. Bug reports + small targeted PRs are the most likely things to land.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+This project is not affiliated with or endorsed by Anthropic. "Claude" and "Claude.ai" are trademarks of Anthropic.
