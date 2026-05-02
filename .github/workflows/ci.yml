@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build + unit tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build (Release)
+        run: |
+          xcodebuild build \
+            -scheme CCUsageStats \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -project CCUsageStats/CCUsageStats.xcodeproj \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -scheme CCUsageStats \
+            -destination 'platform=macOS' \
+            -project CCUsageStats/CCUsageStats.xcodeproj \
+            -only-testing:CCUsageStatsTests \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_REQUIRED=NO

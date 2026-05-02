@@ -1,5 +1,6 @@
 # cc-usage-stats
 
+[![CI](https://github.com/dmytro-vovk/cc-usage-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/dmytro-vovk/cc-usage-stats/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/dmytro-vovk/cc-usage-stats)](https://github.com/dmytro-vovk/cc-usage-stats/releases/latest)
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-lightgrey)](#install)
