@@ -11,31 +11,39 @@ final class MenuViewModel: ObservableObject {
     @Published private(set) var authState: AuthState = .unknown
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
     @Published var lastError: String?
-    @Published var muteSounds: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.muteSoundsKey) {
-        didSet { UserDefaults.standard.set(muteSounds, forKey: Self.muteSoundsKey) }
-    }
     @Published var warningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.warningEnabledKey) {
         didSet { UserDefaults.standard.set(warningEnabled, forKey: Self.warningEnabledKey) }
     }
     @Published var warningThreshold: Int = MenuViewModel.readWarningThreshold() {
         didSet { UserDefaults.standard.set(warningThreshold, forKey: Self.warningThresholdKey) }
     }
-    @Published var warningSound: String = MenuViewModel.readWarningSound() {
+    @Published var warningSound: String = MenuViewModel.readSound(key: warningSoundKey, default: "Tink") {
         didSet { UserDefaults.standard.set(warningSound, forKey: Self.warningSoundKey) }
     }
-    private static let muteSoundsKey       = "cc-usage-stats.muteSounds"
-    private static let warningEnabledKey   = "cc-usage-stats.warningEnabled"
-    private static let warningThresholdKey = "cc-usage-stats.warningThreshold"
-    private static let warningSoundKey     = "cc-usage-stats.warningSound"
+    @Published var reachedLimitSound: String = MenuViewModel.readSound(key: reachedLimitSoundKey, default: "Bottle") {
+        didSet { UserDefaults.standard.set(reachedLimitSound, forKey: Self.reachedLimitSoundKey) }
+    }
+    @Published var limitResetSound: String = MenuViewModel.readSound(key: limitResetSoundKey, default: "Hero") {
+        didSet { UserDefaults.standard.set(limitResetSound, forKey: Self.limitResetSoundKey) }
+    }
+    @Published var outageSound: String = MenuViewModel.readSound(key: outageSoundKey, default: "Sosumi") {
+        didSet { UserDefaults.standard.set(outageSound, forKey: Self.outageSoundKey) }
+    }
+    private static let warningEnabledKey    = "cc-usage-stats.warningEnabled"
+    private static let warningThresholdKey  = "cc-usage-stats.warningThreshold"
+    private static let warningSoundKey      = "cc-usage-stats.warningSound"
+    private static let reachedLimitSoundKey = "cc-usage-stats.reachedLimitSound"
+    private static let limitResetSoundKey   = "cc-usage-stats.limitResetSound"
+    private static let outageSoundKey       = "cc-usage-stats.outageSound"
 
     private static func readWarningThreshold() -> Int {
         let v = UserDefaults.standard.integer(forKey: warningThresholdKey)
         return (v >= 1 && v <= 99) ? v : 80
     }
 
-    private static func readWarningSound() -> String {
-        let v = UserDefaults.standard.string(forKey: warningSoundKey) ?? ""
-        return SoundPlayer.availableSounds.contains(v) ? v : "Tink"
+    private static func readSound(key: String, default fallback: String) -> String {
+        let v = UserDefaults.standard.string(forKey: key) ?? ""
+        return SoundPlayer.pickableSounds.contains(v) ? v : fallback
     }
 
     @Published private(set) var historySamples: [UsageSample] = []
@@ -217,16 +225,16 @@ final class MenuViewModel: ObservableObject {
             )
         }
 
-        if !muteSounds {
-            for event in events {
-                switch event {
-                case .crossedThreshold(let p) where p == 100:
-                    SoundPlayer.playReachedLimit()
-                case .crossedThreshold:
-                    SoundPlayer.play(named: warningSound)
-                case .windowReset:
-                    SoundPlayer.playLimitReset()
-                }
+        // Each event has its own sound preference (with "None" to mute
+        // an individual event); there is no global mute toggle.
+        for event in events {
+            switch event {
+            case .crossedThreshold(let p) where p == 100:
+                SoundPlayer.play(named: reachedLimitSound)
+            case .crossedThreshold:
+                SoundPlayer.play(named: warningSound)
+            case .windowReset:
+                SoundPlayer.play(named: limitResetSound)
             }
         }
     }
@@ -239,8 +247,8 @@ final class MenuViewModel: ObservableObject {
         // an outage (e.g., minor → major) don't refire so we don't spam.
         let wasOperational = (previous?.indicator ?? .none) == .none
         let isOperational  = (new?.indicator ?? .none) == .none
-        if wasOperational, !isOperational, !muteSounds {
-            SoundPlayer.playOutageDetected()
+        if wasOperational, !isOperational {
+            SoundPlayer.play(named: outageSound)
         }
     }
 

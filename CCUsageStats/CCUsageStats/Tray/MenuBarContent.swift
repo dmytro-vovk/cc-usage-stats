@@ -258,11 +258,6 @@ struct MenuBarDropdown: View {
                 set: { _ in vm.toggleLaunchAtLogin() }
             ))
             .toggleStyle(.checkbox)
-            Toggle("Mute Sounds", isOn: Binding(
-                get: { vm.muteSounds },
-                set: { vm.muteSounds = $0 }
-            ))
-            .toggleStyle(.checkbox)
 
             Toggle("Warn at threshold", isOn: Binding(
                 get: { vm.warningEnabled },
@@ -285,10 +280,10 @@ struct MenuBarDropdown: View {
                         set: { newValue in
                             vm.warningSound = newValue
                             // Preview on change so the user hears their pick.
-                            if !vm.muteSounds { SoundPlayer.play(named: newValue) }
+                            SoundPlayer.play(named: newValue)
                         }
                     )) {
-                        ForEach(SoundPlayer.availableSounds, id: \.self) { name in
+                        ForEach(SoundPlayer.pickableSounds, id: \.self) { name in
                             Text(name).tag(name)
                         }
                     }
@@ -298,6 +293,26 @@ struct MenuBarDropdown: View {
                 .padding(.leading, 18)
                 .controlSize(.small)
             }
+
+            // Per-event sound configuration. "None" mutes that one
+            // event; there is no global mute toggle.
+            Text("Sounds")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+
+            soundRow(label: "Limit reached", binding: Binding(
+                get: { vm.reachedLimitSound },
+                set: { vm.reachedLimitSound = $0 }
+            ))
+            soundRow(label: "Window reset", binding: Binding(
+                get: { vm.limitResetSound },
+                set: { vm.limitResetSound = $0 }
+            ))
+            soundRow(label: "Outage detected", binding: Binding(
+                get: { vm.outageSound },
+                set: { vm.outageSound = $0 }
+            ))
 
             HStack {
                 if vm.authState == .invalidToken || TokenStore.read() == nil {
@@ -328,19 +343,52 @@ struct MenuBarDropdown: View {
 
     private var now: Int64 { Int64(Date().timeIntervalSince1970) }
 
+    /// Row used by the per-event sound configuration block: a label on
+    /// the left and a sound picker on the right. Picking previews the
+    /// sound so users can audition; "None" silences that one event.
+    @ViewBuilder
+    private func soundRow(label: String, binding: Binding<String>) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Picker("", selection: Binding(
+                get: { binding.wrappedValue },
+                set: { newValue in
+                    binding.wrappedValue = newValue
+                    SoundPlayer.play(named: newValue)
+                }
+            )) {
+                ForEach(SoundPlayer.pickableSounds, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 120)
+        }
+        .padding(.leading, 18)
+        .controlSize(.small)
+    }
+
     @ViewBuilder
     private var statusBanner: some View {
         if let r = vm.statusReport, r.indicator != .none {
+            // Outlined card variant: soft tinted fill + colored 1px border.
+            // Title in label color (always legible); icon + border carry
+            // the severity cue. Survives both light and dark menubars
+            // without the yellow-on-white contrast problem of a fully
+            // tinted title.
+            let tint = statusBannerColor(for: r.indicator)
             VStack(alignment: .leading, spacing: 2) {
-                Label {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: statusBannerSymbol(for: r.indicator))
+                        .font(.caption)
+                        .foregroundStyle(tint)
                     Text(r.description)
                         .font(.caption)
                         .fontWeight(.semibold)
-                } icon: {
-                    Image(systemName: statusBannerSymbol(for: r.indicator))
-                        .font(.caption)
+                        .foregroundStyle(.primary)
                 }
-                .foregroundStyle(statusBannerColor(for: r.indicator))
                 if let inc = r.activeIncident {
                     Text(inc)
                         .font(.caption2)
@@ -353,7 +401,11 @@ struct MenuBarDropdown: View {
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(statusBannerColor(for: r.indicator).opacity(0.10))
+            .background(tint.opacity(0.06))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(statusBannerBorderColor(for: r.indicator), lineWidth: 1)
+            )
             .cornerRadius(6)
             Divider()
         }
@@ -375,6 +427,19 @@ struct MenuBarDropdown: View {
         case .major:       return .orange
         case .critical:    return .red
         case .maintenance: return .blue
+        case .none:        return .secondary
+        }
+    }
+
+    /// Darker variant of the severity color used for the banner outline,
+    /// so the border reads on a white background where bright yellow /
+    /// orange would otherwise wash out.
+    private func statusBannerBorderColor(for ind: StatusReport.Indicator) -> Color {
+        switch ind {
+        case .minor:       return Color(red: 0.50, green: 0.36, blue: 0.00) // dark amber
+        case .major:       return Color(red: 0.55, green: 0.28, blue: 0.00) // dark orange
+        case .critical:    return Color(red: 0.65, green: 0.12, blue: 0.10) // deep red
+        case .maintenance: return Color(red: 0.00, green: 0.25, blue: 0.65) // navy
         case .none:        return .secondary
         }
     }

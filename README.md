@@ -48,21 +48,26 @@ desktop app, the web, or the CLI.
 - Auth / connectivity / outage rows when relevant
   (`Token rejected`, `Offline`, `No subscription rate-limit data`,
   the status.claude.com banner).
-- Settings: **Launch at Login**, **Mute Sounds**, **Warn at threshold**
-  (with stepper 1–99% and a sound picker covering all 14 macOS system
-  sounds).
+- Settings: **Launch at Login**, **Warn at threshold** (stepper
+  1–99% + sound picker), and a **Sounds** section with a per-event
+  picker for **Limit reached**, **Window reset**, and **Outage
+  detected**. Each picker covers all 14 macOS system sounds plus a
+  **None** option that mutes that single event.
 - Footer: **Set Token… / Change Token…** + version label + **Quit**.
 
 ### Notification sounds
 
-- **Bottle** — fired once when 5-hour utilization first crosses 100%.
-- **Hero** — fired when the 5-hour window resets (`resets_at` advances).
-- **Sosumi** — fired once on the operational → outage transition
-  reported by status.claude.com.
-- **Configurable** — your chosen sound at your chosen threshold (e.g.
-  Tink at 80%). Selection previews the sound on change.
+Every event has its own picker (defaults shown); selection previews the
+sound, and **None** silences that one event.
 
-All sounds respect the **Mute Sounds** toggle.
+- **Limit reached** — fired once when 5-hour utilization first crosses
+  100%. Default: **Bottle**.
+- **Window reset** — fired when the 5-hour window resets (`resets_at`
+  advances). Default: **Hero**.
+- **Outage detected** — fired once on the operational → outage
+  transition reported by status.claude.com. Default: **Sosumi**.
+- **Warn at threshold** — your chosen sound at your chosen threshold
+  (e.g. Tink at 80%). Default: **Tink**.
 
 ### Set / Change OAuth Token
 
