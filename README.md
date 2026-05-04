@@ -14,9 +14,15 @@ desktop app, the web, or the CLI.
 
 ### Menubar
 
-![menubar gauge](docs/screenshots/menubar.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-dark.png">
+  <img alt="menubar gauge" src="docs/screenshots/menubar-light.png">
+</picture>
 &nbsp;&nbsp;&nbsp;&nbsp;
-![menubar outage indicator](docs/screenshots/menubar-outage.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-outage-dark.png">
+  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png">
+</picture>
 
 - A gauge icon + percentage rendered on a colour-shifted pill — the
   pill background follows an OKLab gradient (flat green ≤50%, blending
@@ -33,7 +39,10 @@ desktop app, the web, or the CLI.
 
 ### Dropdown
 
-![dropdown panel](docs/screenshots/dropdown.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png">
+  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png">
+</picture>
 
 - 5-hour and 7-day windows: title + bold gradient-coloured percentage,
   a tinted progress bar, and a `Resets in …` caption.
@@ -71,7 +80,10 @@ sound, and **None** silences that one event.
 
 ### Set / Change OAuth Token
 
-![Set OAuth Token window](docs/screenshots/settings.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.png">
+  <img alt="Set OAuth Token window" src="docs/screenshots/settings-light.png">
+</picture>
 
 The dialog opens via **Set Token…** / **Change Token…** in the
 dropdown. The existing Keychain entry is left untouched until a new
