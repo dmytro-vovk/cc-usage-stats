@@ -58,6 +58,10 @@ final class MenuViewModel: ObservableObject {
     private var lastFiveHour: WindowSnapshot?
     private var wakeObserver: NSObjectProtocol?
     private var history: UsageHistory?
+    /// Last `resetsAt` (5h) for which we already kicked an immediate
+    /// refresh once the local clock crossed the boundary. Re-armed every
+    /// time a fresh poll advances `resetsAt`.
+    private var refreshedForResetAt: Int64?
 
     func start() {
         guard poller == nil else { return }
@@ -255,5 +259,19 @@ final class MenuViewModel: ObservableObject {
     private func recomputeFromCachedOnly() {
         let now = Int64(Date().timeIntervalSince1970)
         displayState = DisplayState.compute(now: now, cached: cached)
+        kickRefreshIfWindowReset(now: now)
+    }
+
+    /// When the wall clock crosses the cached `resetsAt` we know the
+    /// 5-hour window has just rolled over — trigger an immediate poll
+    /// instead of waiting up to the full base interval. Fires at most
+    /// once per cached `resetsAt`; re-arms when a fresh poll advances
+    /// `resetsAt` past the value we already triggered for.
+    private func kickRefreshIfWindowReset(now: Int64) {
+        guard let cached, let five = cached.snapshot.fiveHour else { return }
+        guard now >= five.resetsAt else { return }
+        guard refreshedForResetAt != five.resetsAt else { return }
+        refreshedForResetAt = five.resetsAt
+        Task { @MainActor in await poller?.refreshNow() }
     }
 }

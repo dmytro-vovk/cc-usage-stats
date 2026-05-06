@@ -10,6 +10,11 @@ echo "==> Building Release for $VERSION"
 # fall back to the latest existing tag (which is the *previous* release
 # at this point in time).
 export MARKETING_VERSION_OVERRIDE="$SHORT_VERSION"
+# Force ad-hoc signing for distribution. The local "CCUsageStats Dev"
+# self-signed identity (if installed via setup-signing.sh) is a personal
+# dev cert; signing public release artifacts with it would produce a
+# signature that doesn't validate anywhere except the developer's own Mac.
+export SIGN_IDENTITY="-"
 ./scripts/build.sh
 
 ARTIFACTS_DIR="dist/$VERSION"

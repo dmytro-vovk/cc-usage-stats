@@ -185,10 +185,20 @@ rm -rf ~/Library/Application\ Support/cc-usage-stats/
 ## Scripts
 
 ```bash
+./scripts/setup-signing.sh   # one-time: stable self-signed code-signing identity
 ./scripts/build.sh           # builds dist/CCUsageStats.app
 ./scripts/install-dev.sh     # build + copy to ~/Applications + relaunch
 ./scripts/release.sh v0.X.Y  # builds dist/v0.X.Y/{zip,dmg} for a release
 ```
+
+`setup-signing.sh` is optional but recommended for local dev. Without it,
+each rebuild gets a fresh ad-hoc code hash — macOS Keychain rejects the
+existing OAuth-token entry's ACL after every rebuild, which surfaces in
+the menubar as "Token rejected" until you re-paste. The script creates
+a `CCUsageStats Dev` self-signed certificate in your login keychain so
+the signature stays stable across rebuilds and the token entry is reused
+indefinitely. Release artifacts (`release.sh`) always use ad-hoc signing
+regardless.
 
 ## Manual test checklist
 
