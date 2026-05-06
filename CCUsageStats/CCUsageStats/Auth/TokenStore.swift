@@ -8,7 +8,7 @@ enum TokenStore {
     enum TokenStoreError: Error { case unexpectedStatus(OSStatus) }
 
     static func read() -> String? {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: account,

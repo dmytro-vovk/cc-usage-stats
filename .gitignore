@@ -2,8 +2,12 @@ build/
 dist/
 DerivedData/
 .swiftpm/
-*.xcodeproj/xcuserdata/
-*.xcodeproj/project.xcworkspace/xcuserdata/
+# Match xcuserdata at any depth — the previous `*.xcodeproj/xcuserdata/`
+# pattern only worked at the repo root, missing the actual location at
+# CCUsageStats/CCUsageStats.xcodeproj/xcuserdata/.
+**/xcuserdata/
 .DS_Store
 default.profraw
 test_output.log
+# Local scratch (screenshots-in-progress, fake-status JSON, etc.)
+tmp/

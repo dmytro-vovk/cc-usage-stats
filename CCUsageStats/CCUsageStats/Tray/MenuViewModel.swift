@@ -106,7 +106,11 @@ final class MenuViewModel: ObservableObject {
         // countdowns update smoothly without waiting for a poll. Cost is a
         // struct recomputation; negligible.
         clockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.recomputeFromCachedOnly() }
+            // Bind `self` as a `let` before crossing into the Task —
+            // capturing the `var self` from `[weak self]` directly into
+            // a concurrently-executing closure is a Swift 6 hard error.
+            guard let self else { return }
+            Task { @MainActor in self.recomputeFromCachedOnly() }
         }
 
         // Force an immediate refresh when the Mac wakes from sleep —
@@ -249,8 +253,11 @@ final class MenuViewModel: ObservableObject {
         // Fire the alert sound on the transition from operational (or no
         // data) to any non-operational state. Subsequent updates within
         // an outage (e.g., minor → major) don't refire so we don't spam.
-        let wasOperational = (previous?.indicator ?? .none) == .none
-        let isOperational  = (new?.indicator ?? .none) == .none
+        // Fully-qualified `StatusReport.Indicator.none` avoids Swift's
+        // Optional<Indicator>.none vs. Indicator.none ambiguity warning.
+        let op = StatusReport.Indicator.none
+        let wasOperational = (previous?.indicator ?? op) == op
+        let isOperational  = (new?.indicator ?? op) == op
         if wasOperational, !isOperational {
             SoundPlayer.play(named: outageSound)
         }

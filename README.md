@@ -168,6 +168,9 @@ security delete-generic-password -s cc-usage-stats -a oauth-token
 
 # Remove cache + history + sentinel
 rm -rf ~/Library/Application\ Support/cc-usage-stats/
+
+# (Optional) remove the dev code-signing identity created by setup-signing.sh
+security delete-identity -c "CCUsageStats Dev"
 ```
 
 ## Privacy
