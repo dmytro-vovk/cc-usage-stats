@@ -29,8 +29,13 @@ desktop app, the web, or the CLI.
   through orange to red at 100%), with the icon+text inverted (white in
   light mode, dark in dark mode) for high contrast against any menubar
   background.
-- At 100% the percentage swaps to a live `H:MM:SS` countdown to the
-  window reset.
+- When the 7-day window is both **above 80% and ≥ the 5-hour fraction**,
+  the pill splits into two colour-coded halves — left for the 5h
+  session (gauge icon), right for the 7d window (calendar icon) — so
+  you see "7d critical while 5h is fine" at a glance. Below that
+  threshold the menubar stays as a slim single 5h pill.
+- At 100% (5h) the percentage swaps to a live `H:MM:SS` countdown to
+  the window reset (single pill again — the countdown is the headline).
 - A severity-tinted SF Symbol appended to the right when
   status.claude.com reports a non-operational state, so you see an
   outage without opening the dropdown.
