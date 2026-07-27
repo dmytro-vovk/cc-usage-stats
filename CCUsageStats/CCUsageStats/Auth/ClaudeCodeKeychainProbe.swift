@@ -23,29 +23,40 @@ enum ClaudeCodeKeychainProbe {
     }
 
     static func read(now: Date = Date()) -> String? {
-        // Lazily: stop fetching payloads — and so stop triggering access prompts —
-        // as soon as one candidate yields a usable token.
-        candidateAttributes()
-            .lazy
-            .compactMap { attrs -> String? in
-                guard let service = attrs[kSecAttrService as String] as? String,
-                      let payload = fetchPayload(service: service,
-                                                 account: attrs[kSecAttrAccount as String] as? String)
-                else { return nil }
-                return usableToken(in: payload, now: now)
-            }
-            .first
+        // `candidateAttributes()` is already newest-first; payloads are resolved on
+        // demand so the access prompt stops as soon as one yields a usable token.
+        firstUsableToken(candidates: candidateAttributes(), now: now) { attrs in
+            guard let service = attrs[kSecAttrService as String] as? String else { return nil }
+            return fetchPayload(service: service, account: attrs[kSecAttrAccount as String] as? String)
+        }
     }
 
     /// Newest entry that actually yields a usable, unexpired token wins. Entries
     /// holding only `mcpOAuth`, an expired `claudeAiOauth`, or a non-OAuth token
     /// are skipped rather than ending the search.
     static func selectToken(from entries: [Entry], now: Date) -> String? {
-        entries
-            .sorted { $0.modified > $1.modified }
-            .lazy
-            .compactMap { usableToken(in: $0.payload, now: now) }
-            .first
+        firstUsableToken(candidates: entries.sorted { $0.modified > $1.modified }, now: now) { $0.payload }
+    }
+
+    /// Shared traversal for `read()` and `selectToken(from:now:)`, so the tested
+    /// path is the shipping path. `candidates` must already be newest-first, and
+    /// `payload` is invoked at most once per candidate — it triggers a Keychain
+    /// access prompt in the shipping caller.
+    static func firstUsableToken<Candidate>(
+        candidates: [Candidate],
+        now: Date,
+        payload: (Candidate) -> String?
+    ) -> String? {
+        // A plain loop, deliberately: `lazy.compactMap { … }.first` resolves the
+        // winning candidate twice (`Collection.first` is `self[startIndex]` after
+        // `startIndex` already ran the transform), which would prompt twice and
+        // trap on the force-unwrap inside lazy compactMap if the repeat fetch fails.
+        for candidate in candidates {
+            guard let raw = payload(candidate),
+                  let token = usableToken(in: raw, now: now) else { continue }
+            return token
+        }
+        return nil
     }
 
     // MARK: - Keychain access
@@ -121,9 +132,15 @@ enum ClaudeCodeKeychainProbe {
     }
 
     /// `expiresAt` is milliseconds since the epoch in current builds; a seconds
-    /// value is tolerated so a unit mismatch can't read as "expired long ago".
+    /// value is tolerated so a unit mismatch can't read as "expired long ago",
+    /// and a string-encoded value is parsed rather than failing open.
     private static func expiryDate(_ value: Any?) -> Date? {
-        guard let raw = (value as? NSNumber)?.doubleValue, raw > 0 else { return nil }
+        let parsed: Double? = switch value {
+        case let n as NSNumber: n.doubleValue
+        case let s as String: Double(s)
+        default: nil
+        }
+        guard let raw = parsed, raw > 0 else { return nil }
         return Date(timeIntervalSince1970: raw > 1e11 ? raw / 1000 : raw)
     }
 }
