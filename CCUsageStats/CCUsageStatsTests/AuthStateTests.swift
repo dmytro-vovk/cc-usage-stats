@@ -1,6 +1,7 @@
 import XCTest
 @testable import CCUsageStats
 
+@MainActor
 final class AuthStateTests: XCTestCase {
     func testAllCasesExist() {
         let all: [AuthState] = [.unknown, .ok, .invalidToken, .notSubscriber, .offline]
