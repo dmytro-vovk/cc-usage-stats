@@ -1,6 +1,7 @@
 import XCTest
 @testable import CCUsageStats
 
+@MainActor
 final class CacheStoreTests: XCTestCase {
     private var tmpFile: URL!
 
