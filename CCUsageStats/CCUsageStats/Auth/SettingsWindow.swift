@@ -51,7 +51,8 @@ final class SettingsViewModel: ObservableObject {
             token = t
             error = nil
         } else {
-            error = "Couldn't read Claude Code keychain entry. Allow access in the system prompt, or paste manually."
+            error = "No usable Claude Code token in Keychain — it may be expired, or access was denied. "
+                + "Run `claude setup-token`, allow access in the system prompt, or paste manually."
         }
     }
 
