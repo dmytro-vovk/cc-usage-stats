@@ -144,4 +144,57 @@ final class ClaudeCodeKeychainProbeTests: XCTestCase {
     func testEmptyEntryListReturnsNil() {
         XCTAssertNil(ClaudeCodeKeychainProbe.selectToken(from: [], now: now))
     }
+
+    // MARK: - Payload resolution is fetched once per candidate
+
+    /// Each payload fetch triggers a macOS Keychain access prompt in the shipping
+    /// caller, so the winning candidate must not be resolved twice.
+    func testResolvesWinningCandidatePayloadExactlyOnce() {
+        var fetched: [String] = []
+        let token = ClaudeCodeKeychainProbe.firstUsableToken(
+            candidates: ["mcp-only", "valid", "never-reached"],
+            now: now
+        ) { name in
+            fetched.append(name)
+            switch name {
+            case "mcp-only": return self.mcpOnlyPayload
+            case "valid": return self.claudeAiOauth(token: "sk-ant-oat01-once",
+                                                    expiresAt: self.now.addingTimeInterval(3600))
+            default: return "sk-ant-oat01-shouldnotbereached"
+            }
+        }
+        XCTAssertEqual(token, "sk-ant-oat01-once")
+        XCTAssertEqual(fetched, ["mcp-only", "valid"])
+    }
+
+    /// A payload fetch that succeeds once and is then denied must not trap.
+    /// (Lazy `compactMap` + `Collection.first` re-evaluates the winner and
+    /// force-unwraps the second, nil result.)
+    func testDeniedSecondFetchOfWinnerDoesNotTrap() {
+        var attempts = 0
+        let token = ClaudeCodeKeychainProbe.firstUsableToken(
+            candidates: ["only"],
+            now: now
+        ) { _ in
+            attempts += 1
+            return attempts == 1
+                ? self.claudeAiOauth(token: "sk-ant-oat01-allowed", expiresAt: self.now.addingTimeInterval(3600))
+                : nil // user denied the repeat prompt
+        }
+        XCTAssertEqual(token, "sk-ant-oat01-allowed")
+        XCTAssertEqual(attempts, 1)
+    }
+
+    // MARK: - Expiry parsing
+
+    func testRejectsExpiredTokenWhenExpiresAtIsAString() {
+        let expired = Int(now.addingTimeInterval(-86_400).timeIntervalSince1970 * 1000)
+        let obj: [String: Any] = [
+            "claudeAiOauth": ["accessToken": "sk-ant-oat01-stringexpiry", "expiresAt": "\(expired)"],
+        ]
+        let payload = String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+        XCTAssertNil(
+            ClaudeCodeKeychainProbe.selectToken(from: [entry("Claude Code-credentials", 1, payload)], now: now)
+        )
+    }
 }
