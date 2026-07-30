@@ -22,10 +22,18 @@ enum ClaudeCodeKeychainProbe {
         let payload: String
     }
 
-    static func read(now: Date = Date()) -> String? {
+    /// A token lifted out of Claude Code's Keychain together with the deadline
+    /// the CLI recorded for it. `expiresAt` is nil for a bare-string payload or
+    /// an envelope without `expiresAt`; callers treat that as "no known deadline".
+    struct ImportedToken: Equatable {
+        let token: String
+        let expiresAt: Date?
+    }
+
+    static func read(now: Date = Date()) -> ImportedToken? {
         // `candidateAttributes()` is already newest-first; payloads are resolved on
         // demand so the access prompt stops as soon as one yields a usable token.
-        firstUsableToken(candidates: candidateAttributes(), now: now) { attrs in
+        firstUsableImport(candidates: candidateAttributes(), now: now) { attrs in
             guard let service = attrs[kSecAttrService as String] as? String else { return nil }
             return fetchPayload(service: service, account: attrs[kSecAttrAccount as String] as? String)
         }
@@ -34,27 +42,41 @@ enum ClaudeCodeKeychainProbe {
     /// Newest entry that actually yields a usable, unexpired token wins. Entries
     /// holding only `mcpOAuth`, an expired `claudeAiOauth`, or a non-OAuth token
     /// are skipped rather than ending the search.
-    static func selectToken(from entries: [Entry], now: Date) -> String? {
-        firstUsableToken(candidates: entries.sorted { $0.modified > $1.modified }, now: now) { $0.payload }
+    static func selectImport(from entries: [Entry], now: Date) -> ImportedToken? {
+        firstUsableImport(candidates: entries.sorted { $0.modified > $1.modified }, now: now) { $0.payload }
     }
 
-    /// Shared traversal for `read()` and `selectToken(from:now:)`, so the tested
-    /// path is the shipping path. `candidates` must already be newest-first, and
-    /// `payload` is invoked at most once per candidate — it triggers a Keychain
-    /// access prompt in the shipping caller.
+    /// Token-only convenience over `selectImport(from:now:)`.
+    static func selectToken(from entries: [Entry], now: Date) -> String? {
+        selectImport(from: entries, now: now)?.token
+    }
+
+    /// Token-only convenience over `firstUsableImport(candidates:now:payload:)`.
     static func firstUsableToken<Candidate>(
         candidates: [Candidate],
         now: Date,
         payload: (Candidate) -> String?
     ) -> String? {
+        firstUsableImport(candidates: candidates, now: now, payload: payload)?.token
+    }
+
+    /// Shared traversal for `read()` and `selectImport(from:now:)`, so the tested
+    /// path is the shipping path. `candidates` must already be newest-first, and
+    /// `payload` is invoked at most once per candidate — it triggers a Keychain
+    /// access prompt in the shipping caller.
+    static func firstUsableImport<Candidate>(
+        candidates: [Candidate],
+        now: Date,
+        payload: (Candidate) -> String?
+    ) -> ImportedToken? {
         // A plain loop, deliberately: `lazy.compactMap { … }.first` resolves the
         // winning candidate twice (`Collection.first` is `self[startIndex]` after
         // `startIndex` already ran the transform), which would prompt twice and
         // trap on the force-unwrap inside lazy compactMap if the repeat fetch fails.
         for candidate in candidates {
             guard let raw = payload(candidate),
-                  let token = usableToken(in: raw, now: now) else { continue }
-            return token
+                  let imported = usableImport(in: raw, now: now) else { continue }
+            return imported
         }
         return nil
     }
@@ -103,9 +125,11 @@ enum ClaudeCodeKeychainProbe {
 
     // MARK: - Payload parsing
 
-    private static func usableToken(in payload: String, now: Date) -> String? {
-        // Bare token string.
-        if payload.hasPrefix("sk-ant-") { return validated(payload) }
+    private static func usableImport(in payload: String, now: Date) -> ImportedToken? {
+        // Bare token string — no envelope, so no deadline to report.
+        if payload.hasPrefix("sk-ant-") {
+            return validated(payload).map { ImportedToken(token: $0, expiresAt: nil) }
+        }
 
         guard let data = payload.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -114,15 +138,18 @@ enum ClaudeCodeKeychainProbe {
         // Current envelope: {"claudeAiOauth": {accessToken, expiresAt, …}, "mcpOAuth": {…}}.
         // An entry carrying only `mcpOAuth` falls through the legacy lookup and yields nil.
         if let oauth = obj["claudeAiOauth"] as? [String: Any] {
-            return token(in: oauth, now: now)
+            return importedToken(in: oauth, now: now)
         }
-        return token(in: obj, now: now) // legacy flat envelope
+        return importedToken(in: obj, now: now) // legacy flat envelope
     }
 
-    private static func token(in obj: [String: Any], now: Date) -> String? {
-        if let expiry = expiryDate(obj["expiresAt"]), expiry <= now { return nil }
+    private static func importedToken(in obj: [String: Any], now: Date) -> ImportedToken? {
+        let expiry = expiryDate(obj["expiresAt"])
+        if let expiry, expiry <= now { return nil }
         for key in ["accessToken", "access_token", "oauth_token", "token"] {
-            if let v = obj[key] as? String { return validated(v) }
+            if let v = obj[key] as? String {
+                return validated(v).map { ImportedToken(token: $0, expiresAt: expiry) }
+            }
         }
         return nil
     }

@@ -96,6 +96,37 @@ token is successfully verified — cancelling leaves everything as it
 was. A 401/403 from Anthropic surfaces inline; the existing-good token
 is not overwritten by a bad new one.
 
+### Token lifetime
+
+The two ways of supplying a token do **not** last equally long:
+
+| Source | Lifetime |
+| --- | --- |
+| `claude setup-token` output, pasted by hand | long-lived |
+| **Paste from Claude Code Keychain** | short-lived (~8h observed) |
+
+`claude setup-token` prints a long-lived token to your terminal, but what
+it writes into Claude Code's own Keychain item is the ordinary short-lived
+access token the CLI uses. Importing from the Keychain therefore gives you
+a menubar that works for hours, not months.
+
+The app makes this visible rather than letting it fail silently:
+
+- Right after a Keychain import, the Settings dialog says when that token
+  expires and points at `claude setup-token` as the durable alternative.
+- Within the final hour, the dropdown shows a **Token expires in …**
+  caption.
+- Once Anthropic rejects it, the dropdown offers **Re-import from Claude
+  Code Keychain** — one click to pick up whatever token the CLI has since
+  rotated in. If the Keychain still holds the same rejected token, the app
+  says so instead of retrying into another 401.
+
+The app never refreshes tokens itself and never reads Claude Code's
+Keychain on a timer: every probe happens under an explicit click, so the
+macOS access prompt only ever appears while you're at the keyboard.
+Claude Code's `refreshToken` is deliberately left unread — exchanging it
+could rotate the CLI's own credential out from under it.
+
 ## How it works
 
 The app polls Anthropic's `POST /v1/messages` endpoint with a long-lived
@@ -146,12 +177,13 @@ and drop the `.app` into `/Applications/`.
 On first launch the menubar shows a red ⚠︎ triangle (no token yet).
 Click it → **Set Token…**. Two ways to provide a token:
 
-- **Paste manually.** In a terminal: `claude setup-token`. Copy the
-  resulting `sk-ant-oat01-…` value, paste into the SecureField, click
-  **Save & Test**.
+- **Paste manually — recommended.** In a terminal: `claude setup-token`.
+  Copy the resulting `sk-ant-oat01-…` value, paste into the SecureField,
+  click **Save & Test**. This token is long-lived.
 - **Read from Claude Code Keychain.** Click the **Paste from Claude
   Code Keychain** button. macOS shows a one-time access prompt; allow
-  it. The field auto-populates; click **Save & Test**.
+  it. The field auto-populates; click **Save & Test**. Convenient, but
+  this token expires in hours — see [Token lifetime](#token-lifetime).
 
 The token is then stored in our own Keychain entry; subsequent launches
 don't prompt.

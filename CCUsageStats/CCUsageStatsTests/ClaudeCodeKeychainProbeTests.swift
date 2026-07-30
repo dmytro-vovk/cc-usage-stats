@@ -187,6 +187,87 @@ final class ClaudeCodeKeychainProbeTests: XCTestCase {
 
     // MARK: - Expiry parsing
 
+    // MARK: - Expiry surfaces to the caller
+
+    /// The bug this work fixes: the probe used to parse `expiresAt` only to
+    /// reject stale entries, then throw it away, so nothing downstream could
+    /// tell a short-lived import from a durable paste.
+    func testSurfacesMillisecondExpiryAlongsideToken() {
+        let expiry = now.addingTimeInterval(8 * 3600) // observed real-world lifetime
+        let entries = [entry("Claude Code-credentials", 1,
+                             claudeAiOauth(token: "sk-ant-oat01-short", expiresAt: expiry))]
+        XCTAssertEqual(
+            ClaudeCodeKeychainProbe.selectImport(from: entries, now: now),
+            ClaudeCodeKeychainProbe.ImportedToken(token: "sk-ant-oat01-short", expiresAt: expiry)
+        )
+    }
+
+    /// `expiresAt` below the millisecond threshold is read as seconds — the same
+    /// tolerance the rejection path already applies.
+    func testSurfacesSecondsExpiry() {
+        let expiry = now.addingTimeInterval(3600)
+        let obj: [String: Any] = [
+            "claudeAiOauth": [
+                "accessToken": "sk-ant-oat01-seconds",
+                "expiresAt": Int(expiry.timeIntervalSince1970),
+            ],
+        ]
+        let payload = String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+        XCTAssertEqual(
+            ClaudeCodeKeychainProbe.selectImport(from: [entry("Claude Code-credentials", 1, payload)], now: now),
+            ClaudeCodeKeychainProbe.ImportedToken(token: "sk-ant-oat01-seconds", expiresAt: expiry)
+        )
+    }
+
+    func testSurfacesStringEncodedExpiry() {
+        let expiry = now.addingTimeInterval(2 * 3600)
+        let obj: [String: Any] = [
+            "claudeAiOauth": [
+                "accessToken": "sk-ant-oat01-stringexp",
+                "expiresAt": "\(Int(expiry.timeIntervalSince1970 * 1000))",
+            ],
+        ]
+        let payload = String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+        XCTAssertEqual(
+            ClaudeCodeKeychainProbe.selectImport(from: [entry("Claude Code-credentials", 1, payload)], now: now),
+            ClaudeCodeKeychainProbe.ImportedToken(token: "sk-ant-oat01-stringexp", expiresAt: expiry)
+        )
+    }
+
+    func testEnvelopeWithoutExpiresAtSurfacesNilExpiry() {
+        let obj: [String: Any] = ["claudeAiOauth": ["accessToken": "sk-ant-oat01-noexpiry"]]
+        let payload = String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+        XCTAssertEqual(
+            ClaudeCodeKeychainProbe.selectImport(from: [entry("Claude Code-credentials", 1, payload)], now: now),
+            ClaudeCodeKeychainProbe.ImportedToken(token: "sk-ant-oat01-noexpiry", expiresAt: nil)
+        )
+    }
+
+    func testBareTokenPayloadSurfacesNilExpiry() {
+        XCTAssertEqual(
+            ClaudeCodeKeychainProbe.selectImport(
+                from: [entry("Claude Code-credentials", 1, "sk-ant-oat01-baretoken")], now: now
+            ),
+            ClaudeCodeKeychainProbe.ImportedToken(token: "sk-ant-oat01-baretoken", expiresAt: nil)
+        )
+    }
+
+    /// Skipping past an expired newest entry must carry the *winner's* deadline,
+    /// not the rejected one's.
+    func testSurfacedExpiryBelongsToTheWinningEntry() {
+        let winnerExpiry = now.addingTimeInterval(3600)
+        let entries = [
+            entry("Claude Code-credentials-0a53e818", 1,
+                  claudeAiOauth(token: "sk-ant-oat01-expired", expiresAt: now.addingTimeInterval(-60))),
+            entry("Claude Code-credentials", 7,
+                  claudeAiOauth(token: "sk-ant-oat01-stillvalid", expiresAt: winnerExpiry)),
+        ]
+        XCTAssertEqual(
+            ClaudeCodeKeychainProbe.selectImport(from: entries, now: now),
+            ClaudeCodeKeychainProbe.ImportedToken(token: "sk-ant-oat01-stillvalid", expiresAt: winnerExpiry)
+        )
+    }
+
     func testRejectsExpiredTokenWhenExpiresAtIsAString() {
         let expired = Int(now.addingTimeInterval(-86_400).timeIntervalSince1970 * 1000)
         let obj: [String: Any] = [

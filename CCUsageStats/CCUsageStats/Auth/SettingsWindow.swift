@@ -16,10 +16,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let host = NSHostingController(rootView: SettingsView(vm: viewModel) { [weak self] in
             self?.window?.performClose(nil)
         })
+        // Size to the content rather than a fixed 220pt: the error text and the
+        // short-lived-token notice both wrap to a variable number of lines, and
+        // a fixed height clips whichever one happens to be showing.
+        host.sizingOptions = [.preferredContentSize]
+
         let win = NSWindow(contentViewController: host)
         win.title = "Set OAuth Token"
         win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 480, height: 220))
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self
@@ -43,14 +47,36 @@ final class SettingsViewModel: ObservableObject {
     @Published var error: String?
     @Published var busy = false
 
+    /// Whatever the last Keychain import produced. Kept whole (not just the
+    /// deadline) so the notice and the saved expiry apply only while the field
+    /// still holds that exact token — the moment the user edits it, we're back
+    /// to an unknown, assumed-durable paste.
+    private(set) var imported: ClaudeCodeKeychainProbe.ImportedToken?
+
     private let onSaveSuccess: (String) -> Void
     init(onSaveSuccess: @escaping (String) -> Void) { self.onSaveSuccess = onSaveSuccess }
 
+    /// Expiry to persist alongside the token, or nil if the field no longer
+    /// matches what was imported.
+    func expiryToStore(for trimmed: String) -> Date? {
+        imported?.token == trimmed ? imported?.expiresAt : nil
+    }
+
+    /// Note explaining that a freshly imported Keychain token is short-lived.
+    /// Recomputed on each render so it disappears as soon as the field is edited.
+    var importNotice: String? {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let imported, imported.token == trimmed else { return nil }
+        return TokenDurability.importNotice(expiresAt: imported.expiresAt, now: Date())
+    }
+
     func tryClaudeCodeKeychain() {
-        if let t = ClaudeCodeKeychainProbe.read() {
-            token = t
+        if let found = ClaudeCodeKeychainProbe.read() {
+            imported = found
+            token = found.token
             error = nil
         } else {
+            imported = nil
             error = "No usable Claude Code token in Keychain — it may be expired, or access was denied. "
                 + "Run `claude setup-token`, allow access in the system prompt, or paste manually."
         }
@@ -78,9 +104,10 @@ final class SettingsViewModel: ObservableObject {
         // / rate-limit). A 401/403 must never overwrite the existing
         // good token.
         let result = await testFire(t)
+        let expiresAt = expiryToStore(for: t)
         switch result {
         case .success, .notSubscriber:
-            do { try TokenStore.write(t) }
+            do { try TokenStore.write(t, expiresAt: expiresAt) }
             catch { self.error = "Keychain write failed: \(error)"; return false }
             onSaveSuccess(t)
             return true
@@ -90,7 +117,7 @@ final class SettingsViewModel: ObservableObject {
         case .rateLimited, .transient:
             // Couldn't verify — accept optimistically so the user isn't
             // blocked by transient outages, but the user is told.
-            do { try TokenStore.write(t) }
+            do { try TokenStore.write(t, expiresAt: expiresAt) }
             catch { self.error = "Keychain write failed: \(error)"; return false }
             self.error = "Couldn't verify token (network or rate-limit). Saved anyway; the poller will retry."
             onSaveSuccess(t)
@@ -118,6 +145,15 @@ struct SettingsView: View {
             }
             if let err = vm.error {
                 Text(err).foregroundStyle(.red).font(.caption)
+            }
+            // Not an error: the import worked, it just won't last. Explains the
+            // durability gap between a Keychain import and `claude setup-token`
+            // output, which is otherwise invisible to the user.
+            if let notice = vm.importNotice {
+                Label(notice, systemImage: "clock.badge.exclamationmark")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 Spacer()

@@ -9,6 +9,10 @@ final class MenuViewModel: ObservableObject {
     )
     @Published private(set) var cached: CachedState?
     @Published private(set) var authState: AuthState = .unknown
+    /// Deadline of the stored token, when one is known. Non-nil only for tokens
+    /// imported from Claude Code's Keychain; a hand-pasted `claude setup-token`
+    /// value carries no visible expiry and is assumed durable.
+    @Published private(set) var tokenExpiresAt: Date?
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
     @Published var lastError: String?
     @Published var warningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.warningEnabledKey) {
@@ -81,9 +85,10 @@ final class MenuViewModel: ObservableObject {
 
         // Token discovery: ONLY check our own Keychain entry. The Claude Code
         // probe is gated behind the user explicitly clicking the
-        // "Paste from Claude Code Keychain" button in SettingsWindow — we
-        // don't want to surface a system Keychain prompt unprompted.
-        let token = TokenStore.read()
+        // "Paste from Claude Code Keychain" button in SettingsWindow, or
+        // "Re-import from Claude Code Keychain" in the dropdown — we don't want
+        // to surface a system Keychain prompt unprompted.
+        let token = loadStoredToken()
 
         if let token {
             let api = LiveAnthropicAPIClient(token: token)
@@ -177,6 +182,39 @@ final class MenuViewModel: ObservableObject {
         openSettings()
     }
 
+    /// Recovery path after the API rejected the stored token: re-read Claude
+    /// Code's Keychain and adopt whatever the CLI has since rotated in.
+    ///
+    /// Deliberately user-initiated. This is the only place outside Settings that
+    /// touches Claude Code's Keychain items, so the macOS access prompt always
+    /// appears under the user's own click rather than from a background timer.
+    func reimportFromClaudeCodeKeychain() {
+        let rejected = TokenStore.read()
+        switch TokenRecovery.decide(rejected: rejected, candidate: ClaudeCodeKeychainProbe.read()) {
+        case .adopted(let imported):
+            do { try TokenStore.write(imported.token, expiresAt: imported.expiresAt) }
+            catch { lastError = "Keychain write failed: \(error)"; return }
+            lastError = nil
+            restartPolling()
+
+        case .sameTokenRejected:
+            lastError = "Claude Code's Keychain still holds the rejected token. Use Claude Code once "
+                + "to refresh it, or paste the output of `claude setup-token` — that token is long-lived."
+
+        case .noneAvailable:
+            lastError = "No usable token in Claude Code's Keychain. Run `claude setup-token` and paste "
+                + "the value it prints."
+        }
+    }
+
+    /// Reads our own Keychain item, publishing the token's deadline as a side
+    /// effect so the dropdown can warn before it lapses.
+    private func loadStoredToken() -> String? {
+        let stored = TokenStore.readStored()
+        tokenExpiresAt = stored?.expiresAt
+        return stored?.token
+    }
+
     func toggleLaunchAtLogin() {
         let newValue = !launchAtLogin
         do { try LaunchAtLoginService.setEnabled(newValue); launchAtLogin = newValue }
@@ -186,7 +224,7 @@ final class MenuViewModel: ObservableObject {
     private func restartPolling() {
         poller?.stop(); poller = nil
         cancellables.removeAll()
-        guard let token = TokenStore.read() else { authState = .invalidToken; return }
+        guard let token = loadStoredToken() else { authState = .invalidToken; return }
         let api = LiveAnthropicAPIClient(token: token)
         let p = UsagePoller(api: api, cacheURL: Paths.stateFile)
         p.$authState

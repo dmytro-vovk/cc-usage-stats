@@ -390,6 +390,7 @@ struct MenuBarDropdown: View {
 
             // Auth / connectivity status.
             authStatusRow
+            tokenExpiryRow
             if let err = vm.lastError {
                 Text(err).foregroundStyle(.red).font(.caption)
             }
@@ -588,13 +589,35 @@ struct MenuBarDropdown: View {
         }
     }
 
+    /// Advance warning that an imported Keychain token is about to lapse.
+    /// Suppressed once the token has actually been rejected — `authStatusRow`
+    /// owns that state and offers the recovery button.
+    @ViewBuilder
+    private var tokenExpiryRow: some View {
+        if vm.authState != .invalidToken,
+           let caption = TokenDurability.dropdownCaption(expiresAt: vm.tokenExpiresAt, now: Date()) {
+            Label(caption, systemImage: "clock.badge.exclamationmark")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+        }
+    }
+
     @ViewBuilder
     private var authStatusRow: some View {
         switch vm.authState {
         case .invalidToken:
-            Label("Token rejected. Click Set Token below.", systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .font(.caption)
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Token rejected.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+                // One-click recovery for the common case: the token came from
+                // Claude Code's Keychain and the CLI has since rotated a fresh
+                // one in. Falls back to Set Token below when it can't help.
+                Button("Re-import from Claude Code Keychain") {
+                    vm.reimportFromClaudeCodeKeychain()
+                }
+                .controlSize(.small)
+            }
         case .notSubscriber:
             Label("No Claude.ai subscription rate-limit data.", systemImage: "info.circle")
                 .foregroundStyle(.secondary)

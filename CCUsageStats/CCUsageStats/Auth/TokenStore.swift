@@ -1,13 +1,25 @@
 import Foundation
 import Security
 
+/// The app's own token plus the deadline it was imported with.
+///
+/// `expiresAt` doubles as provenance: only the Claude Code Keychain import path
+/// knows a deadline, so a non-nil value means "imported from the CLI's Keychain,
+/// short-lived" and nil means "pasted by hand, assumed long-lived".
+struct StoredToken: Equatable {
+    let token: String
+    let expiresAt: Date?
+}
+
 enum TokenStore {
     static let serviceName = "cc-usage-stats"
     static let account = "oauth-token"
 
     enum TokenStoreError: Error { case unexpectedStatus(OSStatus) }
 
-    static func read() -> String? {
+    static func read() -> String? { readStored()?.token }
+
+    static func readStored() -> StoredToken? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -17,14 +29,41 @@ enum TokenStore {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let token = String(data: data, encoding: .utf8) else { return nil }
-        return token
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return decode(data)
     }
 
-    static func write(_ token: String) throws {
-        let data = Data(token.utf8)
+    // MARK: - Envelope
+
+    /// Serialized as `{"expiresAt": <epoch seconds>, "token": "sk-ant-oat01-…"}`.
+    /// Builds before the envelope existed stored the bare token string, which
+    /// `decode` still accepts.
+    static func encode(token: String, expiresAt: Date?) -> Data {
+        var obj: [String: Any] = ["token": token]
+        if let expiresAt { obj["expiresAt"] = expiresAt.timeIntervalSince1970 }
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else {
+            return Data(token.utf8) // unreachable for String/Double values; degrade to legacy form
+        }
+        return data
+    }
+
+    static func decode(_ data: Data) -> StoredToken? {
+        guard let raw = String(data: data, encoding: .utf8), !raw.isEmpty else { return nil }
+        // Legacy item written by earlier builds: the bare token, no envelope.
+        if raw.hasPrefix("sk-ant-") { return StoredToken(token: raw, expiresAt: nil) }
+
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let token = obj["token"] as? String, !token.isEmpty else { return nil }
+        let expiresAt = (obj["expiresAt"] as? NSNumber).map {
+            Date(timeIntervalSince1970: $0.doubleValue)
+        }
+        return StoredToken(token: token, expiresAt: expiresAt)
+    }
+
+    // MARK: - Keychain writes
+
+    static func write(_ token: String, expiresAt: Date? = nil) throws {
+        let data = encode(token: token, expiresAt: expiresAt)
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
