@@ -466,9 +466,13 @@ struct MenuBarDropdown: View {
                     Button("Change Token…") { vm.changeToken() }
                 }
                 Spacer()
-                Text(versionString)
+                // Keeps the tertiary caption styling rather than the default
+                // accent-blue link look — this is a quiet footer label that
+                // happens to be clickable, not a call to action.
+                Link(versionString, destination: AppLinks.releases)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .help("View releases on GitHub")
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
