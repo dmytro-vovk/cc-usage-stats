@@ -58,7 +58,14 @@ final class MenuViewModel: ObservableObject {
     private var statusPoller: StatusPoller?
     private var clockTimer: Timer?
     private var cacheWatcher: CacheWatcher?
+    /// Subscriptions that must outlive a token change — currently the
+    /// status-page poller. Cleared only by `stop()`.
     private var cancellables: Set<AnyCancellable> = []
+    /// The usage poller's `authState` subscription, held separately because it
+    /// is torn down and rebuilt every time the token changes. It used to live in
+    /// `cancellables`, so `restartPolling()`'s `removeAll()` took the status
+    /// subscription with it and the outage banner silently froze until relaunch.
+    private var pollerCancellable: AnyCancellable?
     private var lastFiveHour: WindowSnapshot?
     private var wakeObserver: NSObjectProtocol?
     private var history: UsageHistory?
@@ -91,18 +98,7 @@ final class MenuViewModel: ObservableObject {
         let token = loadStoredToken()
 
         if let token {
-            let api = LiveAnthropicAPIClient(token: token)
-            let p = UsagePoller(api: api, cacheURL: Paths.stateFile)
-            // Mirror published state + reload cache after each tick.
-            p.$authState
-                .receive(on: RunLoop.main)
-                .sink { [weak self] in
-                    self?.authState = $0
-                    self?.reloadCache()
-                }
-                .store(in: &cancellables)
-            poller = p
-            p.start()
+            attachPoller(token: token)
         } else {
             authState = .invalidToken
         }
@@ -147,6 +143,7 @@ final class MenuViewModel: ObservableObject {
 
     func stop() {
         poller?.stop(); poller = nil
+        pollerCancellable = nil
         statusPoller?.stop(); statusPoller = nil
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
@@ -223,17 +220,23 @@ final class MenuViewModel: ObservableObject {
 
     private func restartPolling() {
         poller?.stop(); poller = nil
-        cancellables.removeAll()
+        pollerCancellable = nil
         guard let token = loadStoredToken() else { authState = .invalidToken; return }
-        let api = LiveAnthropicAPIClient(token: token)
-        let p = UsagePoller(api: api, cacheURL: Paths.stateFile)
-        p.$authState
+        attachPoller(token: token)
+    }
+
+    /// Builds a poller for `token`, mirrors its published state, and starts it.
+    /// One definition shared by `start()` and `restartPolling()` — keeping two
+    /// copies in sync is what let the status subscription get dropped on restart.
+    private func attachPoller(token: String) {
+        let p = UsagePoller(api: LiveAnthropicAPIClient(token: token), cacheURL: Paths.stateFile)
+        // Assigning replaces (and so cancels) any previous poller subscription.
+        pollerCancellable = p.$authState
             .receive(on: RunLoop.main)
             .sink { [weak self] in
                 self?.authState = $0
                 self?.reloadCache()
             }
-            .store(in: &cancellables)
         poller = p
         p.start()
     }
