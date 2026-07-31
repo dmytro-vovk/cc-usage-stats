@@ -122,9 +122,11 @@ The app makes this visible rather than letting it fail silently:
   says so instead of retrying into another 401.
 - When a re-import finds nothing, the app names the reason rather than
   reporting a flat miss: the CLI's token expired (and how long ago),
-  macOS denied access to the item, the entries hold MCP logins only, or
-  Claude Code has no credentials at all. Each one needs a different next
-  step, so each one reads differently.
+  macOS denied access to the item, the entries carry no claude.ai OAuth
+  token, or Claude Code has no credentials at all. Each one needs a
+  different next step, so each one reads differently.
+- With no token stored at all, the dropdown says **No token set.** — the
+  API hasn't rejected anything, so it doesn't claim otherwise.
 
 The app never refreshes tokens itself and never reads Claude Code's
 Keychain on a timer: every probe happens under an explicit click, so the
@@ -252,6 +254,13 @@ See [docs/manual-test-checklist.md](docs/manual-test-checklist.md).
 ## Contributing
 
 PRs welcome. Run `xcodebuild test -scheme CCUsageStats -destination 'platform=macOS' -project CCUsageStats/CCUsageStats.xcodeproj -only-testing:CCUsageStatsTests` before submitting; the unit suite covers all the pure pieces (parser, store, poller state machine, forecast, history).
+
+The suite is safe to run against a machine that uses the app. The unit
+bundle is hosted in the app, so `xcodebuild test` launches real app
+instances; `TestEnvironment.isRunningTests` redirects the Keychain item to
+`cc-usage-stats.tests.<pid>` and all app state to a per-process scratch
+directory under `$TMPDIR`, and skips the settings migration. Your stored
+token, `history.jsonl` and `~/.claude/settings.json` are never touched.
 
 This is a personal-use app shipped to scratch one specific itch (a menubar reminder of Claude.ai usage). Don't expect a roadmap. Bug reports + small targeted PRs are the most likely things to land.
 

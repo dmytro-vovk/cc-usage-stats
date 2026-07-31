@@ -51,10 +51,13 @@ enum ClaudeCodeKeychainProbe {
     }
 
     /// One payload fetch. `denied` is distinct from `absent` so the traversal can
-    /// tell "macOS said no" from "the item vanished between query and read".
+    /// tell "macOS said no" from "the item vanished between query and read", and
+    /// `unreadable` keeps a corrupt-but-present item from being reported as an
+    /// item that doesn't exist.
     enum PayloadFetch: Equatable {
         case body(String)
         case denied
+        case unreadable
         case absent
     }
 
@@ -145,6 +148,11 @@ enum ClaudeCodeKeychainProbe {
             case .denied:
                 sawEntry = true
                 sawDenial = true
+            case .unreadable:
+                // Present and permitted, just not something we can parse — the
+                // user has a Claude Code credential, so "no credentials" would
+                // be a lie.
+                sawEntry = true
             case .absent:
                 continue
             case .body(let raw):
@@ -204,8 +212,11 @@ enum ClaudeCodeKeychainProbe {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecSuccess, let data = result as? Data,
-           let payload = String(data: data, encoding: .utf8) {
+        if status == errSecSuccess {
+            // The read was allowed. Whether the bytes make sense is a separate
+            // question, and answering it "the item isn't there" would be wrong.
+            guard let data = result as? Data,
+                  let payload = String(data: data, encoding: .utf8) else { return .unreadable }
             return .body(payload)
         }
         return isDenial(status) ? .denied : .absent
@@ -213,6 +224,11 @@ enum ClaudeCodeKeychainProbe {
 
     /// Statuses that mean "macOS refused", as opposed to "not there". A refusal
     /// is what the user sees when they dismiss the access prompt or hit Deny.
+    ///
+    /// `errSecNotAvailable` and `errSecDecode` are not refusals by the user, but
+    /// they are equally "we were blocked from reading a credential that may
+    /// exist" — and the alternative bucket claims the item is absent, which is
+    /// the more damaging thing to get wrong.
     private static func isDenial(_ status: OSStatus) -> Bool {
         switch status {
         case errSecAuthFailed, errSecUserCanceled, errSecInteractionNotAllowed,

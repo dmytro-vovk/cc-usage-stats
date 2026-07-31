@@ -343,6 +343,30 @@ final class ClaudeCodeKeychainProbeTests: XCTestCase {
         )
     }
 
+    /// An item we were allowed to read but couldn't decode still proves a
+    /// credential exists — reporting "no Claude Code credentials in Keychain"
+    /// would contradict what the user can see in Keychain Access.
+    func testUnreadableEntryIsNotReportedAsNoEntries() {
+        let outcome = ClaudeCodeKeychainProbe.classify(candidates: ["corrupt"], now: now) { _ in .unreadable }
+        XCTAssertEqual(outcome, .noClaudeToken)
+    }
+
+    /// …but it must not outrank a real denial or a real expiry either.
+    func testUnreadableEntryYieldsToBetterInformedMisses() {
+        let deadline = now.addingTimeInterval(-3600)
+        let expired = ClaudeCodeKeychainProbe.classify(candidates: ["corrupt", "stale"], now: now) { name in
+            name == "corrupt"
+                ? .unreadable
+                : .body(self.claudeAiOauth(token: "sk-ant-oat01-stale", expiresAt: deadline))
+        }
+        XCTAssertEqual(expired, .expired(deadline))
+
+        let denied = ClaudeCodeKeychainProbe.classify(candidates: ["corrupt", "locked"], now: now) { name in
+            name == "corrupt" ? .unreadable : .denied
+        }
+        XCTAssertEqual(denied, .accessDenied)
+    }
+
     /// An item that disappeared between the attribute query and the data read is
     /// absent, not denied.
     func testAbsentFetchIsNotADenial() {

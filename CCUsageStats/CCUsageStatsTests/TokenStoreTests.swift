@@ -9,6 +9,17 @@ final class TokenStoreTests: XCTestCase {
         try? TokenStore.delete()
     }
 
+    /// The guard that matters most in this file: every other test here writes
+    /// and deletes for real, so if the service name ever resolved to the live
+    /// item, running the suite would sign the user out of the app. It did once.
+    func testSuiteIsPointedAtTheScratchKeychainItem() {
+        XCTAssertEqual(TokenStore.serviceName, TokenStore.testServiceName)
+        XCTAssertTrue(TokenStore.serviceName.hasPrefix(TokenStore.testServicePrefix))
+        XCTAssertNotEqual(TokenStore.serviceName, TokenStore.liveServiceName)
+        // Per-worker, so a sibling process's tearDown can't delete this one's item.
+        XCTAssertNotEqual(TokenStore.serviceName, TokenStore.testServicePrefix)
+    }
+
     func testReadAbsentReturnsNil() {
         XCTAssertNil(TokenStore.read())
     }

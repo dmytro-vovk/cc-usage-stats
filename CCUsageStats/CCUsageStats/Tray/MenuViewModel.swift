@@ -82,8 +82,23 @@ final class MenuViewModel: ObservableObject {
     /// time a fresh poll advances `resetsAt`.
     private var refreshedForResetAt: Int64?
 
+    /// How a poller's API client is built. Injected so tests can drive the
+    /// token state machine — adopt, restart, recover — without a network call
+    /// or a 60-second timer. Production uses the default.
+    private let apiFactory: (String) -> AnthropicAPIClient
+
+    init(apiFactory: @escaping (String) -> AnthropicAPIClient = { LiveAnthropicAPIClient(token: $0) }) {
+        self.apiFactory = apiFactory
+    }
+
     func start() {
         guard poller == nil else { return }
+        // Test-host app instances must stay inert: `xcodebuild test` launches
+        // several of them, and this method starts file watchers, timers and a
+        // status-page poller. Paths and Keychain redirect under test, so this
+        // is about not doing pointless work (and not hammering
+        // status.claude.com from seven processes), not about safety.
+        guard !TestEnvironment.isRunningTests else { return }
         // Load history once at startup; it persists across app restarts.
         history = UsageHistory(url: Paths.historyFile)
         historySamples = history?.samples ?? []
@@ -108,7 +123,7 @@ final class MenuViewModel: ObservableObject {
         if let token {
             attachPoller(token: token)
         } else {
-            authState = .invalidToken
+            authState = .noToken
         }
 
         // Tick once a second so the "Last update Xs ago" caption and reset
@@ -193,9 +208,13 @@ final class MenuViewModel: ObservableObject {
     /// Deliberately user-initiated. This is the only place outside Settings that
     /// touches Claude Code's Keychain items, so the macOS access prompt always
     /// appears under the user's own click rather than from a background timer.
-    func reimportFromClaudeCodeKeychain() {
+    /// `probe` is injected only so tests can drive every outcome; the default
+    /// is the real Keychain read, under the user's click.
+    func reimportFromClaudeCodeKeychain(
+        probe: () -> ClaudeCodeKeychainProbe.Outcome = { ClaudeCodeKeychainProbe.probe() }
+    ) {
         let rejected = TokenStore.read()
-        let outcome = TokenRecovery.decide(rejected: rejected, found: ClaudeCodeKeychainProbe.probe())
+        let outcome = TokenRecovery.decide(rejected: rejected, found: probe())
         switch outcome {
         case .adopted(let imported):
             do { try TokenStore.write(imported.token, expiresAt: imported.expiresAt) }
@@ -207,6 +226,16 @@ final class MenuViewModel: ObservableObject {
         case .sameTokenRejected, .noneAvailable:
             recoveryHint = RecoveryCopy.message(for: outcome, now: Date())
         }
+    }
+
+    /// Adopts a poller state and retires the recovery hint with it.
+    ///
+    /// Split out of the Combine sink so the rule is reachable from a test: the
+    /// hint explains why a token couldn't be recovered, so it survives only
+    /// while a token is still the problem.
+    func applyAuthState(_ new: AuthState) {
+        authState = new
+        recoveryHint = new.lacksWorkingToken ? recoveryHint : nil
     }
 
     /// Reads our own Keychain item, publishing the token's deadline as a side
@@ -229,7 +258,7 @@ final class MenuViewModel: ObservableObject {
         // A new token is in play, so any explanation of why the previous one
         // couldn't be recovered is now history.
         recoveryHint = nil
-        guard let token = loadStoredToken() else { authState = .invalidToken; return }
+        guard let token = loadStoredToken() else { authState = .noToken; return }
         attachPoller(token: token)
     }
 
@@ -237,15 +266,12 @@ final class MenuViewModel: ObservableObject {
     /// One definition shared by `start()` and `restartPolling()` — keeping two
     /// copies in sync is what let the status subscription get dropped on restart.
     private func attachPoller(token: String) {
-        let p = UsagePoller(api: LiveAnthropicAPIClient(token: token), cacheURL: Paths.stateFile)
+        let p = UsagePoller(api: apiFactory(token), cacheURL: Paths.stateFile)
         // Assigning replaces (and so cancels) any previous poller subscription.
         pollerCancellable = p.$authState
             .receive(on: RunLoop.main)
             .sink { [weak self] in
-                self?.authState = $0
-                // Any state but "rejected" means the hint no longer describes
-                // reality — a poll succeeded on this token.
-                if $0 != .invalidToken { self?.recoveryHint = nil }
+                self?.applyAuthState($0)
                 self?.reloadCache()
             }
         poller = p

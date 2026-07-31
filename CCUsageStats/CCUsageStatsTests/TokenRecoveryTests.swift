@@ -93,10 +93,18 @@ final class RecoveryCopyTests: XCTestCase {
         )
         XCTAssertEqual(
             message,
-            "Claude Code's token expired 13h 28m ago and the CLI hasn't refreshed it since. "
+            "Claude Code's token expired 13h 28m ago, and no fresher one was found. "
                 + "Use Claude Code once to rotate it, or run `claude setup-token` and paste the value it "
                 + "prints — that one is long-lived."
         )
+    }
+
+    /// The message must not assert what the CLI did — a rotated token in a shape
+    /// this build can't parse also lands in `.expired`.
+    func testExpiredMessageDoesNotClaimTheCLINeverRefreshed() {
+        let message = RecoveryCopy.message(for: .expired(now.addingTimeInterval(-3600)), now: now)
+        XCTAssertFalse(message.contains("hasn't refreshed"), message)
+        XCTAssertTrue(message.contains("no fresher one was found"), message)
     }
 
     /// A deadline in the future can't happen through `classify`, but the copy
@@ -112,8 +120,13 @@ final class RecoveryCopyTests: XCTestCase {
         XCTAssertTrue(message.contains("Allow"), message)
     }
 
-    func testMCPOnlyMessageNamesTheCause() {
-        XCTAssertTrue(RecoveryCopy.message(for: .noClaudeToken, now: now).contains("MCP logins only"))
+    /// `.noClaudeToken` covers MCP-only entries, an API key in the token slot,
+    /// and unrecognized shapes — so the copy must not single one of them out.
+    func testMCPOnlyMessageNamesEveryCauseItCovers() {
+        let message = RecoveryCopy.message(for: .noClaudeToken, now: now)
+        XCTAssertTrue(message.contains("MCP logins"), message)
+        XCTAssertTrue(message.contains("API key"), message)
+        XCTAssertFalse(message.contains("MCP logins only"), message)
     }
 
     func testNoEntriesMessageDoesNotClaimSomethingExpired() {

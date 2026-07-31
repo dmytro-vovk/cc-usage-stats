@@ -6,6 +6,11 @@ struct CCUsageStatsApp: App {
 
     init() {
         // Phase 1 cleanup migration. One-shot; sentinel guards re-runs.
+        // Skipped under test: the unit bundle is hosted in this app, so every
+        // `xcodebuild test` launches instances that would otherwise run a
+        // migration over real files. Paths redirect under test as well — this
+        // is the second lock on the same door.
+        guard !TestEnvironment.isRunningTests else { return }
         try? Phase1Cleanup.run(
             settingsURL: Paths.claudeSettings,
             configURL: Paths.configFile,

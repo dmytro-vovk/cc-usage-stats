@@ -66,8 +66,11 @@ enum RecoveryCopy {
             return "Claude Code's Keychain holds a usable token."
 
         case .expired(let deadline):
+            // Says what was found, not what the CLI did: a rotated token in an
+            // envelope shape this build can't parse would also land here, and
+            // "the CLI hasn't refreshed it" would then be a fabrication.
             let ago = RelativeTime.format(seconds: Int64(max(0, now.timeIntervalSince(deadline))))
-            return "Claude Code's token expired \(ago) ago and the CLI hasn't refreshed it since. "
+            return "Claude Code's token expired \(ago) ago, and no fresher one was found. "
                 + "Use Claude Code once to rotate it, or \(pasteClause)"
 
         case .accessDenied:
@@ -75,7 +78,10 @@ enum RecoveryCopy {
                 + "Click again and choose Allow, or \(pasteClause)"
 
         case .noClaudeToken:
-            return "Claude Code's Keychain entries hold no claude.ai token — MCP logins only. \(pasteSentence)"
+            // Covers MCP-only entries, an API key in the token slot, and any
+            // shape the parser doesn't recognize — so it can't name just one.
+            return "Claude Code's Keychain entries hold no claude.ai OAuth token — MCP logins, an API "
+                + "key, or a format this build doesn't recognize. \(pasteSentence)"
 
         case .noEntries:
             return "No Claude Code credentials in Keychain. \(pasteSentence)"

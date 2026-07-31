@@ -35,7 +35,7 @@ struct MenuBarLabel: View {
         let five = vm.cached?.snapshot.fiveHour
         let seven = vm.cached?.snapshot.sevenDay
         let fiveAtCap = (five?.usedPercentage ?? 0) >= 100.0
-        if vm.authState != .invalidToken,
+        if !vm.authState.lacksWorkingToken,
            let five, let seven, !fiveAtCap {
             let fiveFraction = max(0, min(1, five.usedPercentage / 100.0))
             let sevenFraction = max(0, min(1, seven.usedPercentage / 100.0))
@@ -94,8 +94,8 @@ struct MenuBarLabel: View {
     /// the split-pill branch doesn't apply.
     private func renderSinglePill(onColor: NSColor, staleAlpha: CGFloat, outageIcon: NSImage?) -> NSImage {
         let pillColor = tintNSColor().withAlphaComponent(staleAlpha)
-        let showText = vm.authState != .invalidToken
-        let usePill = vm.authState != .invalidToken
+        let showText = !vm.authState.lacksWorkingToken
+        let usePill = !vm.authState.lacksWorkingToken
 
         let icon = makeIcon(symbol: glyph(), color: usePill ? onColor : pillColor)
         let textColor = usePill ? onColor : NSColor.labelColor.withAlphaComponent(staleAlpha)
@@ -285,7 +285,7 @@ struct MenuBarLabel: View {
 
     private func glyph() -> String {
         switch vm.authState {
-        case .invalidToken: return "exclamationmark.triangle.fill"
+        case .noToken, .invalidToken: return "exclamationmark.triangle.fill"
         case .notSubscriber: return "gauge.with.dots.needle.0percent"
         case .offline, .ok, .unknown: break
         }
@@ -306,7 +306,7 @@ struct MenuBarLabel: View {
         // Kept for the SwiftUI side (badges, link colors). NSImage rendering
         // uses tintNSColor() so it can pick mode-aware anchors.
         switch vm.authState {
-        case .invalidToken: return .red
+        case .noToken, .invalidToken: return .red
         case .notSubscriber: return .secondary
         case .offline, .ok, .unknown: break
         }
@@ -320,7 +320,7 @@ struct MenuBarLabel: View {
     /// readable on a light menubar / wallpaper as well as a dark one.
     private func tintNSColor() -> NSColor {
         switch vm.authState {
-        case .invalidToken: return .systemRed
+        case .noToken, .invalidToken: return .systemRed
         case .notSubscriber: return .secondaryLabelColor
         case .offline, .ok, .unknown: break
         }
@@ -481,7 +481,7 @@ struct MenuBarDropdown: View {
             ))
 
             HStack {
-                if vm.authState == .invalidToken || TokenStore.read() == nil {
+                if vm.authState.lacksWorkingToken || TokenStore.read() == nil {
                     Button("Set Token…") { vm.openSettings() }
                 } else {
                     Button("Change Token…") { vm.changeToken() }
@@ -624,7 +624,7 @@ struct MenuBarDropdown: View {
     /// owns that state and offers the recovery button.
     @ViewBuilder
     private var tokenExpiryRow: some View {
-        if vm.authState != .invalidToken,
+        if !vm.authState.lacksWorkingToken,
            let caption = TokenDurability.dropdownCaption(expiresAt: vm.tokenExpiresAt, now: Date()) {
             Label(caption, systemImage: "clock.badge.exclamationmark")
                 .foregroundStyle(.secondary)
@@ -636,29 +636,24 @@ struct MenuBarDropdown: View {
     @ViewBuilder
     private var authStatusRow: some View {
         switch vm.authState {
+        case .noToken:
+            // Nothing has been rejected here — the app simply has no credential
+            // to poll with, so the wording and the button both say "import",
+            // not "re-import".
+            tokenTroubleRow(
+                title: "No token set.",
+                symbol: "key.slash",
+                action: "Import from Claude Code Keychain"
+            )
         case .invalidToken:
-            VStack(alignment: .leading, spacing: 6) {
-                Label("Token rejected.", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                    .font(.caption)
-                    .wrapsFully()
-                // One-click recovery for the common case: the token came from
-                // Claude Code's Keychain and the CLI has since rotated a fresh
-                // one in. Falls back to Set Token below when it can't help.
-                Button("Re-import from Claude Code Keychain") {
-                    vm.reimportFromClaudeCodeKeychain()
-                }
-                .controlSize(.small)
-                // Lives inside this branch on purpose: the explanation is only
-                // true while the token is rejected, and recovering removes it
-                // along with the rest of the row.
-                if let hint = vm.recoveryHint {
-                    Text(hint)
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                        .wrapsFully()
-                }
-            }
+            // One-click recovery for the common case: the token came from
+            // Claude Code's Keychain and the CLI has since rotated a fresh
+            // one in. Falls back to Set Token below when it can't help.
+            tokenTroubleRow(
+                title: "Token rejected.",
+                symbol: "exclamationmark.triangle.fill",
+                action: "Re-import from Claude Code Keychain"
+            )
         case .notSubscriber:
             Label("No Claude.ai subscription rate-limit data.", systemImage: "info.circle")
                 .foregroundStyle(.secondary)
@@ -671,6 +666,28 @@ struct MenuBarDropdown: View {
                 .wrapsFully()
         case .ok, .unknown:
             EmptyView()
+        }
+    }
+
+    /// Shared shape for the two "can't poll" states: headline, the Keychain
+    /// button, and whatever the last import attempt had to say. The hint lives
+    /// inside this row on purpose — recovering by any route removes the row,
+    /// and the message with it.
+    @ViewBuilder
+    private func tokenTroubleRow(title: String, symbol: String, action: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: symbol)
+                .foregroundStyle(.red)
+                .font(.caption)
+                .wrapsFully()
+            Button(action) { vm.reimportFromClaudeCodeKeychain() }
+                .controlSize(.small)
+            if let hint = vm.recoveryHint {
+                Text(hint)
+                    .foregroundStyle(.red)
+                    .font(.caption)
+                    .wrapsFully()
+            }
         }
     }
 }

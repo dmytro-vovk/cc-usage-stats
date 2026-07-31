@@ -12,7 +12,24 @@ struct StoredToken: Equatable {
 }
 
 enum TokenStore {
-    static let serviceName = "cc-usage-stats"
+    /// The item the app stores the user's token in.
+    static let liveServiceName = "cc-usage-stats"
+    /// Scratch item the test suite gets instead, one per test worker process.
+    static let testServicePrefix = "cc-usage-stats.tests"
+    static var testServiceName: String { "\(testServicePrefix).\(TestEnvironment.scratchSuffix)" }
+
+    /// Resolved from the process, not passed in by callers.
+    ///
+    /// `TokenStoreTests` exercises the real Keychain API — that is the point of
+    /// those tests — and with a single fixed service name its `setUp`/`tearDown`
+    /// `delete()` calls wiped the user's live token: running the suite signed
+    /// the app out. Deciding here means a test cannot reach the live item even
+    /// if it never opts in, which is the only version of this that stays true
+    /// as tests are added.
+    static var serviceName: String {
+        TestEnvironment.isRunningTests ? testServiceName : liveServiceName
+    }
+
     static let account = "oauth-token"
 
     enum TokenStoreError: Error { case unexpectedStatus(OSStatus) }
