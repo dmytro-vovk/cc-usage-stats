@@ -71,14 +71,16 @@ final class SettingsViewModel: ObservableObject {
     }
 
     func tryClaudeCodeKeychain() {
-        if let found = ClaudeCodeKeychainProbe.read() {
+        switch ClaudeCodeKeychainProbe.probe() {
+        case .found(let found):
             imported = found
             token = found.token
             error = nil
-        } else {
+        case let miss:
+            // Says which of expired / denied / MCP-only it actually was, rather
+            // than listing the possibilities and leaving the user to guess.
             imported = nil
-            error = "No usable Claude Code token in Keychain — it may be expired, or access was denied. "
-                + "Run `claude setup-token`, allow access in the system prompt, or paste manually."
+            error = RecoveryCopy.message(for: miss, now: Date())
         }
     }
 

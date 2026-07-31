@@ -330,6 +330,24 @@ struct MenuBarLabel: View {
     }
 }
 
+extension View {
+    /// Opts a caption out of single-line truncation.
+    ///
+    /// The dropdown is a fixed 280pt wide and often taller than the panel it
+    /// is given (sparklines, the settings block, an incident banner). SwiftUI
+    /// answers a too-short height proposal by collapsing text to one
+    /// tail-truncated line — which silently ate the `claude setup-token`
+    /// instruction in the token-rejected state. `fixedSize` makes the text
+    /// claim the height its wrapped form needs instead, so the panel grows.
+    ///
+    /// Apply to any caption whose text is variable-length prose; static short
+    /// labels don't need it.
+    func wrapsFully() -> some View {
+        fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct MenuBarDropdown: View {
     @ObservedObject var vm: MenuViewModel
 
@@ -392,7 +410,10 @@ struct MenuBarDropdown: View {
             authStatusRow
             tokenExpiryRow
             if let err = vm.lastError {
-                Text(err).foregroundStyle(.red).font(.caption)
+                Text(err)
+                    .foregroundStyle(.red)
+                    .font(.caption)
+                    .wrapsFully()
             }
 
             Divider()
@@ -537,12 +558,17 @@ struct MenuBarDropdown: View {
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
+                        .wrapsFully()
                 }
                 if let inc = r.activeIncident {
+                    // Capped at two lines by design — an incident headline can
+                    // run long. fixedSize guarantees both of those lines are
+                    // actually drawn when the panel is height-starved.
                     Text(inc)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                        .wrapsFully()
                 }
                 Link("Details on status.claude.com",
                      destination: URL(string: "https://status.claude.com")!)
@@ -603,6 +629,7 @@ struct MenuBarDropdown: View {
             Label(caption, systemImage: "clock.badge.exclamationmark")
                 .foregroundStyle(.secondary)
                 .font(.caption)
+                .wrapsFully()
         }
     }
 
@@ -614,6 +641,7 @@ struct MenuBarDropdown: View {
                 Label("Token rejected.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.caption)
+                    .wrapsFully()
                 // One-click recovery for the common case: the token came from
                 // Claude Code's Keychain and the CLI has since rotated a fresh
                 // one in. Falls back to Set Token below when it can't help.
@@ -621,15 +649,26 @@ struct MenuBarDropdown: View {
                     vm.reimportFromClaudeCodeKeychain()
                 }
                 .controlSize(.small)
+                // Lives inside this branch on purpose: the explanation is only
+                // true while the token is rejected, and recovering removes it
+                // along with the rest of the row.
+                if let hint = vm.recoveryHint {
+                    Text(hint)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                        .wrapsFully()
+                }
             }
         case .notSubscriber:
             Label("No Claude.ai subscription rate-limit data.", systemImage: "info.circle")
                 .foregroundStyle(.secondary)
                 .font(.caption)
+                .wrapsFully()
         case .offline:
             Label("Offline — last value shown.", systemImage: "wifi.slash")
                 .foregroundStyle(.secondary)
                 .font(.caption)
+                .wrapsFully()
         case .ok, .unknown:
             EmptyView()
         }
@@ -685,6 +724,7 @@ private struct WindowSection: View {
                 Text(resetCaption(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .wrapsFully()
             }
         } else {
             VStack(alignment: .leading, spacing: 2) {

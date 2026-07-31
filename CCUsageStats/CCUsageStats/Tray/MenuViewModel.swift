@@ -15,6 +15,14 @@ final class MenuViewModel: ObservableObject {
     @Published private(set) var tokenExpiresAt: Date?
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
     @Published var lastError: String?
+    /// Why the last "Re-import from Claude Code Keychain" click couldn't help.
+    ///
+    /// Separate from `lastError` because it is only meaningful while the token
+    /// is rejected: the dropdown renders it inside the `.invalidToken` branch,
+    /// so recovering — by any route — takes the message with it. It used to be
+    /// a `lastError`, which nothing cleared on recovery, leaving "No usable
+    /// token in Claude Code's Keychain" under a perfectly healthy readout.
+    @Published private(set) var recoveryHint: String?
     @Published var warningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.warningEnabledKey) {
         didSet { UserDefaults.standard.set(warningEnabled, forKey: Self.warningEnabledKey) }
     }
@@ -187,20 +195,17 @@ final class MenuViewModel: ObservableObject {
     /// appears under the user's own click rather than from a background timer.
     func reimportFromClaudeCodeKeychain() {
         let rejected = TokenStore.read()
-        switch TokenRecovery.decide(rejected: rejected, candidate: ClaudeCodeKeychainProbe.read()) {
+        let outcome = TokenRecovery.decide(rejected: rejected, found: ClaudeCodeKeychainProbe.probe())
+        switch outcome {
         case .adopted(let imported):
             do { try TokenStore.write(imported.token, expiresAt: imported.expiresAt) }
             catch { lastError = "Keychain write failed: \(error)"; return }
             lastError = nil
+            recoveryHint = nil
             restartPolling()
 
-        case .sameTokenRejected:
-            lastError = "Claude Code's Keychain still holds the rejected token. Use Claude Code once "
-                + "to refresh it, or paste the output of `claude setup-token` — that token is long-lived."
-
-        case .noneAvailable:
-            lastError = "No usable token in Claude Code's Keychain. Run `claude setup-token` and paste "
-                + "the value it prints."
+        case .sameTokenRejected, .noneAvailable:
+            recoveryHint = RecoveryCopy.message(for: outcome, now: Date())
         }
     }
 
@@ -221,6 +226,9 @@ final class MenuViewModel: ObservableObject {
     private func restartPolling() {
         poller?.stop(); poller = nil
         pollerCancellable = nil
+        // A new token is in play, so any explanation of why the previous one
+        // couldn't be recovered is now history.
+        recoveryHint = nil
         guard let token = loadStoredToken() else { authState = .invalidToken; return }
         attachPoller(token: token)
     }
@@ -235,6 +243,9 @@ final class MenuViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] in
                 self?.authState = $0
+                // Any state but "rejected" means the hint no longer describes
+                // reality — a poll succeeded on this token.
+                if $0 != .invalidToken { self?.recoveryHint = nil }
                 self?.reloadCache()
             }
         poller = p

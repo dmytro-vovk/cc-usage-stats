@@ -120,6 +120,11 @@ The app makes this visible rather than letting it fail silently:
   Code Keychain** — one click to pick up whatever token the CLI has since
   rotated in. If the Keychain still holds the same rejected token, the app
   says so instead of retrying into another 401.
+- When a re-import finds nothing, the app names the reason rather than
+  reporting a flat miss: the CLI's token expired (and how long ago),
+  macOS denied access to the item, the entries hold MCP logins only, or
+  Claude Code has no credentials at all. Each one needs a different next
+  step, so each one reads differently.
 
 The app never refreshes tokens itself and never reads Claude Code's
 Keychain on a timer: every probe happens under an explicit click, so the

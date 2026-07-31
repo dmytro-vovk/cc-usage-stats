@@ -268,6 +268,98 @@ final class ClaudeCodeKeychainProbeTests: XCTestCase {
         )
     }
 
+    // MARK: - Miss classification
+
+    /// This machine's actual failure on 2026-07-31: the CLI's token lapsed
+    /// overnight and nothing had rotated it since.
+    func testAllEntriesExpiredReportsTheDeadline() {
+        let deadline = now.addingTimeInterval(-(13 * 3600))
+        let entries = [
+            entry("Claude Code-credentials", 1, claudeAiOauth(token: "sk-ant-oat01-stale", expiresAt: deadline)),
+            entry("Claude Code-credentials-0a53e818", 3, mcpOnlyPayload),
+        ]
+        XCTAssertEqual(ClaudeCodeKeychainProbe.classifyEntries(entries, now: now), .expired(deadline))
+    }
+
+    /// Newest-first ordering usually surfaces the latest deadline first, but an
+    /// older item can carry a later one — the message should quote the freshest.
+    func testExpiredReportsTheLatestDeadlineSeen() {
+        let older = now.addingTimeInterval(-8 * 3600)
+        let later = now.addingTimeInterval(-1 * 3600)
+        let entries = [
+            entry("Claude Code-credentials-0a53e818", 0, claudeAiOauth(token: "sk-ant-oat01-a", expiresAt: older)),
+            entry("Claude Code-credentials", 5, claudeAiOauth(token: "sk-ant-oat01-b", expiresAt: later)),
+        ]
+        XCTAssertEqual(ClaudeCodeKeychainProbe.classifyEntries(entries, now: now), .expired(later))
+    }
+
+    func testMCPOnlyEntriesReportNoClaudeToken() {
+        let entries = [
+            entry("Claude Code-credentials-98915f0c", 14, mcpOnlyPayload),
+            entry("Claude Code-credentials-0a53e818", 0, mcpOnlyPayload),
+        ]
+        XCTAssertEqual(ClaudeCodeKeychainProbe.classifyEntries(entries, now: now), .noClaudeToken)
+    }
+
+    func testNoEntriesIsDistinctFromUnusableEntries() {
+        XCTAssertEqual(ClaudeCodeKeychainProbe.classifyEntries([], now: now), .noEntries)
+    }
+
+    /// A denied prompt must never read as "nothing there" — the item may well
+    /// hold a good token we simply weren't allowed to see.
+    func testDeniedFetchReportsAccessDenied() {
+        let outcome = ClaudeCodeKeychainProbe.classify(candidates: ["locked"], now: now) { _ in .denied }
+        XCTAssertEqual(outcome, .accessDenied)
+    }
+
+    /// Denial outranks expiry: reporting "expired" would send the user to the
+    /// CLI when the real fix is clicking Allow.
+    func testDenialOutranksExpiry() {
+        let outcome = ClaudeCodeKeychainProbe.classify(
+            candidates: ["locked", "stale"], now: now
+        ) { name in
+            name == "locked"
+                ? .denied
+                : .body(self.claudeAiOauth(token: "sk-ant-oat01-stale",
+                                           expiresAt: self.now.addingTimeInterval(-3600)))
+        }
+        XCTAssertEqual(outcome, .accessDenied)
+    }
+
+    /// A usable token still wins over a denial encountered earlier in the sweep.
+    func testUsableTokenWinsDespiteAnEarlierDenial() {
+        let outcome = ClaudeCodeKeychainProbe.classify(
+            candidates: ["locked", "good"], now: now
+        ) { name in
+            name == "locked"
+                ? .denied
+                : .body(self.claudeAiOauth(token: "sk-ant-oat01-good",
+                                           expiresAt: self.now.addingTimeInterval(3600)))
+        }
+        XCTAssertEqual(
+            outcome,
+            .found(ClaudeCodeKeychainProbe.ImportedToken(token: "sk-ant-oat01-good",
+                                                         expiresAt: now.addingTimeInterval(3600)))
+        )
+    }
+
+    /// An item that disappeared between the attribute query and the data read is
+    /// absent, not denied.
+    func testAbsentFetchIsNotADenial() {
+        let outcome = ClaudeCodeKeychainProbe.classify(candidates: ["vanished"], now: now) { _ in .absent }
+        XCTAssertEqual(outcome, .noEntries)
+    }
+
+    /// An expired API key is "no claude.ai token", not "your token expired" —
+    /// adopting it was never possible, so the expiry is not the story.
+    func testExpiredAPIKeyShapedTokenIsUnusableNotExpired() {
+        let entries = [
+            entry("Claude Code-credentials", 1,
+                  claudeAiOauth(token: "sk-ant-api03-notanoauthtoken", expiresAt: now.addingTimeInterval(-3600))),
+        ]
+        XCTAssertEqual(ClaudeCodeKeychainProbe.classifyEntries(entries, now: now), .noClaudeToken)
+    }
+
     func testRejectsExpiredTokenWhenExpiresAtIsAString() {
         let expired = Int(now.addingTimeInterval(-86_400).timeIntervalSince1970 * 1000)
         let obj: [String: Any] = [

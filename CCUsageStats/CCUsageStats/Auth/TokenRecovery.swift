@@ -14,17 +14,71 @@ enum TokenRecovery {
         /// Adopting it would 401 again, so tell the user rather than silently
         /// restarting into the same failure.
         case sameTokenRejected
-        /// Nothing usable in the Keychain: absent, expired, denied, or an entry
-        /// carrying only `mcpOAuth`.
-        case noneAvailable
+        /// Nothing usable in the Keychain, with the probe's reason attached so
+        /// the message can name it: an expired token, a denied prompt and an
+        /// MCP-only entry each need a different next step from the user.
+        case noneAvailable(ClaudeCodeKeychainProbe.Outcome)
     }
 
     static func decide(
         rejected: String?,
-        candidate: ClaudeCodeKeychainProbe.ImportedToken?
+        found: ClaudeCodeKeychainProbe.Outcome
     ) -> Outcome {
-        guard let candidate else { return .noneAvailable }
+        guard case .found(let candidate) = found else { return .noneAvailable(found) }
         if let rejected, rejected == candidate.token { return .sameTokenRejected }
         return .adopted(candidate)
+    }
+}
+
+/// User-facing wording for a recovery attempt that didn't restore polling.
+///
+/// Separated from the view model so the copy is unit-testable with an injected
+/// `now` — the expired case quotes how long ago the token lapsed.
+enum RecoveryCopy {
+    /// Same advice in two grammatical positions — mid-sentence after "or", and
+    /// standing alone. Composing one from the other would need string surgery
+    /// for a single capital letter.
+    private static let pasteClause =
+        "run `claude setup-token` and paste the value it prints — that one is long-lived."
+    private static let pasteSentence =
+        "Run `claude setup-token` and paste the value it prints — that one is long-lived."
+
+    /// nil when the outcome needs no explanation (a token was adopted).
+    static func message(for outcome: TokenRecovery.Outcome, now: Date) -> String? {
+        switch outcome {
+        case .adopted:
+            return nil
+
+        case .sameTokenRejected:
+            return "Claude Code's Keychain still holds the rejected token. Use Claude Code once "
+                + "to refresh it, or paste the output of `claude setup-token` — that token is long-lived."
+
+        case .noneAvailable(let probe):
+            return message(for: probe, now: now)
+        }
+    }
+
+    static func message(for probe: ClaudeCodeKeychainProbe.Outcome, now: Date) -> String {
+        switch probe {
+        case .found:
+            // Unreachable through `TokenRecovery.decide`; kept total so a future
+            // caller can't fall off the end of the switch.
+            return "Claude Code's Keychain holds a usable token."
+
+        case .expired(let deadline):
+            let ago = RelativeTime.format(seconds: Int64(max(0, now.timeIntervalSince(deadline))))
+            return "Claude Code's token expired \(ago) ago and the CLI hasn't refreshed it since. "
+                + "Use Claude Code once to rotate it, or \(pasteClause)"
+
+        case .accessDenied:
+            return "macOS denied access to Claude Code's Keychain item, so its token couldn't be read. "
+                + "Click again and choose Allow, or \(pasteClause)"
+
+        case .noClaudeToken:
+            return "Claude Code's Keychain entries hold no claude.ai token — MCP logins only. \(pasteSentence)"
+
+        case .noEntries:
+            return "No Claude Code credentials in Keychain. \(pasteSentence)"
+        }
     }
 }

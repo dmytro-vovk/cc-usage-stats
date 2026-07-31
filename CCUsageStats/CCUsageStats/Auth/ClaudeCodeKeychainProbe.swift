@@ -30,20 +30,62 @@ enum ClaudeCodeKeychainProbe {
         let expiresAt: Date?
     }
 
-    static func read(now: Date = Date()) -> ImportedToken? {
+    /// What a probe actually found. The misses are separate cases because they
+    /// call for different user actions — "expired 13h ago" means use the CLI or
+    /// paste a durable token, "access denied" means click Allow and retry — and
+    /// all of them used to collapse into one flat "no usable token" message.
+    enum Outcome: Equatable {
+        case found(ImportedToken)
+        /// Every readable entry carrying a claude.ai token had lapsed. Carries
+        /// the latest deadline seen, which is the one the user recognizes.
+        case expired(Date)
+        /// Entries exist but macOS wouldn't hand over their contents (denied or
+        /// dismissed prompt). Blind, not empty-handed — so never reported as
+        /// "nothing there".
+        case accessDenied
+        /// Entries were read but none holds a claude.ai OAuth token: `mcpOAuth`
+        /// logins only, an API key, or an unrecognized shape.
+        case noClaudeToken
+        /// Claude Code has no credential items at all.
+        case noEntries
+    }
+
+    /// One payload fetch. `denied` is distinct from `absent` so the traversal can
+    /// tell "macOS said no" from "the item vanished between query and read".
+    enum PayloadFetch: Equatable {
+        case body(String)
+        case denied
+        case absent
+    }
+
+    /// Full diagnosis, including why a miss was a miss.
+    static func probe(now: Date = Date()) -> Outcome {
         // `candidateAttributes()` is already newest-first; payloads are resolved on
         // demand so the access prompt stops as soon as one yields a usable token.
-        firstUsableImport(candidates: candidateAttributes(), now: now) { attrs in
-            guard let service = attrs[kSecAttrService as String] as? String else { return nil }
+        classify(candidates: candidateAttributes(), now: now) { attrs in
+            guard let service = attrs[kSecAttrService as String] as? String else { return .absent }
             return fetchPayload(service: service, account: attrs[kSecAttrAccount as String] as? String)
         }
+    }
+
+    /// Token-only view of `probe()`, for callers that only act on success.
+    static func read(now: Date = Date()) -> ImportedToken? {
+        guard case .found(let imported) = probe(now: now) else { return nil }
+        return imported
     }
 
     /// Newest entry that actually yields a usable, unexpired token wins. Entries
     /// holding only `mcpOAuth`, an expired `claudeAiOauth`, or a non-OAuth token
     /// are skipped rather than ending the search.
     static func selectImport(from entries: [Entry], now: Date) -> ImportedToken? {
-        firstUsableImport(candidates: entries.sorted { $0.modified > $1.modified }, now: now) { $0.payload }
+        guard case .found(let imported) = classifyEntries(entries, now: now) else { return nil }
+        return imported
+    }
+
+    /// `classify` over a pre-fetched entry list — the offline form used by tests
+    /// and by anything that already holds the payloads.
+    static func classifyEntries(_ entries: [Entry], now: Date) -> Outcome {
+        classify(candidates: entries.sorted { $0.modified > $1.modified }, now: now) { .body($0.payload) }
     }
 
     /// Token-only convenience over `selectImport(from:now:)`.
@@ -69,16 +111,61 @@ enum ClaudeCodeKeychainProbe {
         now: Date,
         payload: (Candidate) -> String?
     ) -> ImportedToken? {
+        let outcome = classify(candidates: candidates, now: now) { candidate in
+            payload(candidate).map { PayloadFetch.body($0) } ?? .absent
+        }
+        guard case .found(let imported) = outcome else { return nil }
+        return imported
+    }
+
+    /// The traversal, keeping the reason a miss was a miss.
+    ///
+    /// `candidates` must already be newest-first, and `payload` is invoked at
+    /// most once per candidate — each call is a Keychain access prompt in the
+    /// shipping caller.
+    ///
+    /// Miss precedence is deliberate: a denial outranks an expiry, because a
+    /// denied item might have held a perfectly good token and reporting
+    /// "expired" would send the user down the wrong path.
+    static func classify<Candidate>(
+        candidates: [Candidate],
+        now: Date,
+        payload: (Candidate) -> PayloadFetch
+    ) -> Outcome {
         // A plain loop, deliberately: `lazy.compactMap { … }.first` resolves the
         // winning candidate twice (`Collection.first` is `self[startIndex]` after
         // `startIndex` already ran the transform), which would prompt twice and
         // trap on the force-unwrap inside lazy compactMap if the repeat fetch fails.
+        var latestExpiry: Date?
+        var sawDenial = false
+        var sawEntry = false
+
         for candidate in candidates {
-            guard let raw = payload(candidate),
-                  let imported = usableImport(in: raw, now: now) else { continue }
-            return imported
+            switch payload(candidate) {
+            case .denied:
+                sawEntry = true
+                sawDenial = true
+            case .absent:
+                continue
+            case .body(let raw):
+                sawEntry = true
+                switch inspect(payload: raw, now: now) {
+                case .usable(let imported):
+                    return .found(imported)
+                case .expired(let deadline):
+                    // Newest-first ordering usually puts the latest deadline
+                    // first, but a stale item can carry a later expiry — take
+                    // the max so the message quotes the freshest one.
+                    latestExpiry = max(latestExpiry ?? deadline, deadline)
+                case .unusable:
+                    continue
+                }
+            }
         }
-        return nil
+
+        if sawDenial { return .accessDenied }
+        if let latestExpiry { return .expired(latestExpiry) }
+        return sawEntry ? .noClaudeToken : .noEntries
     }
 
     // MARK: - Keychain access
@@ -106,7 +193,7 @@ enum ClaudeCodeKeychainProbe {
         attrs[kSecAttrModificationDate as String] as? Date ?? .distantPast
     }
 
-    private static func fetchPayload(service: String, account: String?) -> String? {
+    private static func fetchPayload(service: String, account: String?) -> PayloadFetch {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -116,42 +203,65 @@ enum ClaudeCodeKeychainProbe {
         if let account { query[kSecAttrAccount as String] = account }
 
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else {
-            return nil
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data,
+           let payload = String(data: data, encoding: .utf8) {
+            return .body(payload)
         }
-        return String(data: data, encoding: .utf8)
+        return isDenial(status) ? .denied : .absent
+    }
+
+    /// Statuses that mean "macOS refused", as opposed to "not there". A refusal
+    /// is what the user sees when they dismiss the access prompt or hit Deny.
+    private static func isDenial(_ status: OSStatus) -> Bool {
+        switch status {
+        case errSecAuthFailed, errSecUserCanceled, errSecInteractionNotAllowed,
+             errSecInteractionRequired, errSecNotAvailable, errSecDecode:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Payload parsing
 
-    private static func usableImport(in payload: String, now: Date) -> ImportedToken? {
+    /// What one payload turned out to hold. `expired` is separated from
+    /// `unusable` so a lapsed-but-otherwise-valid entry can be reported as such.
+    enum PayloadVerdict: Equatable {
+        case usable(ImportedToken)
+        case expired(Date)
+        case unusable
+    }
+
+    static func inspect(payload: String, now: Date) -> PayloadVerdict {
         // Bare token string — no envelope, so no deadline to report.
         if payload.hasPrefix("sk-ant-") {
-            return validated(payload).map { ImportedToken(token: $0, expiresAt: nil) }
+            return validated(payload).map { .usable(ImportedToken(token: $0, expiresAt: nil)) } ?? .unusable
         }
 
         guard let data = payload.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+            return .unusable
         }
         // Current envelope: {"claudeAiOauth": {accessToken, expiresAt, …}, "mcpOAuth": {…}}.
-        // An entry carrying only `mcpOAuth` falls through the legacy lookup and yields nil.
+        // An entry carrying only `mcpOAuth` falls through the legacy lookup and is unusable.
         if let oauth = obj["claudeAiOauth"] as? [String: Any] {
-            return importedToken(in: oauth, now: now)
+            return verdict(in: oauth, now: now)
         }
-        return importedToken(in: obj, now: now) // legacy flat envelope
+        return verdict(in: obj, now: now) // legacy flat envelope
     }
 
-    private static func importedToken(in obj: [String: Any], now: Date) -> ImportedToken? {
+    private static func verdict(in obj: [String: Any], now: Date) -> PayloadVerdict {
         let expiry = expiryDate(obj["expiresAt"])
-        if let expiry, expiry <= now { return nil }
         for key in ["accessToken", "access_token", "oauth_token", "token"] {
-            if let v = obj[key] as? String {
-                return validated(v).map { ImportedToken(token: $0, expiresAt: expiry) }
-            }
+            guard let v = obj[key] as? String else { continue }
+            guard let token = validated(v) else { return .unusable }
+            // Shape-checked first: a lapsed API key is still "no claude.ai
+            // token", not "your token expired".
+            if let expiry, expiry <= now { return .expired(expiry) }
+            return .usable(ImportedToken(token: token, expiresAt: expiry))
         }
-        return nil
+        return .unusable
     }
 
     private static func validated(_ token: String) -> String? {
