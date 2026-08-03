@@ -188,7 +188,21 @@ final class MenuViewModel: ObservableObject {
         let vm = SettingsViewModel { [weak self] _ in
             self?.restartPolling()
         }
+        vm.onConnect = { [weak self] in self?.connectAccount() }
         SettingsWindowController.shared.show(viewModel: vm)
+    }
+
+    /// Runs the browser OAuth flow and rebuilds the poller on success.
+    func connectAccount() {
+        Task { @MainActor in
+            do {
+                let session = try await OAuthFlow.runInteractive()
+                try OAuthSessionStore.write(session)
+                restartPolling()
+            } catch {
+                lastError = "Connect failed: \(error)"
+            }
+        }
     }
 
     /// Opens the settings dialog so the user can paste a new token.
