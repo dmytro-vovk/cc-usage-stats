@@ -80,8 +80,14 @@ final class OAuthTokenProviderTests: XCTestCase {
         ])
     }
 
-    override func setUp() { StubURLProtocol.reset() }
-    override func tearDown() { StubURLProtocol.reset() }
+    override func setUp() {
+        StubURLProtocol.reset()
+        try? OAuthSessionStore.delete()
+    }
+    override func tearDown() {
+        StubURLProtocol.reset()
+        try? OAuthSessionStore.delete()
+    }
 
     // MARK: - (a) transient refresh failure
 
