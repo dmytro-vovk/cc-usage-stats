@@ -128,4 +128,24 @@ final class MenuViewModelTests: XCTestCase {
         vm.applyAuthState(.noToken)
         XCTAssertNotNil(vm.recoveryHint)
     }
+
+    // MARK: - Reconnect flag
+
+    func testReconnectFlagSetWhenOnlyAPastedTokenExists() throws {
+        try TokenStore.write("sk-ant-oat01-stub")
+        let vm = viewModel(polling: .success(
+            RateLimitsSnapshot(fiveHour: WindowSnapshot(usedPercentage: 1, resetsAt: 2),
+                               sevenDay: nil)
+        ))
+        vm.restartPollingForTest()
+        XCTAssertTrue(vm.needsReauthorization,
+                      "a header-only user must be told the model meter needs connecting")
+    }
+
+    func testReconnectFlagSetWhenNothingIsStored() {
+        let vm = viewModel()
+        vm.restartPollingForTest()
+        XCTAssertEqual(vm.authState, .noToken)
+        XCTAssertTrue(vm.needsReauthorization)
+    }
 }
