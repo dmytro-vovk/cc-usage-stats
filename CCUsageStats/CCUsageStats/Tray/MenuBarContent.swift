@@ -233,6 +233,14 @@ struct MenuBarDropdown: View {
                 )
                 WindowSection(title: "7-day window", window: cached.snapshot.sevenDay, now: now)
 
+                ForEach(UsageWindows.orderedModelKeys(cached.snapshot.models), id: \.self) { key in
+                    WindowSection(
+                        title: UsageWindows.label(for: key),
+                        window: cached.snapshot.models[key],
+                        now: now
+                    )
+                }
+
                 Divider()
 
                 HStack(spacing: 4) {
@@ -267,6 +275,7 @@ struct MenuBarDropdown: View {
 
             // Auth / connectivity status.
             authStatusRow
+            reauthorizeRow
             tokenExpiryRow
             if let err = vm.lastError {
                 Text(err)
@@ -525,6 +534,23 @@ struct MenuBarDropdown: View {
                 .wrapsFully()
         case .ok, .unknown:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var reauthorizeRow: some View {
+        // Suppressed when there is no working token at all — "connect for the
+        // model meter" is noise next to "token rejected, set a token".
+        if vm.needsReauthorization, !vm.authState.lacksWorkingToken {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Connect your account to see per-model weekly usage.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

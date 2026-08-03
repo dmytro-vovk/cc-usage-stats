@@ -106,6 +106,152 @@ enum OAuthFlow {
         }
         return parsed
     }
+
+    /// Full interactive flow: listen, open browser, exchange.
+    static func runInteractive(
+        timeout: TimeInterval = 300,
+        session: URLSession = .shared
+    ) async throws -> OAuthSession {
+        let verifier = PKCE.makeVerifier()
+        let challenge = PKCE.challenge(for: verifier)
+        let state = PKCE.randomState()
+
+        let listener = try await LoopbackRedirectListener.start()
+        defer { listener.stop() }
+        let redirectURI = "http://localhost:\(listener.port)/callback"
+
+        NSWorkspace.shared.open(
+            authorizeURL(challenge: challenge, state: state, redirectURI: redirectURI)
+        )
+
+        let callback = try await listener.waitForCallback(timeout: timeout)
+        guard callback.state == state else { throw FlowError.stateMismatch }
+
+        return try await exchange(
+            code: callback.code,
+            verifier: verifier,
+            state: state,
+            redirectURI: redirectURI,
+            session: session
+        )
+    }
+}
+
+/// Single-shot loopback HTTP listener for the OAuth redirect.
+/// Construct with `await LoopbackRedirectListener.start()`.
+final class LoopbackRedirectListener {
+    struct Callback { let code: String; let state: String }
+
+    private let listener: NWListener
+    private var continuation: CheckedContinuation<Callback, Error>?
+    private var finished = false
+    let port: UInt16
+
+    /// Binds an ephemeral port on loopback only. `requiredLocalEndpoint`
+    /// constrains the bind address (macOS 10.15+); without it the listener
+    /// accepts connections from the whole LAN.
+    static func start() async throws -> LoopbackRedirectListener {
+        let params = NWParameters.tcp
+        params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        guard let l = try? NWListener(using: params) else {
+            throw OAuthFlow.FlowError.listenerFailed
+        }
+
+        // Wait for .ready rather than polling `listener.port` — the port is
+        // not assigned until the listener is ready, and a busy-wait on the
+        // cooperative executor would block a thread that the listener's own
+        // queue may need.
+        let port: UInt16 = try await withCheckedThrowingContinuation { cont in
+            var resumed = false
+            l.stateUpdateHandler = { state in
+                guard !resumed else { return }
+                switch state {
+                case .ready:
+                    guard let p = l.port?.rawValue, p != 0 else {
+                        resumed = true
+                        cont.resume(throwing: OAuthFlow.FlowError.listenerFailed)
+                        return
+                    }
+                    resumed = true
+                    cont.resume(returning: p)
+                case .failed, .cancelled:
+                    resumed = true
+                    cont.resume(throwing: OAuthFlow.FlowError.listenerFailed)
+                default:
+                    break
+                }
+            }
+            l.start(queue: .main)
+        }
+
+        return LoopbackRedirectListener(listener: l, port: port)
+    }
+
+    private init(listener: NWListener, port: UInt16) {
+        self.listener = listener
+        self.port = port
+    }
+
+    func waitForCallback(timeout: TimeInterval) async throws -> Callback {
+        try await withCheckedThrowingContinuation { cont in
+            continuation = cont
+            listener.newConnectionHandler = { [weak self] conn in
+                self?.handle(conn)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                self?.finish(.failure(OAuthFlow.FlowError.cancelled))
+            }
+        }
+    }
+
+    private func handle(_ conn: NWConnection) {
+        conn.start(queue: .main)
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, _ in
+            guard let self else { return }
+            let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+
+            let parsed: Callback? = {
+                guard let line = request.split(separator: "\r\n").first,
+                      let pathPart = line.split(separator: " ").dropFirst().first,
+                      let comps = URLComponents(string: "http://localhost\(pathPart)"),
+                      let code = comps.queryItems?.first(where: { $0.name == "code" })?.value,
+                      let state = comps.queryItems?.first(where: { $0.name == "state" })?.value
+                else { return nil }
+                return Callback(code: code, state: state)
+            }()
+
+            let body = parsed == nil
+                ? "Not found."
+                : "You can close this window and return to CCUsageStats."
+            let status = parsed == nil ? "404 Not Found" : "200 OK"
+            let response = """
+            HTTP/1.1 \(status)\r
+            Content-Type: text/plain; charset=utf-8\r
+            Content-Length: \(body.utf8.count)\r
+            Connection: close\r
+            \r
+            \(body)
+            """
+            conn.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+                conn.cancel()
+            })
+
+            // Only a well-formed callback ends the wait. Browsers open
+            // speculative preconnect sockets that carry no request, and any
+            // stray probe would otherwise abort an in-progress
+            // authorization. Failure comes from the timeout alone.
+            if let parsed { self.finish(.success(parsed)) }
+        }
+    }
+
+    private func finish(_ result: Result<Callback, Error>) {
+        guard !finished else { return }
+        finished = true
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+
+    func stop() { listener.cancel() }
 }
 
 /// Serializes refreshes so two concurrent polls cannot both rotate the

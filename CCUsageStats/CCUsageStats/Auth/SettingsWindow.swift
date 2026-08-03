@@ -56,6 +56,10 @@ final class SettingsViewModel: ObservableObject {
     private let onSaveSuccess: (String) -> Void
     init(onSaveSuccess: @escaping (String) -> Void) { self.onSaveSuccess = onSaveSuccess }
 
+    /// Set by the caller that owns the poller. Optional because the settings
+    /// window is constructible without it in previews and tests.
+    var onConnect: (() -> Void)?
+
     /// Expiry to persist alongside the token, or nil if the field no longer
     /// matches what was imported.
     func expiryToStore(for trimmed: String) -> Date? {
@@ -143,6 +147,7 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
             HStack {
                 Button("Paste from Claude Code Keychain") { vm.tryClaudeCodeKeychain() }
+                Button("Connect Claude account") { vm.onConnect?() }
                 Spacer()
             }
             if let err = vm.error {
