@@ -9,6 +9,7 @@ final class MenuViewModel: ObservableObject {
     )
     @Published private(set) var cached: CachedState?
     @Published private(set) var authState: AuthState = .unknown
+    @Published private(set) var needsReauthorization = false
     /// Deadline of the stored token, when one is known. Non-nil only for tokens
     /// imported from Claude Code's Keychain; a hand-pasted `claude setup-token`
     /// value carries no visible expiry and is assumed durable.
@@ -69,11 +70,12 @@ final class MenuViewModel: ObservableObject {
     /// Subscriptions that must outlive a token change — currently the
     /// status-page poller. Cleared only by `stop()`.
     private var cancellables: Set<AnyCancellable> = []
-    /// The usage poller's `authState` subscription, held separately because it
-    /// is torn down and rebuilt every time the token changes. It used to live in
-    /// `cancellables`, so `restartPolling()`'s `removeAll()` took the status
-    /// subscription with it and the outage banner silently froze until relaunch.
-    private var pollerCancellable: AnyCancellable?
+    /// The usage poller's subscriptions, held separately from `cancellables`
+    /// because they are torn down and rebuilt every time the token changes.
+    /// It used to be a single cancellable living in `cancellables`, so
+    /// `restartPolling()`'s `removeAll()` took the status subscription with
+    /// it and the outage banner silently froze until relaunch.
+    private var pollerCancellables: Set<AnyCancellable> = []
     private var lastFiveHour: WindowSnapshot?
     private var wakeObserver: NSObjectProtocol?
     private var history: UsageHistory?
@@ -119,12 +121,7 @@ final class MenuViewModel: ObservableObject {
         // "Re-import from Claude Code Keychain" in the dropdown — we don't want
         // to surface a system Keychain prompt unprompted.
         let token = loadStoredToken()
-
-        if let token {
-            attachPoller(token: token)
-        } else {
-            authState = .noToken
-        }
+        attachPoller(token: token)
 
         // Tick once a second so the "Last update Xs ago" caption and reset
         // countdowns update smoothly without waiting for a poll. Cost is a
@@ -166,7 +163,7 @@ final class MenuViewModel: ObservableObject {
 
     func stop() {
         poller?.stop(); poller = nil
-        pollerCancellable = nil
+        pollerCancellables.removeAll()
         statusPoller?.stop(); statusPoller = nil
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
@@ -254,26 +251,74 @@ final class MenuViewModel: ObservableObject {
 
     private func restartPolling() {
         poller?.stop(); poller = nil
-        pollerCancellable = nil
+        pollerCancellables.removeAll()
         // A new token is in play, so any explanation of why the previous one
         // couldn't be recovered is now history.
         recoveryHint = nil
-        guard let token = loadStoredToken() else { authState = .noToken; return }
-        attachPoller(token: token)
+        attachPoller(token: loadStoredToken())
     }
 
-    /// Builds a poller for `token`, mirrors its published state, and starts it.
-    /// One definition shared by `start()` and `restartPolling()` — keeping two
-    /// copies in sync is what let the status subscription get dropped on restart.
-    private func attachPoller(token: String) {
-        let p = UsagePoller(api: apiFactory(token), cacheURL: Paths.stateFile)
-        // Assigning replaces (and so cancels) any previous poller subscription.
-        pollerCancellable = p.$authState
+    /// Test seam: `start()` no-ops under test, so the state machine is driven
+    /// through here instead.
+    func restartPollingForTest() { restartPolling() }
+
+    /// Builds a poller for whichever auth material is available, mirrors its
+    /// published state, and starts it.
+    ///
+    /// Preference order:
+    ///   1. Scoped OAuth session → /api/oauth/usage (every window, and a GET,
+    ///      so it costs no quota), with the pasted token as fallback.
+    ///   2. Pasted token only → response-header path (5h + 7d only).
+    ///   3. Neither → nothing to poll with.
+    private func attachPoller(token: String?) {
+        let session = OAuthSessionStore.read()
+
+        // True when no scoped session is stored — the common case on the
+        // update that ships this, and the one the reconnect row exists for.
+        // Held separately because the poller's own flag can only report a
+        // *runtime* refusal, which the header-only configuration never
+        // produces.
+        let lacksScopedSession = !(session?.hasProfileScope ?? false)
+
+        let primary: AnthropicAPIClient
+        let fallback: AnthropicAPIClient?
+
+        if let session, session.hasProfileScope {
+            primary = OAuthUsageClient(provider: OAuthTokenProvider(session: session))
+            fallback = token.map(apiFactory)
+        } else if let token {
+            primary = apiFactory(token)
+            fallback = nil
+        } else {
+            authState = .noToken
+            needsReauthorization = true
+            return
+        }
+
+        // Set synchronously too: the Combine subscriptions below are
+        // `receive(on: RunLoop.main)`, which defers even the initial
+        // republish to the next run-loop turn. Without this, a caller that
+        // reads `needsReauthorization` immediately after `attachPoller`
+        // returns (as `restartPollingForTest()` does) would see the stale
+        // pre-attach value.
+        needsReauthorization = lacksScopedSession
+
+        let p = UsagePoller(api: primary, fallback: fallback, cacheURL: Paths.stateFile)
+        p.$authState
             .receive(on: RunLoop.main)
             .sink { [weak self] in
                 self?.applyAuthState($0)
                 self?.reloadCache()
             }
+            .store(in: &pollerCancellables)
+        // OR with the static fact. A bare mirror would clobber it: @Published
+        // republishes its current value (false) the moment we subscribe.
+        p.$needsReauthorization
+            .receive(on: RunLoop.main)
+            .sink { [weak self] flag in
+                self?.needsReauthorization = flag || lacksScopedSession
+            }
+            .store(in: &pollerCancellables)
         poller = p
         p.start()
     }

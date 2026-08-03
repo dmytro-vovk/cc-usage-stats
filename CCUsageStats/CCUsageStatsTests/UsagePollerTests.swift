@@ -171,4 +171,127 @@ final class UsagePollerTests: XCTestCase {
         await poller.tickForTest()
         XCTAssertEqual(poller.currentBackoffSeconds, 970) // 1000 - 30
     }
+
+    // MARK: - Dual-path fallback
+
+    func testInsufficientScopeFallsBackToSecondaryClient() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-fallback-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.insufficientScope]
+        let fallback = StubAPI()
+        fallback.queue = [.success(RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 33, resetsAt: 999),
+            sevenDay: nil
+        ))]
+
+        let poller = UsagePoller(api: primary, fallback: fallback, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+
+        XCTAssertEqual(fallback.calls, 1, "fallback must run on the same tick")
+        XCTAssertTrue(poller.needsReauthorization)
+        XCTAssertEqual(poller.authState, .ok, "fallback data is still good data")
+
+        let cached = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(cached.snapshot.fiveHour?.usedPercentage, 33)
+    }
+
+    func testSuccessfulOAuthPathClearsReauthorizationFlag() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-noreauth-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [
+            .insufficientScope,
+            .success(RateLimitsSnapshot(fiveHour: WindowSnapshot(usedPercentage: 1, resetsAt: 2),
+                                        sevenDay: nil)),
+        ]
+        let fallback = StubAPI()
+        fallback.queue = [
+            .success(RateLimitsSnapshot(fiveHour: WindowSnapshot(usedPercentage: 33, resetsAt: 999),
+                                        sevenDay: nil)),
+        ]
+
+        let poller = UsagePoller(api: primary, fallback: fallback, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+        XCTAssertTrue(poller.needsReauthorization)
+
+        await poller.tickForTest()
+        XCTAssertFalse(poller.needsReauthorization, "a scoped success must clear the flag")
+    }
+
+    func testInsufficientScopeWithoutFallbackDoesNotStopPolling() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-nofallback-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.insufficientScope]
+        let poller = UsagePoller(api: primary, fallback: nil, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+
+        XCTAssertTrue(poller.needsReauthorization)
+        XCTAssertNotEqual(poller.authState, .invalidToken)
+        XCTAssertTrue(poller.isPolling, "the name of this test is the assertion")
+    }
+
+    func testOAuth401FallsBackInsteadOfStoppingWhenFallbackExists() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-401-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.invalidToken]
+        let fallback = StubAPI()
+        fallback.queue = [.success(RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 12, resetsAt: 999), sevenDay: nil
+        ))]
+
+        let poller = UsagePoller(api: primary, fallback: fallback, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+
+        XCTAssertEqual(fallback.calls, 1)
+        XCTAssertEqual(poller.authState, .ok,
+                       "a dead OAuth session must not kill a working pasted token")
+        XCTAssertTrue(poller.isPolling)
+    }
+
+    func testInvalidTokenWithoutFallbackStillStopsPolling() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-dead-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.invalidToken]
+        let poller = UsagePoller(api: primary, fallback: nil, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+
+        XCTAssertEqual(poller.authState, .invalidToken)
+        XCTAssertFalse(poller.isPolling, "existing terminal-stop behavior must be preserved")
+    }
+
+    func testAuthorizeURLCarriesPKCEAndMinimalScope() throws {
+        let url = OAuthFlow.authorizeURL(
+            challenge: "CHAL",
+            state: "STATE",
+            redirectURI: "http://localhost:9999/callback"
+        )
+        let items = try XCTUnwrap(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        )
+        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+
+        XCTAssertEqual(url.host, "claude.com")
+        XCTAssertEqual(url.path, "/cai/oauth/authorize")
+        XCTAssertEqual(value("client_id"), "9d1c250a-e61b-44d9-88ed-5944d1962f5e")
+        XCTAssertEqual(value("response_type"), "code")
+        XCTAssertEqual(value("code_challenge"), "CHAL")
+        XCTAssertEqual(value("code_challenge_method"), "S256")
+        XCTAssertEqual(value("state"), "STATE")
+        XCTAssertEqual(value("scope"), "user:profile")
+        XCTAssertEqual(value("redirect_uri"), "http://localhost:9999/callback")
+    }
 }

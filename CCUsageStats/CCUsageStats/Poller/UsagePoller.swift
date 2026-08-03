@@ -6,11 +6,16 @@ import os
 final class UsagePoller: ObservableObject {
     private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "poller")
     private let api: AnthropicAPIClient
+    private let fallback: AnthropicAPIClient?
     private let cacheURL: URL
     private let clock: () -> Int64
 
     @Published private(set) var authState: AuthState = .unknown
     @Published private(set) var isPolling = false
+    /// True when the primary (OAuth) client was refused for scope reasons
+    /// and data is coming from the header fallback. Drives the "reconnect"
+    /// row in the dropdown.
+    @Published private(set) var needsReauthorization = false
     private(set) var transientFailureCount = 0
     private(set) var currentBackoffSeconds: TimeInterval = 60
 
@@ -42,8 +47,14 @@ final class UsagePoller: ObservableObject {
         return baseInterval
     }
 
-    init(api: AnthropicAPIClient, cacheURL: URL, clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }) {
+    init(
+        api: AnthropicAPIClient,
+        fallback: AnthropicAPIClient? = nil,
+        cacheURL: URL,
+        clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }
+    ) {
         self.api = api
+        self.fallback = fallback
         self.cacheURL = cacheURL
         self.clock = clock
     }
@@ -78,6 +89,43 @@ final class UsagePoller: ObservableObject {
 
     private func tick() async {
         let result = await api.fetchRateLimits()
+
+        // Two ways the primary can be refused without the app being broken:
+        // the token lacks user:profile, or the OAuth grant is dead. In both
+        // cases a pasted fallback token may still work, so try it before
+        // declaring the app unusable. Only a refusal with no fallback left
+        // is terminal.
+        let refused: Bool
+        switch result {
+        case .insufficientScope:
+            refused = true
+            needsReauthorization = true
+            Self.log.warning("scoped usage endpoint refused; using header fallback")
+        case .invalidToken where fallback != nil:
+            refused = true
+            needsReauthorization = true
+            Self.log.warning("oauth session rejected; using header fallback")
+        default:
+            refused = false
+        }
+
+        if refused {
+            if let fallback {
+                handle(await fallback.fetchRateLimits())
+            } else {
+                // Keep polling and keep the flag set; the scope may come
+                // back if the user authorizes in another window.
+                transientFailureCount = 0
+                currentBackoffSeconds = Self.baseInterval
+            }
+            return
+        }
+
+        if case .success = result { needsReauthorization = false }
+        handle(result)
+    }
+
+    private func handle(_ result: AnthropicAPI.Result) {
         switch result {
         case .success(let snapshot):
             try? CacheStore.update(at: cacheURL, with: snapshot, now: clock())
@@ -90,9 +138,9 @@ final class UsagePoller: ObservableObject {
             stop()
 
         case .insufficientScope:
-            // Wired properly in the dual-path work; until then behave like a
-            // transient failure so polling continues.
-            Self.log.warning("insufficient scope for /api/oauth/usage")
+            // Only reachable when the fallback itself reports it, which the
+            // header client never does. Treat as non-fatal.
+            needsReauthorization = true
 
         case .notSubscriber:
             // Surface the state but keep polling. A missing rate-limit
