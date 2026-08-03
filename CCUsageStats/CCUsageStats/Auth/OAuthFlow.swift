@@ -16,7 +16,11 @@ import os
 /// redirect path would be an untested branch. If `listenerFailed` ever
 /// surfaces in the wild, build the manual path then.
 enum OAuthFlow {
-    private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "oauth")
+    // `nonisolated`: the module defaults new declarations to MainActor
+    // isolation, but `Logger` is Sendable and this is read from the plain
+    // (non-MainActor) `OAuthTokenProvider` actor below — without this the
+    // access would need to hop actors just to write a log line.
+    nonisolated fileprivate static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "oauth")
 
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     static let authorizeEndpoint = "https://claude.com/cai/oauth/authorize"
@@ -121,8 +125,12 @@ actor OAuthTokenProvider {
 
     private var session: OAuthSession?
     private var inFlight: Task<OAuthSession, Error>?
+    private let urlSession: URLSession
 
-    init(session: OAuthSession?) { self.session = session }
+    init(session: OAuthSession?, urlSession: URLSession = .shared) {
+        self.session = session
+        self.urlSession = urlSession
+    }
 
     /// Returns a usable access token, refreshing first when close to expiry.
     func accessToken(now: Int64 = Int64(Date().timeIntervalSince1970)) async -> TokenResult {
@@ -137,8 +145,17 @@ actor OAuthTokenProvider {
         }
 
         let task = Task { () throws -> OAuthSession in
-            let fresh = try await OAuthFlow.refresh(current, now: now)
-            try? OAuthSessionStore.write(fresh)
+            let fresh = try await OAuthFlow.refresh(current, session: urlSession, now: now)
+            do {
+                try OAuthSessionStore.write(fresh)
+            } catch {
+                // The in-memory refresh still succeeded and must not fail
+                // because of this — but if disk still holds the old refresh
+                // token, the next launch reads a grant the server has
+                // already invalidated and silently drops out of the OAuth
+                // path. Surface it so that's diagnosable.
+                OAuthFlow.log.error("failed to persist rotated OAuth session: \(String(describing: error), privacy: .public)")
+            }
             return fresh
         }
         inFlight = task

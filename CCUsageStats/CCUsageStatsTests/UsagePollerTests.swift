@@ -259,6 +259,52 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertTrue(poller.isPolling)
     }
 
+    func testNotSubscriberFromPrimaryFallsBackWhenFallbackExists() async throws {
+        // The scoped endpoint is undocumented and sometimes returns an
+        // in-band error envelope with a 200, which OAuthUsage.parse surfaces
+        // as .notSubscriber. If that endpoint drifts, a paying user with a
+        // working pasted token must not be stranded on "no subscription
+        // data" — the fallback must run, exactly like .invalidToken.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-notsub-fallback-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.notSubscriber]
+        let fallback = StubAPI()
+        fallback.queue = [.success(RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 21, resetsAt: 999), sevenDay: nil
+        ))]
+
+        let poller = UsagePoller(api: primary, fallback: fallback, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+
+        XCTAssertEqual(fallback.calls, 1, "fallback must run on the same tick")
+        XCTAssertEqual(poller.authState, .ok, "fallback data is still good data")
+        XCTAssertFalse(poller.needsReauthorization,
+                       ".notSubscriber is not a scope problem and must not prompt reconnection")
+
+        let cached = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(cached.snapshot.fiveHour?.usedPercentage, 21)
+    }
+
+    func testNotSubscriberFromPrimaryWithoutFallbackStillReportsNotSubscriber() async throws {
+        // Without a fallback there is nothing to retry with, so the original
+        // non-fatal .notSubscriber handling still applies.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-notsub-nofallback-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.notSubscriber]
+        let poller = UsagePoller(api: primary, fallback: nil, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+
+        XCTAssertEqual(poller.authState, .notSubscriber)
+        XCTAssertFalse(poller.needsReauthorization)
+        XCTAssertTrue(poller.isPolling)
+    }
+
     func testInvalidTokenWithoutFallbackStillStopsPolling() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cc-usage-dead-\(UUID().uuidString).json")

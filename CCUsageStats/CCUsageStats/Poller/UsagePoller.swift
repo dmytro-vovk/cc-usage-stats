@@ -105,6 +105,15 @@ final class UsagePoller: ObservableObject {
             refused = true
             needsReauthorization = true
             Self.log.warning("oauth session rejected; using header fallback")
+        case .notSubscriber where fallback != nil:
+            // Not a scope problem — the endpoint returned 200 with no
+            // recognizable window, which can happen if this undocumented
+            // endpoint's response shape drifts. A working pasted token must
+            // never sit unused because of that, so fall back exactly like
+            // `.invalidToken`. Deliberately does NOT set
+            // `needsReauthorization`.
+            refused = true
+            Self.log.warning("scoped usage endpoint returned no window; using header fallback")
         default:
             refused = false
         }

@@ -7,18 +7,26 @@ import XCTest
 /// came from in the first place.
 ///
 /// `start()` is deliberately never called: it opens file watchers, timers and a
-/// status poller, and no-ops under test anyway. Everything here drives the
-/// state machine directly, with an injected probe and API client so no network
-/// call or real Keychain read happens.
+/// status poller, and no-ops under test anyway. Everything else here drives the
+/// state machine through `attachPoller` (via `restartPollingForTest()`), which
+/// itself reads `OAuthSessionStore` and, when a scoped session is present,
+/// builds a real `OAuthUsageClient` that talks to api.anthropic.com — the
+/// injected `apiFactory` stub only covers the header-fallback path. No test
+/// today stores an OAuth session, so in practice none of that fires, but
+/// `setUp`/`tearDown` clear `OAuthSessionStore` regardless so a future test
+/// that does store one can't leak into its neighbors or start a live network
+/// call from this suite.
 @MainActor
 final class MenuViewModelTests: XCTestCase {
     private let deadline = Date(timeIntervalSince1970: 1_785_000_000)
 
     override func setUpWithError() throws {
         try? TokenStore.delete()
+        try? OAuthSessionStore.delete()
     }
     override func tearDownWithError() throws {
         try? TokenStore.delete()
+        try? OAuthSessionStore.delete()
     }
 
     /// Every stubbed poll answers the same way, so `authState` is decided by
@@ -131,6 +139,18 @@ final class MenuViewModelTests: XCTestCase {
 
     // MARK: - Reconnect flag
 
+    /// Pumps the main run loop so a Combine `.receive(on: RunLoop.main)` sink
+    /// gets a chance to deliver before the next assertion. `wait(for:)`
+    /// services both dispatch-main-queue blocks and RunLoop-scheduled work,
+    /// so the `DispatchQueue.main.async` fulfillment only completes once
+    /// everything already queued ahead of it — including the poller's
+    /// `$needsReauthorization` republish — has run.
+    private func pumpMainRunLoop() {
+        let pumped = expectation(description: "main run loop pumped")
+        DispatchQueue.main.async { pumped.fulfill() }
+        wait(for: [pumped], timeout: 2.0)
+    }
+
     func testReconnectFlagSetWhenOnlyAPastedTokenExists() throws {
         try TokenStore.write("sk-ant-oat01-stub")
         let vm = viewModel(polling: .success(
@@ -140,6 +160,17 @@ final class MenuViewModelTests: XCTestCase {
         vm.restartPollingForTest()
         XCTAssertTrue(vm.needsReauthorization,
                       "a header-only user must be told the model meter needs connecting")
+
+        // The synchronous assignment above only proves attachPoller's initial
+        // value. The poller also mirrors its own `$needsReauthorization`
+        // through a `.receive(on: RunLoop.main)` sink that ORs in the static
+        // "no scoped session" fact — without that OR, this republish would
+        // flip the flag to false the moment the poller's own (successful,
+        // so false) value lands. Pump the run loop so that sink actually
+        // fires, then re-assert.
+        pumpMainRunLoop()
+        XCTAssertTrue(vm.needsReauthorization,
+                      "must still be true after the poller's own flag republishes on the next run-loop turn")
     }
 
     func testReconnectFlagSetWhenNothingIsStored() {
@@ -147,5 +178,9 @@ final class MenuViewModelTests: XCTestCase {
         vm.restartPollingForTest()
         XCTAssertEqual(vm.authState, .noToken)
         XCTAssertTrue(vm.needsReauthorization)
+
+        pumpMainRunLoop()
+        XCTAssertTrue(vm.needsReauthorization,
+                      "no poller exists in this state, so nothing should flip the flag on a later run-loop turn")
     }
 }
