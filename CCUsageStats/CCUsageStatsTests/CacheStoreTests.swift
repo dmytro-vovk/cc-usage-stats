@@ -63,4 +63,62 @@ final class CacheStoreTests: XCTestCase {
             .filter { $0.hasPrefix(tmpFile.lastPathComponent) && $0.hasSuffix(".tmp") }
         XCTAssertTrue(leftovers.isEmpty)
     }
+
+    func testModelWindowsRoundTrip() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-model-roundtrip-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let snap = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 10, resetsAt: 100),
+            sevenDay: WindowSnapshot(usedPercentage: 20, resetsAt: 200),
+            models: ["seven_day_fable": WindowSnapshot(usedPercentage: 93, resetsAt: 300)]
+        )
+        try CacheStore.update(at: url, with: snap, now: 42)
+
+        let read = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(read.snapshot.models["seven_day_fable"]?.usedPercentage, 93)
+        XCTAssertEqual(read.snapshot.models["seven_day_fable"]?.resetsAt, 300)
+    }
+
+    func testOldFormatFileDecodesWithEmptyModels() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-oldformat-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // Exactly the shape written by versions before this feature.
+        let legacy = """
+        {"captured_at":42,"five_hour":{"used_percentage":10,"resets_at":100}}
+        """
+        try Data(legacy.utf8).write(to: url)
+
+        let read = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(read.snapshot.fiveHour?.usedPercentage, 10)
+        XCTAssertTrue(read.snapshot.models.isEmpty)
+    }
+
+    func testModelWindowsMergePerKey() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-model-merge-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try CacheStore.update(at: url, with: RateLimitsSnapshot(
+            fiveHour: nil, sevenDay: nil,
+            models: [
+                "seven_day_fable": WindowSnapshot(usedPercentage: 50, resetsAt: 1),
+                "seven_day_sonnet": WindowSnapshot(usedPercentage: 60, resetsAt: 2),
+            ]
+        ), now: 1)
+
+        // A later poll returns only one of the two keys.
+        try CacheStore.update(at: url, with: RateLimitsSnapshot(
+            fiveHour: nil, sevenDay: nil,
+            models: ["seven_day_fable": WindowSnapshot(usedPercentage: 55, resetsAt: 3)]
+        ), now: 2)
+
+        let read = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(read.snapshot.models["seven_day_fable"]?.usedPercentage, 55)
+        XCTAssertEqual(read.snapshot.models["seven_day_sonnet"]?.usedPercentage, 60,
+                       "absent keys must preserve the on-disk value")
+    }
 }
