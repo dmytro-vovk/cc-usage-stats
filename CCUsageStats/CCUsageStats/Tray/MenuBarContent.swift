@@ -24,33 +24,28 @@ struct MenuBarLabel: View {
 
         let outageIcon = buildOutageIcon(staleAlpha: staleAlpha)
 
-        // Split-pill mode surfaces the 7-day window in the menubar only
-        // when it's both *interesting* and *dominant*:
-        //   - 7d ≥ 80% (high enough to warrant attention), AND
-        //   - 7d ≥ 5h  (7d is at least as concerning as the 5h session)
+        // Split-pill mode surfaces the 7-day window and/or the busiest
+        // per-model weekly window in the menubar — each joins only when
+        // it's both *interesting* and *dominant*:
+        //   - window ≥ 80% (high enough to warrant attention), AND
+        //   - window ≥ 5h  (at least as concerning as the 5h session)
         // Below that the menubar stays as a single 5h pill — keeping the
-        // bar slim during normal usage. Also requires both snapshots to
-        // exist, the token to be valid, and 5h not at 100% (countdown
-        // mode is wide enough on its own).
-        let five = vm.cached?.snapshot.fiveHour
-        let seven = vm.cached?.snapshot.sevenDay
-        let fiveAtCap = (five?.usedPercentage ?? 0) >= 100.0
-        if !vm.authState.lacksWorkingToken,
-           let five, let seven, !fiveAtCap {
-            let fiveFraction = max(0, min(1, five.usedPercentage / 100.0))
-            let sevenFraction = max(0, min(1, seven.usedPercentage / 100.0))
-            let showSeven = sevenFraction > 0.8 && sevenFraction >= fiveFraction
-            if showSeven {
-                return renderSplitPill(
-                    fiveFraction: fiveFraction,
-                    fiveText: vm.displayState.menuBarText,
-                    sevenFraction: sevenFraction,
-                    sevenText: "\(Int(seven.usedPercentage.rounded()))%",
-                    onColor: onColor,
-                    staleAlpha: staleAlpha,
-                    outageIcon: outageIcon
-                )
-            }
+        // bar slim during normal usage. See PillLayout for the full gating
+        // matrix (also requires the token to be valid and 5h not at 100% —
+        // countdown mode is wide enough on its own).
+        let segments = PillLayout.segments(
+            five: vm.cached?.snapshot.fiveHour,
+            seven: vm.cached?.snapshot.sevenDay,
+            models: vm.cached?.snapshot.models ?? [:],
+            fiveText: vm.displayState.menuBarText,
+            authState: vm.authState,
+            now: Int64(Date().timeIntervalSince1970)
+        )
+        if segments.count >= 2 {
+            return MenuBarPillRenderer.renderSplitPill(
+                segments: segments,
+                style: .init(onColor: onColor, staleAlpha: staleAlpha, outageIcon: outageIcon)
+            )
         }
 
         // Single-pill (or bare-triangle) fallback used for:
@@ -76,19 +71,6 @@ struct MenuBarLabel: View {
             .withSymbolConfiguration(cfg)
     }
 
-    private func makeIcon(symbol: String, color: NSColor) -> NSImage {
-        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        let img = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-            ?? NSImage(systemSymbolName: "gauge", accessibilityDescription: nil)
-        return img?.withSymbolConfiguration(cfg) ?? NSImage(size: NSSize(width: 14, height: 14))
-    }
-
-    private func makeAttr(_ s: String, color: NSColor) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small), weight: .semibold)
-        return NSAttributedString(string: s, attributes: [.foregroundColor: color, .font: font])
-    }
-
     /// Single pill (or bare triangle for invalid token). Matches the
     /// pre-split-pill rendering exactly so behavior is unchanged when
     /// the split-pill branch doesn't apply.
@@ -97,11 +79,11 @@ struct MenuBarLabel: View {
         let showText = !vm.authState.lacksWorkingToken
         let usePill = !vm.authState.lacksWorkingToken
 
-        let icon = makeIcon(symbol: glyph(), color: usePill ? onColor : pillColor)
+        let icon = MenuBarPillRenderer.makeIcon(symbol: glyph(), color: usePill ? onColor : pillColor)
         let textColor = usePill ? onColor : NSColor.labelColor.withAlphaComponent(staleAlpha)
         let attr = showText
-            ? makeAttr(vm.displayState.menuBarText, color: textColor)
-            : makeAttr("", color: textColor)
+            ? MenuBarPillRenderer.makeAttr(vm.displayState.menuBarText, color: textColor)
+            : MenuBarPillRenderer.makeAttr("", color: textColor)
         let textSize = attr.size()
 
         let iconSize = icon.size
@@ -146,123 +128,6 @@ struct MenuBarLabel: View {
         return composite
     }
 
-    /// Split pill: one capsule, two color halves. Left half tinted with
-    /// 5h gradient (gauge needle icon + percentage); right half tinted
-    /// with 7d gradient (calendar icon + percentage). A faint 1pt vertical
-    /// divider at the boundary keeps the two halves visually distinct
-    /// even when their colors are close.
-    private func renderSplitPill(
-        fiveFraction: Double,
-        fiveText: String,
-        sevenFraction: Double,
-        sevenText: String,
-        onColor: NSColor,
-        staleAlpha: CGFloat,
-        outageIcon: NSImage?
-    ) -> NSImage {
-        let color5 = UsageColor.nsColor(t: fiveFraction).withAlphaComponent(staleAlpha)
-        let color7 = UsageColor.nsColor(t: sevenFraction).withAlphaComponent(staleAlpha)
-
-        let icon5 = makeIcon(symbol: gauge(for: fiveFraction), color: onColor)
-        let icon7 = makeIcon(symbol: "calendar", color: onColor)
-        let attr5 = makeAttr(fiveText, color: onColor)
-        let attr7 = makeAttr(sevenText, color: onColor)
-        let size5 = attr5.size()
-        let size7 = attr7.size()
-
-        // Layout constants. Generous icon→text gap (6 vs the old 4) so the
-        // glyph doesn't lump into the digits, plus equal outer padding on
-        // each side of every half. The divider gets 7pt of breathing room
-        // on each side so the two halves don't run into each other.
-        let outerPadX: CGFloat = 7
-        let dividerPadX: CGFloat = 7
-        let outerPadY: CGFloat = 2
-        let iconText: CGFloat = 6
-
-        let inner5W = icon5.size.width + iconText + size5.width
-        let inner7W = icon7.size.width + iconText + size7.width
-        let half5W = outerPadX + inner5W + dividerPadX
-        let half7W = dividerPadX + inner7W + outerPadX
-        let pillW = half5W + half7W
-        let innerH = max(max(icon5.size.height, icon7.size.height), max(size5.height, size7.height))
-        let pillH = innerH + 2 * outerPadY
-        let r = pillH / 2
-
-        let outageGap: CGFloat = outageIcon != nil ? 6 : 0
-        let outageW = outageIcon?.size.width ?? 0
-        let totalW = pillW + outageGap + outageW
-        let totalH = max(pillH, outageIcon?.size.height ?? 0)
-
-        let composite = NSImage(size: NSSize(width: totalW, height: totalH), flipped: false) { _ in
-            let pillRect = NSRect(x: 0, y: (totalH - pillH) / 2, width: pillW, height: pillH)
-            let path = NSBezierPath(roundedRect: pillRect, xRadius: r, yRadius: r)
-
-            // Clip to rounded rect, then fill each half with its own color.
-            NSGraphicsContext.current?.saveGraphicsState()
-            path.addClip()
-            color5.setFill()
-            NSRect(x: pillRect.minX, y: pillRect.minY, width: half5W, height: pillH).fill()
-            color7.setFill()
-            NSRect(x: pillRect.minX + half5W, y: pillRect.minY, width: half7W, height: pillH).fill()
-            NSGraphicsContext.current?.restoreGraphicsState()
-
-            // Faint 1pt divider line between the halves.
-            let dividerX = pillRect.minX + half5W
-            let divider = NSBezierPath()
-            divider.move(to: NSPoint(x: dividerX, y: pillRect.minY + 3))
-            divider.line(to: NSPoint(x: dividerX, y: pillRect.maxY - 3))
-            divider.lineWidth = 1
-            onColor.withAlphaComponent(staleAlpha * 0.45).setStroke()
-            divider.stroke()
-
-            // Half 1 content (5h).
-            icon5.draw(in: NSRect(
-                x: outerPadX,
-                y: (totalH - icon5.size.height) / 2,
-                width: icon5.size.width, height: icon5.size.height
-            ))
-            attr5.draw(at: NSPoint(
-                x: outerPadX + icon5.size.width + iconText,
-                y: (totalH - size5.height) / 2
-            ))
-
-            // Half 2 content (7d).
-            icon7.draw(in: NSRect(
-                x: half5W + dividerPadX,
-                y: (totalH - icon7.size.height) / 2,
-                width: icon7.size.width, height: icon7.size.height
-            ))
-            attr7.draw(at: NSPoint(
-                x: half5W + dividerPadX + icon7.size.width + iconText,
-                y: (totalH - size7.height) / 2
-            ))
-
-            // Outage badge sits OUTSIDE the pill.
-            if let oi = outageIcon {
-                oi.draw(in: NSRect(
-                    x: pillW + outageGap,
-                    y: (totalH - oi.size.height) / 2,
-                    width: oi.size.width, height: oi.size.height
-                ))
-            }
-            return true
-        }
-        composite.isTemplate = false
-        return composite
-    }
-
-    /// Picks a gauge.with.dots.needle symbol matching the fraction band.
-    /// Used by the 5h half of the split pill (and indirectly by glyph()).
-    private func gauge(for fraction: Double) -> String {
-        switch fraction {
-        case ..<0.125: return "gauge.with.dots.needle.0percent"
-        case ..<0.375: return "gauge.with.dots.needle.33percent"
-        case ..<0.625: return "gauge.with.dots.needle.50percent"
-        case ..<0.875: return "gauge.with.dots.needle.67percent"
-        default:       return "gauge.with.dots.needle.100percent"
-        }
-    }
-
     private func outageSymbol(for ind: StatusReport.Indicator) -> String {
         switch ind {
         case .minor:       return "exclamationmark.circle.fill"
@@ -293,13 +158,7 @@ struct MenuBarLabel: View {
         guard let f = vm.displayState.utilizationFraction else {
             return "gauge.with.dots.needle.33percent"
         }
-        switch f {
-        case ..<0.125: return "gauge.with.dots.needle.0percent"
-        case ..<0.375: return "gauge.with.dots.needle.33percent"
-        case ..<0.625: return "gauge.with.dots.needle.50percent"
-        case ..<0.875: return "gauge.with.dots.needle.67percent"
-        default:       return "gauge.with.dots.needle.100percent"
-        }
+        return MenuBarPillRenderer.gauge(for: f)
     }
 
     private func tint() -> Color {
