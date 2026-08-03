@@ -8,6 +8,10 @@ enum AnthropicAPI {
     enum Result: Equatable {
         case success(RateLimitsSnapshot)
         case invalidToken
+        /// Token is valid but lacks `user:profile`, so /api/oauth/usage is
+        /// refused. Distinct from `.invalidToken` because the same token
+        /// still works on the response-header path.
+        case insufficientScope
         case notSubscriber
         case rateLimited
         case transient(String) // network, malformed body, 5xx, 4xx other

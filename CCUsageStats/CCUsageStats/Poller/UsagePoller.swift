@@ -89,6 +89,11 @@ final class UsagePoller: ObservableObject {
             authState = .invalidToken
             stop()
 
+        case .insufficientScope:
+            // Wired properly in the dual-path work; until then behave like a
+            // transient failure so polling continues.
+            Self.log.warning("insufficient scope for /api/oauth/usage")
+
         case .notSubscriber:
             // Surface the state but keep polling. A missing rate-limit
             // header on a single response can be transient (brief Anthropic

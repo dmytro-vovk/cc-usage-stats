@@ -116,7 +116,7 @@ final class SettingsViewModel: ObservableObject {
         case .invalidToken:
             self.error = "Anthropic rejected the token (401/403). Check it and try again."
             return false  // existing token left intact
-        case .rateLimited, .transient:
+        case .rateLimited, .transient, .insufficientScope:
             // Couldn't verify — accept optimistically so the user isn't
             // blocked by transient outages, but the user is told.
             do { try TokenStore.write(t, expiresAt: expiresAt) }
