@@ -5,6 +5,8 @@ import Foundation
 /// Unlike the header path this is a plain GET: it costs no quota, and it is
 /// the only source that exposes per-model weekly windows.
 struct OAuthUsageClient: AnthropicAPIClient {
+    static let endpoint = "https://api.anthropic.com/api/oauth/usage"
+
     let provider: OAuthTokenProvider
     let session: URLSession
 
@@ -29,8 +31,14 @@ struct OAuthUsageClient: AnthropicAPIClient {
             return .transient("token refresh: \(why)")
         }
 
-        var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+        var req = URLRequest(url: URL(string: Self.endpoint)!)
         req.httpMethod = "GET"
+        // The header path is a POST, which URLSession never serves from
+        // cache. This is a GET on the shared session, so a cacheable 200
+        // would be replayed verbatim — and `captured_at` is stamped by the
+        // poller from its own clock, so a replayed body becomes an unchanging
+        // utilization presented as a fresh reading. Always go to the network.
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 

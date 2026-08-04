@@ -7,7 +7,7 @@ final class AuthStateTests: XCTestCase {
     /// below trips this file instead of sailing through.
     func testAllCasesExist() {
         XCTAssertEqual(Set(AuthState.allCases).count, AuthState.allCases.count)
-        XCTAssertEqual(AuthState.allCases.count, 6, "new AuthState case — update lacksWorkingToken coverage too")
+        XCTAssertEqual(AuthState.allCases.count, 7, "new AuthState case — update lacksWorkingToken coverage too")
     }
     func testEquatable() {
         XCTAssertEqual(AuthState.ok, AuthState.ok)
@@ -22,6 +22,14 @@ final class AuthStateTests: XCTestCase {
 
     func testOnlyTheTokenlessStatesLackAWorkingToken() {
         let lacking = AuthState.allCases.filter(\.lacksWorkingToken)
-        XCTAssertEqual(Set(lacking), Set([.noToken, .invalidToken]))
+        XCTAssertEqual(Set(lacking), Set([.noToken, .invalidToken, .connectionExpired]))
+    }
+
+    /// A dead OAuth grant and a rejected pasted token need different advice —
+    /// "reconnect your account" versus "re-import from Claude Code's
+    /// Keychain" — and the dropdown branches on exactly this.
+    func testConnectionExpiredIsNotInvalidToken() {
+        XCTAssertNotEqual(AuthState.connectionExpired, AuthState.invalidToken)
+        XCTAssertNotEqual(AuthState.connectionExpired, AuthState.noToken)
     }
 }

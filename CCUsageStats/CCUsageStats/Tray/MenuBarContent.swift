@@ -150,7 +150,7 @@ struct MenuBarLabel: View {
 
     private func glyph() -> String {
         switch vm.authState {
-        case .noToken, .invalidToken: return "exclamationmark.triangle.fill"
+        case .noToken, .invalidToken, .connectionExpired: return "exclamationmark.triangle.fill"
         case .notSubscriber: return "gauge.with.dots.needle.0percent"
         case .offline, .ok, .unknown: break
         }
@@ -165,7 +165,7 @@ struct MenuBarLabel: View {
         // Kept for the SwiftUI side (badges, link colors). NSImage rendering
         // uses tintNSColor() so it can pick mode-aware anchors.
         switch vm.authState {
-        case .noToken, .invalidToken: return .red
+        case .noToken, .invalidToken, .connectionExpired: return .red
         case .notSubscriber: return .secondary
         case .offline, .ok, .unknown: break
         }
@@ -179,7 +179,7 @@ struct MenuBarLabel: View {
     /// readable on a light menubar / wallpaper as well as a dark one.
     private func tintNSColor() -> NSColor {
         switch vm.authState {
-        case .noToken, .invalidToken: return .systemRed
+        case .noToken, .invalidToken, .connectionExpired: return .systemRed
         case .notSubscriber: return .secondaryLabelColor
         case .offline, .ok, .unknown: break
         }
@@ -522,6 +522,27 @@ struct MenuBarDropdown: View {
                 symbol: "exclamationmark.triangle.fill",
                 action: "Re-import from Claude Code Keychain"
             )
+        case .connectionExpired:
+            // The connected account's grant is gone and there is no pasted
+            // token behind it, so the app has no data source at all. The one
+            // action that fixes it is another browser authorization —
+            // deliberately not the Keychain re-import offered above, which
+            // cannot revive an OAuth grant.
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Claude account connection expired.", systemImage: "person.crop.circle.badge.exclamationmark")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+                    .wrapsFully()
+                Text("Reconnect to resume usage updates, or set a token below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .wrapsFully()
+                Button(vm.isConnecting ? "Connecting…" : "Reconnect Claude account") {
+                    vm.connectAccount()
+                }
+                .controlSize(.small)
+                .disabled(vm.isConnecting)
+            }
         case .notSubscriber:
             Label("No Claude.ai subscription rate-limit data.", systemImage: "info.circle")
                 .foregroundStyle(.secondary)
