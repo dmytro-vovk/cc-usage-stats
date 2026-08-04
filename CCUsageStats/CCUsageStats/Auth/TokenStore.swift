@@ -11,7 +11,15 @@ struct StoredToken: Equatable {
     let expiresAt: Date?
 }
 
-enum TokenStore {
+/// `nonisolated`: a stateless enum wrapping the Keychain (and the plain
+/// string logic that picks which Keychain item to use), with no main-actor
+/// state to protect — it only inherits the module's default isolation
+/// otherwise. `OAuthSessionStore.baseQuery` (also `nonisolated`, for the
+/// same reason) reads `serviceName` from a plain (non-MainActor) actor's
+/// call to `OAuthSessionStore.write`; without this every declaration in
+/// that chain would need an `await` hop to the main actor for no reason
+/// other than that inherited default.
+nonisolated enum TokenStore {
     /// The item the app stores the user's token in.
     static let liveServiceName = "cc-usage-stats"
     /// Scratch item the test suite gets instead, one per test worker process.

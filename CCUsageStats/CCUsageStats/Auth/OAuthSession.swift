@@ -6,7 +6,15 @@ import Security
 /// Stored separately from the legacy pasted token (`TokenStore`, account
 /// `oauth-token`), which is deliberately left intact so the response-header
 /// fallback keeps working for users who never authorize.
-struct OAuthSession: Codable, Equatable {
+///
+/// `nonisolated`: a plain `Codable` value type with no main-actor state to
+/// protect — it only inherits the module's default isolation otherwise.
+/// `OAuthTokenProvider`, a plain (non-MainActor) actor, both calls
+/// `isExpiring`/`hasProfileScope` synchronously and encodes/decodes this
+/// type via `OAuthSessionStore` (also `nonisolated`, below); without this
+/// every one of those would need an `await` hop to the main actor for no
+/// reason other than that inherited default.
+nonisolated struct OAuthSession: Codable, Equatable {
     let accessToken: String
     let refreshToken: String
     /// Absolute expiry, epoch seconds.
@@ -116,7 +124,14 @@ struct OAuthSession: Codable, Equatable {
     }
 }
 
-enum OAuthSessionStore {
+/// `nonisolated`: a stateless enum wrapping the Keychain — its calls
+/// (`SecItemCopyMatching` etc.) are thread-safe on their own, and there is
+/// no main-actor state here to protect; it only inherits the module's
+/// default isolation otherwise. `OAuthTokenProvider`, a plain
+/// (non-MainActor) actor, calls `write` synchronously after every rotated
+/// refresh — without this it would need an `await` hop to the main actor
+/// for no reason other than that inherited default.
+nonisolated enum OAuthSessionStore {
     static let account = "oauth-session"
 
     private static var baseQuery: [String: Any] {
