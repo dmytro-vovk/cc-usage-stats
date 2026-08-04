@@ -118,7 +118,7 @@ enum OAuthFlow {
 
         let listener = try await LoopbackRedirectListener.start()
         defer { listener.stop() }
-        let redirectURI = "http://localhost:\(listener.port)/callback"
+        let redirectURI = "http://localhost:\(listener.port)\(LoopbackRedirectListener.callbackPath)"
 
         NSWorkspace.shared.open(
             authorizeURL(challenge: challenge, state: state, redirectURI: redirectURI)
@@ -139,12 +139,67 @@ enum OAuthFlow {
 
 /// Single-shot loopback HTTP listener for the OAuth redirect.
 /// Construct with `await LoopbackRedirectListener.start()`.
-final class LoopbackRedirectListener {
+///
+/// `nonisolated`: every handler below already runs on `DispatchQueue.main`
+/// by construction — the listener is started with `queue: .main` and every
+/// accepted connection is too — but that is a fact about *scheduling*, not
+/// actor isolation the compiler can verify: `waitForCallback` writes
+/// `continuation` from the calling task (which need not itself be
+/// `@MainActor`), while `handle`/`finish` read and write it again from
+/// `.main`, with no synchronization the type system can see between the
+/// two contexts. Rather than paper over that with an `@MainActor`
+/// annotation the framework's `@Sendable` handler closures (in particular
+/// `NWListener.newConnectionHandler`) can't actually honor without an
+/// async hop, this class opts out of the module's default actor isolation
+/// and protects its shared mutable state with an explicit lock — real
+/// synchronization instead of an assumption. Without it, `finish` could in
+/// principle observe a stale `nil` continuation, set `finished = true`,
+/// and hang the flow forever with the timeout already consumed.
+///
+/// `@unchecked Sendable`: the framework's handler closures are themselves
+/// `@Sendable` and capture `self`, so the type must claim `Sendable` to be
+/// captured there at all. `stateLock` is what actually earns the claim —
+/// every stored var it guards (`continuation`, `finished`,
+/// `openConnections`) is only ever read or written while holding it.
+nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
     struct Callback { let code: String; let state: String }
 
+    /// The only path treated as the OAuth redirect — must match the path
+    /// `OAuthFlow.runInteractive` builds into the redirect URI. Any other
+    /// path (or a connection that never completes a request) falls into
+    /// the same non-fatal 404 bucket as a browser's speculative preconnect
+    /// socket: it does not resolve or fail the wait. Without this check a
+    /// local process could send a well-formed request with the wrong
+    /// `state` to force a resolution and abort the user's in-progress
+    /// authorization.
+    static let callbackPath = "/callback"
+
+    /// Header terminator; a request is not parsed until this has been
+    /// seen, since a single `receive` call only returns whatever arrived
+    /// in the first TCP segment — treating that as a complete request line
+    /// truncates any request split across segments.
+    private static let headerTerminator = Data("\r\n\r\n".utf8)
+    /// Hard cap on buffered request bytes, so a connection that dribbles
+    /// bytes forever without ever completing its headers still gets a
+    /// response (and cancellation) instead of buffering indefinitely.
+    private static let maxRequestBytes = 8192
+
     private let listener: NWListener
+    /// Guards every field below — `continuation`/`finished` are written
+    /// from both the caller's task (in `waitForCallback`) and from `.main`
+    /// (in `handle`/`finish`); `openConnections` is touched from `.main`
+    /// callbacks and from `stop()`, which callers may invoke from off
+    /// `.main` (it runs synchronously via `defer` in `runInteractive`).
+    private let stateLock = NSLock()
     private var continuation: CheckedContinuation<Callback, Error>?
     private var finished = false
+    /// Every connection accepted while waiting for the callback, so
+    /// `stop()` can cancel the ones that never sent a complete (or any)
+    /// request. `listener.cancel()` alone does not touch already-accepted
+    /// connections, and a speculative preconnect socket that never sends
+    /// anything would otherwise leak an `NWConnection` for the process's
+    /// remaining lifetime.
+    private var openConnections: [ObjectIdentifier: NWConnection] = [:]
     let port: UInt16
 
     /// Binds an ephemeral port on loopback only. `requiredLocalEndpoint`
@@ -194,7 +249,10 @@ final class LoopbackRedirectListener {
 
     func waitForCallback(timeout: TimeInterval) async throws -> Callback {
         try await withCheckedThrowingContinuation { cont in
+            stateLock.lock()
             continuation = cont
+            stateLock.unlock()
+
             listener.newConnectionHandler = { [weak self] conn in
                 self?.handle(conn)
             }
@@ -205,53 +263,106 @@ final class LoopbackRedirectListener {
     }
 
     private func handle(_ conn: NWConnection) {
+        stateLock.lock()
+        openConnections[ObjectIdentifier(conn)] = conn
+        stateLock.unlock()
         conn.start(queue: .main)
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, _ in
+        receiveRequest(conn, buffer: Data())
+    }
+
+    /// Accumulates bytes across as many `receive` calls as needed until the
+    /// header terminator is seen, the byte cap is hit, or the connection
+    /// itself signals completion/error — a single segment is not assumed
+    /// to be a complete HTTP request.
+    private func receiveRequest(_ conn: NWConnection, buffer: Data) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, isComplete, error in
             guard let self else { return }
-            let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            var buffer = buffer
+            if let data { buffer.append(data) }
 
-            let parsed: Callback? = {
-                guard let line = request.split(separator: "\r\n").first,
-                      let pathPart = line.split(separator: " ").dropFirst().first,
-                      let comps = URLComponents(string: "http://localhost\(pathPart)"),
-                      let code = comps.queryItems?.first(where: { $0.name == "code" })?.value,
-                      let state = comps.queryItems?.first(where: { $0.name == "state" })?.value
-                else { return nil }
-                return Callback(code: code, state: state)
-            }()
+            let haveHeaders = buffer.range(of: Self.headerTerminator) != nil
+            let gaveUp = buffer.count >= Self.maxRequestBytes || isComplete || error != nil
 
-            let body = parsed == nil
-                ? "Not found."
-                : "You can close this window and return to CCUsageStats."
-            let status = parsed == nil ? "404 Not Found" : "200 OK"
-            let response = """
-            HTTP/1.1 \(status)\r
-            Content-Type: text/plain; charset=utf-8\r
-            Content-Length: \(body.utf8.count)\r
-            Connection: close\r
-            \r
-            \(body)
-            """
-            conn.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-                conn.cancel()
-            })
+            guard haveHeaders || gaveUp else {
+                self.receiveRequest(conn, buffer: buffer)
+                return
+            }
 
-            // Only a well-formed callback ends the wait. Browsers open
-            // speculative preconnect sockets that carry no request, and any
-            // stray probe would otherwise abort an in-progress
-            // authorization. Failure comes from the timeout alone.
-            if let parsed { self.finish(.success(parsed)) }
+            self.respond(conn, buffer: buffer)
         }
     }
 
-    private func finish(_ result: Result<Callback, Error>) {
-        guard !finished else { return }
-        finished = true
-        continuation?.resume(with: result)
-        continuation = nil
+    private func respond(_ conn: NWConnection, buffer: Data) {
+        let request = String(data: buffer, encoding: .utf8) ?? ""
+
+        let parsed: Callback? = {
+            guard let line = request.split(separator: "\r\n").first,
+                  let pathPart = line.split(separator: " ").dropFirst().first,
+                  let comps = URLComponents(string: "http://localhost\(pathPart)"),
+                  comps.path == Self.callbackPath,
+                  let code = comps.queryItems?.first(where: { $0.name == "code" })?.value,
+                  let state = comps.queryItems?.first(where: { $0.name == "state" })?.value
+            else { return nil }
+            return Callback(code: code, state: state)
+        }()
+
+        let body = parsed == nil
+            ? "Not found."
+            : "You can close this window and return to CCUsageStats."
+        let status = parsed == nil ? "404 Not Found" : "200 OK"
+        let response = """
+        HTTP/1.1 \(status)\r
+        Content-Type: text/plain; charset=utf-8\r
+        Content-Length: \(body.utf8.count)\r
+        Connection: close\r
+        \r
+        \(body)
+        """
+        let id = ObjectIdentifier(conn)
+        conn.send(content: Data(response.utf8), completion: .contentProcessed { [weak self] _ in
+            conn.cancel()
+            guard let self else { return }
+            self.stateLock.lock()
+            self.openConnections.removeValue(forKey: id)
+            self.stateLock.unlock()
+        })
+
+        // Only a well-formed callback to the exact redirect path ends the
+        // wait. Browsers open speculative preconnect sockets that carry no
+        // request at all, and any other stray probe (wrong path, wrong or
+        // missing state) would otherwise abort an in-progress
+        // authorization. Failure comes from the timeout alone.
+        if let parsed { self.finish(.success(parsed)) }
     }
 
-    func stop() { listener.cancel() }
+    private func finish(_ result: Result<Callback, Error>) {
+        stateLock.lock()
+        guard !finished else {
+            stateLock.unlock()
+            return
+        }
+        finished = true
+        let cont = continuation
+        continuation = nil
+        stateLock.unlock()
+        // Resumed outside the lock: `CheckedContinuation.resume` can
+        // synchronously run the awaiting task's next step, and that step
+        // must not re-enter a method that takes this same lock.
+        cont?.resume(with: result)
+    }
+
+    func stop() {
+        listener.cancel()
+        // `listener.cancel()` does not touch already-accepted connections;
+        // cancel every one still open (never sent a complete request, or
+        // its response send completion hasn't run yet) so none outlive the
+        // flow.
+        stateLock.lock()
+        let toCancel = Array(openConnections.values)
+        openConnections.removeAll()
+        stateLock.unlock()
+        for conn in toCancel { conn.cancel() }
+    }
 }
 
 /// Serializes refreshes so two concurrent polls cannot both rotate the
