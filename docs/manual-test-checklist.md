@@ -170,10 +170,28 @@ Skip this if you've never had the Phase 1 statusline integration.
 - [ ] 5h at 100%: pill reverts to the single countdown pill regardless of the
       other windows.
 - [ ] Kill network mid-poll: last values persist, no row disappears.
+      (A transient failure writes nothing, so nothing is retired.)
 - [ ] Restart the app: the model row is still populated from cache.
 - [ ] Go offline for longer than the access-token lifetime: the dropdown
       shows "Offline — last value shown", NOT the connect-your-account row.
       (A failed refresh must not be reported as a scope problem.)
-- [ ] Disconnect the account, keep a pasted token: within one poll the
-      per-model pill segment disappears once that window's reset passes,
-      and the connect row returns.
+- [ ] Disconnect the account (delete the `oauth-session` Keychain item),
+      keep a pasted token: within one poll the per-model **rows and pill
+      segment disappear immediately** — not on the next window reset — and
+      the connect row returns. A per-model number must never sit above a
+      ticking "Last updated Xs ago" that no source can refresh.
+- [ ] Disconnect the account with **no** pasted token set: polling stops,
+      the menubar shows the red ⚠︎ triangle, and the dropdown shows
+      "Claude account connection expired." with a **Reconnect Claude
+      account** button — not "Token rejected / Re-import from Claude Code
+      Keychain", and not the "Connect your account to see per-model weekly
+      usage" prompt.
+- [ ] After that state, confirm the `oauth-session` Keychain item is gone
+      (`security find-generic-password -s cc-usage-stats -a oauth-session`
+      returns not-found) and that relaunching does not return to the same
+      state — it should report "No token set." instead.
+- [ ] Click **Connect Claude account** twice in quick succession: the
+      second click is ignored, the button reads "Connecting…" and is
+      disabled while the browser flow is open.
+- [ ] Complete a connect after a failed one: the red "Connect failed: …"
+      text clears rather than persisting under a healthy readout.
