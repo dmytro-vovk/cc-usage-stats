@@ -10,11 +10,11 @@ import os
 /// depends on that identity implicitly. Only `user:profile` is requested —
 /// the minimum this app needs to read /api/oauth/usage.
 ///
-/// The loopback redirect is the only supported path. `manualRedirectURI` is
-/// declared for reference but no paste-the-code UI exists: binding an
-/// ephemeral loopback port does not fail in practice, and a second
-/// redirect path would be an untested branch. If `listenerFailed` ever
-/// surfaces in the wild, build the manual path then.
+/// The loopback redirect is the only supported path. Claude also documents a
+/// manual `https://platform.claude.com/oauth/code/callback` redirect, but no
+/// paste-the-code UI exists here: binding an ephemeral loopback port does not
+/// fail in practice, and a second redirect path would be an untested branch.
+/// If `listenerFailed` ever surfaces in the wild, build the manual path then.
 enum OAuthFlow {
     // `nonisolated`: the module defaults new declarations to MainActor
     // isolation, but `Logger` is Sendable and this is read from the plain
@@ -25,8 +25,24 @@ enum OAuthFlow {
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     static let authorizeEndpoint = "https://claude.com/cai/oauth/authorize"
     static let tokenEndpoint = "https://platform.claude.com/v1/oauth/token"
-    static let manualRedirectURI = "https://platform.claude.com/oauth/code/callback"
     static let scope = "user:profile"
+
+    /// `scope` split into the list form a token response reports. Handed to
+    /// the initial-grant decoder so an omitted `scope` member resolves to
+    /// what was actually requested — see `OAuthSession.fromTokenResponse`.
+    static var requestedScopes: [String] { scope.split(separator: " ").map(String.init) }
+
+    /// The loopback redirect handed to the authorization server, for a
+    /// listener already bound on `port`.
+    ///
+    /// The literal `127.0.0.1`, never `localhost`: the listener binds IPv4
+    /// only (`.hostPort(host: .ipv4(.loopback), …)`), while `localhost` also
+    /// resolves to `::1`, which browsers commonly try first and which nothing
+    /// here is listening on. RFC 8252 §8.3 recommends the literal address for
+    /// exactly this reason.
+    static func redirectURI(port: UInt16) -> String {
+        "http://127.0.0.1:\(port)\(LoopbackRedirectListener.callbackPath)"
+    }
 
     enum FlowError: Error, Equatable {
         case stateMismatch
@@ -68,7 +84,12 @@ enum OAuthFlow {
             "code_verifier": verifier,
             "state": state,
         ]
-        return try await post(body: body, session: session, now: now)
+        return try await post(
+            body: body,
+            decoding: .initialGrant(requestedScopes: requestedScopes),
+            session: session,
+            now: now
+        )
     }
 
     static func refresh(
@@ -81,11 +102,30 @@ enum OAuthFlow {
             "refresh_token": existing.refreshToken,
             "client_id": clientID,
         ]
-        return try await post(body: body, session: session, now: now)
+        return try await post(
+            body: body,
+            decoding: .refresh(previous: existing),
+            session: session,
+            now: now
+        )
+    }
+
+    /// Which of the two token-response readings applies. They differ in what
+    /// an *absent* field means, and only the caller knows which exchange it
+    /// just performed, so the choice is made here rather than sniffed from
+    /// the response body.
+    private enum Decoding {
+        /// Authorization-code exchange. An omitted `scope` means the granted
+        /// scope equals `requestedScopes` (RFC 6749 §5.1).
+        case initialGrant(requestedScopes: [String])
+        /// Refresh. An omitted `scope` or `refresh_token` carries forward
+        /// from `previous` (RFC 6749 §5.1 and §6).
+        case refresh(previous: OAuthSession)
     }
 
     private static func post(
         body: [String: Any],
+        decoding: Decoding,
         session: URLSession,
         now: Int64
     ) async throws -> OAuthSession {
@@ -101,10 +141,19 @@ enum OAuthFlow {
         guard http.statusCode == 200 else {
             throw FlowError.badResponse(http.statusCode)
         }
-        guard let parsed = OAuthSession.fromTokenResponse(data, now: now) else {
+        let decoded: OAuthSession?
+        switch decoding {
+        case .initialGrant(let requestedScopes):
+            decoded = OAuthSession.fromTokenResponse(
+                data, now: now, requestedScopes: requestedScopes
+            )
+        case .refresh(let previous):
+            decoded = OAuthSession.fromRefreshResponse(data, now: now, previous: previous)
+        }
+        guard let decoded else {
             throw FlowError.malformedTokenResponse
         }
-        return parsed
+        return decoded
     }
 
     /// Full interactive flow: listen, open browser, exchange.
@@ -118,7 +167,7 @@ enum OAuthFlow {
 
         let listener = try await LoopbackRedirectListener.start()
         defer { listener.stop() }
-        let redirectURI = "http://localhost:\(listener.port)\(LoopbackRedirectListener.callbackPath)"
+        let redirectURI = redirectURI(port: listener.port)
 
         NSWorkspace.shared.open(
             authorizeURL(challenge: challenge, state: state, redirectURI: redirectURI)
@@ -137,41 +186,133 @@ enum OAuthFlow {
     }
 }
 
+/// The `wait` ↔ `settle` handshake behind `LoopbackRedirectListener`, split
+/// out into a type with no socket in it.
+///
+/// Split out because it could not otherwise be tested. `LoopbackRedirectListener`
+/// is only constructible by binding a real port, so on any machine that
+/// cannot bind (see `LoopbackRedirectListenerTests`) this logic has no
+/// coverage at all — which is how a half-finished version of it shipped: the
+/// listener grew a `pendingResult` field and a reader for it, and nothing
+/// anywhere ever wrote it. The early-arrival case it was added for was still
+/// dropped, silently, and everything compiled.
+///
+/// `nonisolated` / `@unchecked Sendable`: `wait` runs on the caller's task
+/// (which need not be `@MainActor`), `settle` runs from `.main` — an
+/// `NWConnection` receive handler or the timeout — with no synchronization
+/// the type system can see between them. `lock` is what earns the
+/// `Sendable` claim: every stored var below is read and written only while
+/// holding it.
+nonisolated final class LoopbackCallbackGate: @unchecked Sendable {
+    typealias Callback = LoopbackRedirectListener.Callback
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Callback, Error>?
+    private var settled = false
+    /// A result that arrived before anyone was waiting for it.
+    ///
+    /// `newConnectionHandler` is installed in `LoopbackRedirectListener.start()`,
+    /// before the browser is opened, so a callback can — barely, but can — be
+    /// fully parsed before `wait` registers its continuation. Dropping that
+    /// result would be fatal rather than merely lossy: `settled` is already
+    /// true, so the timeout's `settle` returns early and the wait never
+    /// resumes at all, in either direction. Stash it instead, and hand it to
+    /// the first caller of `wait`.
+    private var pending: Result<Callback, Error>?
+
+    /// Whether a caller is currently suspended in `wait`, and whether a
+    /// result is stashed waiting for one. Exposed only so tests can tell the
+    /// two delivery paths apart — settling before versus after a waiter
+    /// registers takes different branches, and without this a test can only
+    /// sleep and hope it hit the one it meant to.
+    var hasWaiter: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return continuation != nil
+    }
+
+    var hasStashedResult: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return pending != nil
+    }
+
+    /// Suspends until `settle` is called — or returns straight away when it
+    /// already has been.
+    ///
+    /// Single-shot, like the listener that owns it: a *second* `wait` after
+    /// the gate has settled and its result been taken registers a
+    /// continuation nothing will ever resume. Unreachable today —
+    /// `runInteractive` waits exactly once — and left that way rather than
+    /// grown a second timeout path that nothing exercises.
+    func wait() async throws -> Callback {
+        try await withCheckedThrowingContinuation { cont in
+            lock.lock()
+            if let pending {
+                self.pending = nil
+                lock.unlock()
+                cont.resume(with: pending)
+                return
+            }
+            continuation = cont
+            lock.unlock()
+        }
+    }
+
+    /// Delivers the first result; every later one is ignored, so a timeout
+    /// firing after a successful callback (or a second callback) cannot
+    /// double-resume the continuation.
+    func settle(_ result: Result<Callback, Error>) {
+        lock.lock()
+        guard !settled else {
+            lock.unlock()
+            return
+        }
+        settled = true
+        let cont = continuation
+        continuation = nil
+        if cont == nil { pending = result }
+        lock.unlock()
+        // Resumed outside the lock: `CheckedContinuation.resume` can
+        // synchronously run the awaiting task's next step, and that step
+        // must not re-enter a method that takes this same lock.
+        cont?.resume(with: result)
+    }
+}
+
 /// Single-shot loopback HTTP listener for the OAuth redirect.
 /// Construct with `await LoopbackRedirectListener.start()`.
 ///
 /// `nonisolated`: every handler below already runs on `DispatchQueue.main`
 /// by construction — the listener is started with `queue: .main` and every
 /// accepted connection is too — but that is a fact about *scheduling*, not
-/// actor isolation the compiler can verify: `waitForCallback` writes
-/// `continuation` from the calling task (which need not itself be
-/// `@MainActor`), while `handle`/`finish` read and write it again from
-/// `.main`, with no synchronization the type system can see between the
-/// two contexts. Rather than paper over that with an `@MainActor`
-/// annotation the framework's `@Sendable` handler closures (in particular
-/// `NWListener.newConnectionHandler`) can't actually honor without an
-/// async hop, this class opts out of the module's default actor isolation
-/// and protects its shared mutable state with an explicit lock — real
-/// synchronization instead of an assumption. Without it, `finish` could in
-/// principle observe a stale `nil` continuation, set `finished = true`,
-/// and hang the flow forever with the timeout already consumed.
+/// actor isolation the compiler can verify. Rather than paper over that with
+/// an `@MainActor` annotation the framework's `@Sendable` handler closures
+/// (in particular `NWListener.newConnectionHandler`) can't actually honor
+/// without an async hop, this class opts out of the module's default actor
+/// isolation and protects its shared mutable state explicitly — real
+/// synchronization instead of an assumption.
 ///
 /// `@unchecked Sendable`: the framework's handler closures are themselves
 /// `@Sendable` and capture `self`, so the type must claim `Sendable` to be
-/// captured there at all. `stateLock` is what actually earns the claim —
-/// every stored var it guards (`continuation`, `finished`,
-/// `openConnections`) is only ever read or written while holding it.
+/// captured there at all. What earns the claim is that all of its mutable
+/// state is guarded: `openConnections` by `stateLock`, and the
+/// wait/resolve handshake by `LoopbackCallbackGate`'s own lock.
 nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
     struct Callback { let code: String; let state: String }
 
     /// The only path treated as the OAuth redirect — must match the path
-    /// `OAuthFlow.runInteractive` builds into the redirect URI. Any other
-    /// path (or a connection that never completes a request) falls into
-    /// the same non-fatal 404 bucket as a browser's speculative preconnect
-    /// socket: it does not resolve or fail the wait. Without this check a
-    /// local process could send a well-formed request with the wrong
-    /// `state` to force a resolution and abort the user's in-progress
-    /// authorization.
+    /// `OAuthFlow.redirectURI` builds into the redirect URI. Any other path
+    /// (or a connection that never completes a request) falls into the same
+    /// non-fatal 404 bucket as a browser's speculative preconnect socket: it
+    /// does not resolve or fail the wait.
+    ///
+    /// This filters stray traffic — preconnect sockets, port scanners, a
+    /// mistyped URL — and nothing more. It is NOT a security boundary: any
+    /// local process can send `GET /callback?code=x&state=y` and force a
+    /// `.stateMismatch`, aborting the user's authorization. The `state`
+    /// check in `runInteractive` is what stops such a request from being
+    /// *accepted*; nothing here stops it from being disruptive.
     static let callbackPath = "/callback"
 
     /// Header terminator; a request is not parsed until this has been
@@ -185,14 +326,13 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
     private static let maxRequestBytes = 8192
 
     private let listener: NWListener
-    /// Guards every field below — `continuation`/`finished` are written
-    /// from both the caller's task (in `waitForCallback`) and from `.main`
-    /// (in `handle`/`finish`); `openConnections` is touched from `.main`
-    /// callbacks and from `stop()`, which callers may invoke from off
-    /// `.main` (it runs synchronously via `defer` in `runInteractive`).
+    /// The wait/resolve handshake. Owns its own lock; see
+    /// `LoopbackCallbackGate`.
+    private let gate = LoopbackCallbackGate()
+    /// Guards `openConnections`, which is touched from `.main` callbacks and
+    /// from `stop()`, which callers may invoke from off `.main` (it runs
+    /// synchronously via `defer` in `runInteractive`).
     private let stateLock = NSLock()
-    private var continuation: CheckedContinuation<Callback, Error>?
-    private var finished = false
     /// Every connection accepted while waiting for the callback, so
     /// `stop()` can cancel the ones that never sent a complete (or any)
     /// request. `listener.cancel()` alone does not touch already-accepted
@@ -239,7 +379,15 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
             l.start(queue: .main)
         }
 
-        return LoopbackRedirectListener(listener: l, port: port)
+        let instance = LoopbackRedirectListener(listener: l, port: port)
+        // Installed here rather than in `waitForCallback`: the listener has
+        // been accepting connections since `l.start(queue:)` above, and the
+        // caller opens the browser before it starts waiting. A connection
+        // accepted in that window used to have no handler at all.
+        l.newConnectionHandler = { [weak instance] conn in
+            instance?.handle(conn)
+        }
+        return instance
     }
 
     private init(listener: NWListener, port: UInt16) {
@@ -248,18 +396,15 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
     }
 
     func waitForCallback(timeout: TimeInterval) async throws -> Callback {
-        try await withCheckedThrowingContinuation { cont in
-            stateLock.lock()
-            continuation = cont
-            stateLock.unlock()
-
-            listener.newConnectionHandler = { [weak self] conn in
-                self?.handle(conn)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                self?.finish(.failure(OAuthFlow.FlowError.cancelled))
-            }
+        // Armed before the wait rather than from inside it: if the callback
+        // has already arrived, `gate.wait()` returns immediately and this
+        // late `.cancelled` is ignored by the gate. Capturing `gate` rather
+        // than `[weak self]` means the timeout still fires — and the waiter
+        // still gets an answer — even if the listener itself is gone.
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [gate] in
+            gate.settle(.failure(OAuthFlow.FlowError.cancelled))
         }
+        return try await gate.wait()
     }
 
     private func handle(_ conn: NWConnection) {
@@ -336,19 +481,7 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
     }
 
     private func finish(_ result: Result<Callback, Error>) {
-        stateLock.lock()
-        guard !finished else {
-            stateLock.unlock()
-            return
-        }
-        finished = true
-        let cont = continuation
-        continuation = nil
-        stateLock.unlock()
-        // Resumed outside the lock: `CheckedContinuation.resume` can
-        // synchronously run the awaiting task's next step, and that step
-        // must not re-enter a method that takes this same lock.
-        cont?.resume(with: result)
+        gate.settle(result)
     }
 
     func stop() {
