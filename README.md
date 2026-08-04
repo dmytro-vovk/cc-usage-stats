@@ -137,7 +137,10 @@ pasted token (account `oauth-token`), which is left untouched.
 If you never connect, the app works on the response-header path exactly
 as before; only the per-model row and pill segment are unavailable. If a
 connection **lapses** — the grant is revoked, expires beyond refresh, or
-turns out not to carry `user:profile` — what happens next depends on
+turns out not to carry `user:profile` — the app notices on the next poll,
+without needing a restart. Revocation is the common case, and it does not
+wait for the access token to expire: the very next request is rejected and
+that rejection is what the app acts on. What happens next depends on
 whether a pasted token is also set:
 
 - **With a pasted token**, the app falls back to the response-header
@@ -156,8 +159,12 @@ A network outage or a server error is *not* a lapse and never triggers
 any of that — those stay on the ordinary transient/offline path.
 
 To disconnect deliberately, delete the `oauth-session` Keychain item
-(see [Uninstall](#uninstall) for the exact command) — the pasted token
-keeps the 5h/7d path working.
+(see [Uninstall](#uninstall) for the exact command) **and restart the
+app** — a running poller holds the session in memory and does not re-read
+that item, so the delete only takes effect at the next launch. After the
+restart the pasted token keeps the 5h/7d path working. To end the grant
+server-side as well, revoke the app in your Claude account settings; that
+one the app picks up on its next poll.
 
 ### Token lifetime
 
@@ -200,7 +207,10 @@ access token expires, writing the rotated session back to the
 can't rotate the same grant twice; a refresh that fails on a network
 error or a 5xx is retried on the next poll, while an outright rejection
 retires the connection as described in
-[Connect Claude account](#connect-claude-account).
+[Connect Claude account](#connect-claude-account). A usage request
+rejected outright retires it the same way — that is the path a revoked
+grant takes, since revoking does not wait for the access token's own
+expiry and so never gets as far as a refresh.
 
 The app never reads Claude Code's Keychain on a timer: every probe
 happens under an explicit click, so the macOS access prompt only ever

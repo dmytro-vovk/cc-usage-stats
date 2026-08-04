@@ -373,6 +373,9 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertTrue(poller.isPolling)
     }
 
+    /// The header path: a 401 means the *pasted token* was rejected, and
+    /// "Re-import from Claude Code Keychain" is exactly the right advice. This
+    /// is every existing user, so it must not move.
     func testInvalidTokenWithoutFallbackStillStopsPolling() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cc-usage-dead-\(UUID().uuidString).json")
@@ -385,6 +388,128 @@ final class UsagePollerTests: XCTestCase {
 
         XCTAssertEqual(poller.authState, .invalidToken)
         XCTAssertFalse(poller.isPolling, "existing terminal-stop behavior must be preserved")
+    }
+
+    /// The same assertion as above, stated explicitly rather than relying on
+    /// the `primaryIsScoped` default. If someone ever flips that default, the
+    /// test above would keep passing for the wrong reason; this one pins the
+    /// header path by name.
+    func testInvalidTokenFromAHeaderPrimaryIsStillJustARejectedToken() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-header-401-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.invalidToken]
+        let poller = UsagePoller(
+            api: primary, fallback: nil, primaryIsScoped: false, cacheURL: url, clock: { 1 }
+        )
+        await poller.tickForTest()
+
+        XCTAssertEqual(poller.authState, .invalidToken,
+                       "a pasted token really can be re-imported; the copy fits")
+        XCTAssertNotEqual(poller.authState, .connectionExpired,
+                          "a header-only user has no account connection to expire")
+        XCTAssertFalse(poller.isPolling)
+    }
+
+    /// The IMPORTANT. Revoking the app at claude.ai kills the access token
+    /// immediately while our clock still considers it valid, so
+    /// `OAuthTokenProvider` never refreshes, the usage GET 401s, and
+    /// `OAuthUsage.parse` returns `.invalidToken` — not `.insufficientScope`.
+    /// This is the *ordinary* way a grant dies, and before the
+    /// `primaryIsScoped` discriminator it landed on "Token rejected /
+    /// Re-import from Claude Code Keychain", which cannot help, and skipped
+    /// the Keychain eviction that `.connectionExpired` triggers, so the dead
+    /// session was rebuilt on every launch forever.
+    func testInvalidTokenFromAScopedPrimaryWithoutFallbackReportsAnExpiredConnection() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-revoked-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.invalidToken]
+        let poller = UsagePoller(
+            api: primary, fallback: nil, primaryIsScoped: true, cacheURL: url, clock: { 1 }
+        )
+        await poller.tickForTest()
+
+        XCTAssertEqual(poller.authState, .connectionExpired,
+                       "a revoked grant needs 'Reconnect', not 'Re-import'")
+        XCTAssertNotEqual(poller.authState, .invalidToken,
+                          "this also drives the Keychain eviction in applyAuthState")
+        XCTAssertFalse(poller.isPolling, "the same 401 comes back forever")
+        XCTAssertTrue(poller.needsReauthorization)
+    }
+
+    /// The other half of the discriminator: a scoped 401 must still prefer a
+    /// working pasted token over declaring the app dead. `.connectionExpired`
+    /// is only for "no data source left".
+    func testInvalidTokenFromAScopedPrimaryStillFallsBackWhenAFallbackExists() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-revoked-fb-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.invalidToken]
+        let fallback = StubAPI()
+        fallback.queue = [.success(RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 33, resetsAt: 999), sevenDay: nil
+        ))]
+
+        let poller = UsagePoller(
+            api: primary, fallback: fallback, primaryIsScoped: true, cacheURL: url, clock: { 1 }
+        )
+        await poller.tickForTest()
+
+        XCTAssertEqual(fallback.calls, 1, "the fallback must run on the same tick")
+        XCTAssertEqual(poller.authState, .ok)
+        XCTAssertNotEqual(poller.authState, .connectionExpired,
+                          "there is still a working data source, so nothing has expired")
+        XCTAssertTrue(poller.isPolling)
+        XCTAssertTrue(poller.needsReauthorization)
+    }
+
+    /// The guard rail for the new branch, mirroring the `.insufficientScope`
+    /// one: a scoped primary dropping packets must not evict the account.
+    func testTransientFailuresFromAScopedPrimaryNeverReportAnExpiredConnection() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-scoped-transient-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = Array(repeating: .transient("usage GET: offline"), count: 6)
+        let poller = UsagePoller(
+            api: primary, fallback: nil, primaryIsScoped: true, cacheURL: url, clock: { 1 }
+        )
+        for _ in 0..<6 { await poller.tickForTest() }
+
+        XCTAssertEqual(poller.authState, .offline)
+        XCTAssertNotEqual(poller.authState, .connectionExpired)
+        XCTAssertTrue(poller.isPolling, "a blip must keep retrying, not delete a Keychain item")
+    }
+
+    /// `.rateLimited` and `.notSubscriber` from a scoped primary with no
+    /// fallback must be untouched by the discriminator — only the two
+    /// permanent-refusal results route to `.connectionExpired`.
+    func testNonRefusalResultsFromAScopedPrimaryAreUnaffected() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-scoped-other-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [.rateLimited, .notSubscriber]
+        let poller = UsagePoller(
+            api: primary, fallback: nil, primaryIsScoped: true, cacheURL: url, clock: { 1 }
+        )
+
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 120, "429 still just backs off")
+        XCTAssertNotEqual(poller.authState, .connectionExpired)
+
+        await poller.tickForTest()
+        XCTAssertEqual(poller.authState, .notSubscriber)
+        XCTAssertTrue(poller.isPolling)
     }
 
     func testAuthorizeURLCarriesPKCEAndMinimalScope() throws {

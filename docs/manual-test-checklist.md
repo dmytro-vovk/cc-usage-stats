@@ -160,36 +160,94 @@ Skip this if you've never had the Phase 1 statusline integration.
 - [ ] Fresh install with a pasted token only: 5h and 7d render; the dropdown
       shows the "Connect your account" row; no model row appears.
 - [ ] After "Connect Claude account": browser opens, approval returns to the
-      local confirmation page, the connect row disappears within one poll.
-- [ ] A per-model row appears in the dropdown with a percentage and a reset
-      caption. Note the exact key/label observed.
+      local confirmation page, and the connect row disappears as soon as the
+      flow returns — the poller is rebuilt immediately, so this does not wait
+      for a poll.
+- [ ] A per-model row appears in the dropdown within one poll, with a
+      percentage and a reset caption. Note the exact key/label observed.
 - [ ] Menubar quiet state (all windows below 80%) shows a single 5h pill.
-- [ ] Model window above 80% with 7d below: pill shows 5h │ model.
-- [ ] Both above 80%: pill shows 5h │ 7d │ model, two dividers visible,
-      readable in both light and dark menubars.
+- [ ] Model window above 80% **and at or above the 5h percentage**, with 7d
+      below that bar: pill shows 5h │ model. (A window only earns menubar
+      space when it is both past 80% and no less used than 5h — a model at
+      85% next to a 5h at 90% stays off the pill by design.)
+- [ ] 7d and the model both past 80% and both ≥ 5h: pill shows
+      5h │ 7d │ model, two dividers visible, readable in both light and dark
+      menubars.
 - [ ] 5h at 100%: pill reverts to the single countdown pill regardless of the
       other windows.
 - [ ] Kill network mid-poll: last values persist, no row disappears.
       (A transient failure writes nothing, so nothing is retired.)
 - [ ] Restart the app: the model row is still populated from cache.
-- [ ] Go offline for longer than the access-token lifetime: the dropdown
-      shows "Offline — last value shown", NOT the connect-your-account row.
-      (A failed refresh must not be reported as a scope problem.)
-- [ ] Disconnect the account (delete the `oauth-session` Keychain item),
-      keep a pasted token: within one poll the per-model **rows and pill
-      segment disappear immediately** — not on the next window reset — and
-      the connect row returns. A per-model number must never sit above a
-      ticking "Last updated Xs ago" that no source can refresh.
-- [ ] Disconnect the account with **no** pasted token set: polling stops,
-      the menubar shows the red ⚠︎ triangle, and the dropdown shows
-      "Claude account connection expired." with a **Reconnect Claude
-      account** button — not "Token rejected / Re-import from Claude Code
-      Keychain", and not the "Connect your account to see per-model weekly
-      usage" prompt.
-- [ ] After that state, confirm the `oauth-session` Keychain item is gone
-      (`security find-generic-password -s cc-usage-stats -a oauth-session`
-      returns not-found) and that relaunching does not return to the same
-      state — it should report "No token set." instead.
+- [ ] Go offline for longer than the access-token lifetime: after five
+      consecutive failed polls (~5 minutes at the 60s cadence) the dropdown
+      shows "Offline — last value shown", NOT the connect-your-account row
+      and NOT "Claude account connection expired." Polling keeps retrying,
+      and the `oauth-session` Keychain item is still there afterwards.
+      (A failed refresh must not be reported as a scope problem, and an
+      outage must never evict the account.)
+#### Losing the connection
+
+> **Deleting the `oauth-session` Keychain item does not disconnect a
+> *running* app.** Nothing re-reads that item after the poller is built —
+> the live `OAuthTokenProvider` holds the session in memory — and deleting
+> the local copy does not revoke anything server-side. Polling carries on
+> unchanged. The two checks below therefore use a real server-side
+> revocation, which is the only thing that reproduces what a user actually
+> hits. The local delete is a *deliberate disconnect* and takes effect at
+> the next launch; it is checked separately at the end.
+
+- [ ] **Revocation with a pasted token still set.** Confirm both credentials
+      are present (`security find-generic-password -s cc-usage-stats -a
+      oauth-session` and `... -a oauth-token` both succeed) and that a
+      per-model row is on screen. Then revoke this app's authorization in
+      your Claude account settings (the page listing authorized apps /
+      connections) and leave the app running.
+      Within one poll — at most ~60s, and without relaunching:
+      - the per-model **rows and pill segment disappear**, rather than
+        freezing at their last value under a ticking "Last updated Xs ago"
+        that no source can refresh;
+      - the 5h/7d numbers **keep updating** from the pasted token;
+      - the "Connect your account to see per-model weekly usage" row
+        returns;
+      - polling does **not** stop and no error state appears.
+- [ ] **Revocation with no pasted token.** Start from a connected account
+      and **no** pasted token: delete the `oauth-token` item
+      (`security delete-generic-password -s cc-usage-stats -a oauth-token`)
+      and **relaunch** so the poller is rebuilt with no fallback. Confirm
+      the app still polls (a per-model row is live). Then revoke the app's
+      authorization in your Claude account settings and leave it running.
+      Within one poll, and without relaunching:
+      - polling stops (the "Last updated" caption stops advancing);
+      - the menubar shows the red ⚠︎ triangle;
+      - the dropdown shows **"Claude account connection expired."** with
+        "Reconnect to resume usage updates, or set a token below." and a
+        **Reconnect Claude account** button;
+      - it does **not** show "Token rejected." / "Re-import from Claude Code
+        Keychain", and does **not** show the "Connect your account to see
+        per-model weekly usage" prompt.
+
+      Either 401 route reaches this state: the usage request rejected
+      outright, or a token refresh rejected 4xx if the access token happened
+      to be inside its 300s pre-expiry refresh window. The observable result
+      is identical, so no need to time it.
+- [ ] Immediately after the previous check (**do not relaunch first** — the
+      eviction happens in the running app), confirm the session was deleted:
+      `security find-generic-password -s cc-usage-stats -a oauth-session`
+      returns `The specified item could not be found in the keychain.`
+- [ ] Now relaunch. With neither credential present the app must report
+      **"No token set."** with "Import from Claude Code Keychain" — *not*
+      "Claude account connection expired." again. (That regression is the
+      point of the eviction: without it the next launch rebuilds a poller
+      around a grant the server has already refused.)
+- [ ] Click **Reconnect Claude account** from the expired state (before the
+      relaunch above, or after connecting again): the browser flow runs and
+      polling resumes with per-model rows.
+- [ ] **Deliberate local disconnect.** With a connected account and a pasted
+      token, delete the `oauth-session` item and **relaunch**. The app polls
+      the header path only: 5h/7d render, no per-model row, and the connect
+      row is shown. (Before the relaunch, nothing changes — see the note
+      above. If it did change without relaunching, something now re-reads
+      that Keychain item and this checklist is out of date.)
 - [ ] Click **Connect Claude account** twice in quick succession: the
       second click is ignored, the button reads "Connecting…" and is
       disabled while the browser flow is open.
