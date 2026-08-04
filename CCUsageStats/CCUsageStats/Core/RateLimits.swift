@@ -69,11 +69,16 @@ struct RateLimitsSnapshot: Codable, Equatable {
             [String: WindowSnapshot].self, forKey: .models
         ) ?? [:]
         models = decodedModels
-        // Not persisted: the flag describes where a *freshly parsed* snapshot
-        // came from, and `CacheStore.update` only ever consults it on the
-        // incoming snapshot. Derived here so a decoded value is still
-        // self-consistent — model windows only ever reach the file from an
-        // authoritative source.
+        // Not persisted, and — as things stand — never read back: the flag
+        // describes where a *freshly parsed* snapshot came from, and
+        // `CacheStore.update` consults it only on `incoming`, which always
+        // comes from a parser and never from disk. So this derivation is
+        // inert today. It exists to keep a decoded value self-consistent
+        // rather than arbitrarily `false`: model windows only ever reach the
+        // file from an authoritative source, so a file that has them
+        // represents an authoritative statement, and a read-modify-write
+        // through `update` would otherwise clear the rows it just read back.
+        // Pinned by `testDecodingDerivesAuthorityFromWhetherModelsWerePersisted`.
         modelsAreAuthoritative = !decodedModels.isEmpty
     }
 

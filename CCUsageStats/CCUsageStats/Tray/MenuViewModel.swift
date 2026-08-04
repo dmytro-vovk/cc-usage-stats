@@ -376,13 +376,20 @@ final class MenuViewModel: ObservableObject {
 
         let primary: AnthropicAPIClient
         let fallback: AnthropicAPIClient?
+        // Told to the poller because only this function knows which client it
+        // built, and the poller needs it to tell a dead OAuth grant (401 on
+        // the usage GET after the account is revoked at claude.ai) apart from
+        // a rejected pasted token. The two need opposite advice.
+        let primaryIsScoped: Bool
 
         if let session, session.hasProfileScope {
             primary = oauthClientFactory(session)
             fallback = token.map(apiFactory)
+            primaryIsScoped = true
         } else if let token {
             primary = apiFactory(token)
             fallback = nil
+            primaryIsScoped = false
         } else {
             authState = .noToken
             needsReauthorization = true
@@ -397,7 +404,12 @@ final class MenuViewModel: ObservableObject {
         // pre-attach value.
         needsReauthorization = lacksScopedSession
 
-        let p = UsagePoller(api: primary, fallback: fallback, cacheURL: Paths.stateFile)
+        let p = UsagePoller(
+            api: primary,
+            fallback: fallback,
+            primaryIsScoped: primaryIsScoped,
+            cacheURL: Paths.stateFile
+        )
         p.$authState
             .receive(on: RunLoop.main)
             .sink { [weak self] in

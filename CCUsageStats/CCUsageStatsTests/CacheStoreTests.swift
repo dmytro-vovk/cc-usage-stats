@@ -219,4 +219,27 @@ final class CacheStoreTests: XCTestCase {
                       "the usage endpoint states the whole set, empty or not")
         XCTAssertTrue(fromEndpoint.models.isEmpty)
     }
+
+    /// `init(from:)` derives the flag rather than reading it — the file never
+    /// carries it. Nothing in production consults a *decoded* value:
+    /// `CacheStore.update` reads the flag only off the freshly-parsed
+    /// `incoming` snapshot, and `incoming` always comes from a parser. This
+    /// pins the derivation anyway so the property stays self-consistent (a
+    /// decoded snapshot with model windows must claim authority, or a future
+    /// read-modify-write through `update` would clear the very rows it just
+    /// read back) and so the rule is stated somewhere executable rather than
+    /// only in a comment.
+    func testDecodingDerivesAuthorityFromWhetherModelsWerePersisted() throws {
+        let withModels = try JSONDecoder().decode(RateLimitsSnapshot.self, from: Data("""
+        {"model_windows":{"seven_day_opus":{"used_percentage":50,"resets_at":9999}}}
+        """.utf8))
+        XCTAssertTrue(withModels.modelsAreAuthoritative,
+                      "model windows only ever reach the file from an authoritative source")
+
+        let withoutModels = try JSONDecoder().decode(RateLimitsSnapshot.self, from: Data("""
+        {"five_hour":{"used_percentage":10,"resets_at":9999}}
+        """.utf8))
+        XCTAssertFalse(withoutModels.modelsAreAuthoritative,
+                       "a legacy or header-written file states nothing about model windows")
+    }
 }

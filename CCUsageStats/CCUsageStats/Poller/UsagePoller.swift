@@ -7,6 +7,13 @@ final class UsagePoller: ObservableObject {
     private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "poller")
     private let api: AnthropicAPIClient
     private let fallback: AnthropicAPIClient?
+    /// True when `api` is the scoped OAuth client rather than the
+    /// response-header one. Supplied by the construction site because it is
+    /// the only place that knows: an `AnthropicAPI.Result` carries no
+    /// provenance, so a 401 from a dead OAuth grant and a 401 from a rejected
+    /// pasted token are indistinguishable once they reach `tick`. They need
+    /// opposite advice — see `isTerminalGrantFailure`.
+    private let primaryIsScoped: Bool
     private let cacheURL: URL
     private let clock: () -> Int64
 
@@ -47,14 +54,20 @@ final class UsagePoller: ObservableObject {
         return baseInterval
     }
 
+    /// - Parameter primaryIsScoped: pass `true` only when `api` is an
+    ///   `OAuthUsageClient`. Defaults to `false` so the header path — every
+    ///   existing user — keeps its behaviour unless a caller deliberately
+    ///   opts in.
     init(
         api: AnthropicAPIClient,
         fallback: AnthropicAPIClient? = nil,
+        primaryIsScoped: Bool = false,
         cacheURL: URL,
         clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }
     ) {
         self.api = api
         self.fallback = fallback
+        self.primaryIsScoped = primaryIsScoped
         self.cacheURL = cacheURL
         self.clock = clock
     }
@@ -101,10 +114,14 @@ final class UsagePoller: ObservableObject {
             refused = true
             needsReauthorization = true
             Self.log.warning("scoped usage endpoint refused; using header fallback")
-        case .invalidToken where fallback != nil:
+        case .invalidToken where fallback != nil || primaryIsScoped:
+            // A 401 from the scoped client is a dead grant. With a fallback,
+            // retry on it. Without one there is nothing to retry with, but it
+            // still must not be reported as `.invalidToken` — see
+            // `isTerminalGrantFailure`.
             refused = true
             needsReauthorization = true
-            Self.log.warning("oauth session rejected; using header fallback")
+            Self.log.warning("oauth session rejected")
         case .notSubscriber where fallback != nil:
             // Not a scope problem — the endpoint returned 200 with no
             // recognizable window, which can happen if this undocumented
@@ -121,28 +138,14 @@ final class UsagePoller: ObservableObject {
         if refused {
             if let fallback {
                 handle(await fallback.fetchRateLimits())
-            } else if case .insufficientScope = result {
-                // Terminal. `.insufficientScope` from the primary means the
-                // grant is permanently unusable — revoked, expired past
-                // refresh, or genuinely missing `user:profile` — and with no
-                // fallback there is nothing else to poll with. Retrying gets
-                // the same answer forever, so this used to sit in a silent
-                // loop showing a slowly-greying number that never changed.
-                //
-                // Deliberately NOT `.invalidToken`: that state's copy sends
-                // the user to "Re-import from Claude Code Keychain", which
-                // cannot fix a dead OAuth grant.
-                //
-                // Only a *permanent* refusal lands here. A network failure or
-                // a 5xx during refresh is classified `.transient` by
-                // `OAuthUsageClient` and never reaches this branch.
+            } else if isTerminalGrantFailure(result) {
                 Self.log.warning("oauth grant unusable and no fallback; stopping")
                 authState = .connectionExpired
                 stop()
             } else {
-                // `.invalidToken` / `.notSubscriber` only mark `refused` when
-                // a fallback exists, so this is unreachable today; keep the
-                // non-fatal behaviour rather than assuming otherwise.
+                // `.notSubscriber` only marks `refused` when a fallback
+                // exists, so this is unreachable today; keep the non-fatal
+                // behaviour rather than assuming otherwise.
                 transientFailureCount = 0
                 currentBackoffSeconds = Self.baseInterval
             }
@@ -151,6 +154,42 @@ final class UsagePoller: ObservableObject {
 
         if case .success = result { needsReauthorization = false }
         handle(result)
+    }
+
+    /// Whether a refusal with no fallback left means "the OAuth grant is
+    /// dead", as opposed to something a re-imported pasted token could fix.
+    ///
+    /// Two results qualify, and both are OAuth-only:
+    ///
+    ///   - `.insufficientScope` — `OAuthUsageClient`'s verdict when the token
+    ///     provider reports `.unusable`, i.e. the *refresh* was rejected 4xx,
+    ///     or the grant genuinely lacks `user:profile`. The header client
+    ///     never produces it.
+    ///   - `.invalidToken` **from a scoped primary** — a 401 on the usage GET
+    ///     itself. This is the ordinary way a grant dies: revoking the app at
+    ///     claude.ai invalidates the access token immediately, while by our
+    ///     clock it is still unexpired, so `OAuthTokenProvider` (which only
+    ///     refreshes inside a 300-second pre-expiry window) hands it over
+    ///     unchanged and the endpoint rejects it. Without the
+    ///     `primaryIsScoped` discriminator this reached `.invalidToken` and
+    ///     told the user to "Re-import from Claude Code Keychain", which
+    ///     cannot revive an OAuth grant, and skipped the Keychain eviction so
+    ///     the dead session was rebuilt on every launch.
+    ///
+    /// A 401 from a *header* primary keeps meaning exactly what it always
+    /// meant: the pasted token was rejected, and re-importing it is the right
+    /// advice.
+    ///
+    /// Only *permanent* refusals reach here. A network failure or a 5xx —
+    /// during refresh or on the usage GET — is classified `.transient` by
+    /// `OAuthUsageClient` and never lands in this branch, so a blip can never
+    /// stop polling or evict an account.
+    private func isTerminalGrantFailure(_ result: AnthropicAPI.Result) -> Bool {
+        switch result {
+        case .insufficientScope: return true
+        case .invalidToken: return primaryIsScoped
+        default: return false
+        }
     }
 
     private func handle(_ result: AnthropicAPI.Result) {
