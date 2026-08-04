@@ -44,8 +44,9 @@ here in the menubar, without opening Claude Code.
 - A severity-tinted SF Symbol appended to the right when
   status.claude.com reports a non-operational state, so you see an
   outage without opening the dropdown.
-- A red `⚠︎` triangle (in place of the gauge) if the OAuth token is
-  rejected.
+- A red `⚠︎` triangle (in place of the gauge) when there is nothing left
+  to poll with: no token set, the token rejected, or a connected
+  account's session expired with no pasted token behind it.
 
 ### Dropdown
 
@@ -61,7 +62,9 @@ here in the menubar, without opening Claude Code.
   sparkline. The row title is derived from whatever key the API
   returns for your account (e.g. a `seven_day_opus` key would render
   as "Opus weekly"), so a renamed or new model shows up with no app
-  update needed.
+  update needed. These rows exist only while a source that can actually
+  see them is reporting: the set is replaced wholesale on every scoped
+  poll, and cleared entirely by any poll from the header path.
 - Without a connected account, a **"Connect your account to see
   per-model weekly usage."** row prompts you instead; see
   [Connect Claude account](#connect-claude-account).
@@ -74,8 +77,12 @@ here in the menubar, without opening Claude Code.
   hour boundary inside the window.
 - "Last updated Xs ago" with a small ↻ refresh button (⌘R).
 - Auth / connectivity / outage rows when relevant
-  (`Token rejected`, `Offline`, `No subscription rate-limit data`,
-  the status.claude.com banner).
+  (`Token rejected`, `Claude account connection expired` with a
+  **Reconnect** button, `Offline`, `No subscription rate-limit data`,
+  the status.claude.com banner). At most one of these shows at a time —
+  the reconnect *prompt* above is suppressed whenever one of these is
+  up, so the panel never offers an optional upgrade and reports a hard
+  failure in the same breath.
 - Settings: **Launch at Login**, **Warn at threshold** (stepper
   1–99% + sound picker), and a **Sounds** section with a per-event
   picker for **Limit reached**, **Window reset**, and **Outage
@@ -125,13 +132,32 @@ to CCUsageStats." confirmation page. Nothing is pasted by hand.
 
 The resulting session is stored in its own Keychain item (service
 `cc-usage-stats`, account `oauth-session`) — separate from the legacy
-pasted token (account `oauth-token`), which is left untouched. If you
-never connect, or the connection lapses, the app keeps working on the
-response-header path exactly as before, as long as a pasted token is
-still set — only the per-model row and pill segment are unavailable.
-To disconnect, delete the `oauth-session`
-Keychain item (see [Uninstall](#uninstall) for the exact command) — the
-pasted token keeps the 5h/7d path working.
+pasted token (account `oauth-token`), which is left untouched.
+
+If you never connect, the app works on the response-header path exactly
+as before; only the per-model row and pill segment are unavailable. If a
+connection **lapses** — the grant is revoked, expires beyond refresh, or
+turns out not to carry `user:profile` — what happens next depends on
+whether a pasted token is also set:
+
+- **With a pasted token**, the app falls back to the response-header
+  path on the same poll, and the dropdown asks you to reconnect. The
+  per-model rows and the model pill segment **disappear** rather than
+  freezing at their last value: the header path cannot see per-model
+  windows, so it is not allowed to keep one on screen under a "Last
+  updated 4s ago" it has no way to make true.
+- **Without one**, there is nothing left to poll with. The app stops
+  polling, says **Claude account connection expired.** with a
+  **Reconnect Claude account** button, and deletes the dead
+  `oauth-session` Keychain item so the next launch doesn't rebuild
+  itself around a grant the server has already refused.
+
+A network outage or a server error is *not* a lapse and never triggers
+any of that — those stay on the ordinary transient/offline path.
+
+To disconnect deliberately, delete the `oauth-session` Keychain item
+(see [Uninstall](#uninstall) for the exact command) — the pasted token
+keeps the 5h/7d path working.
 
 ### Token lifetime
 
@@ -165,11 +191,22 @@ The app makes this visible rather than letting it fail silently:
 - With no token stored at all, the dropdown says **No token set.** — the
   API hasn't rejected anything, so it doesn't claim otherwise.
 
-The app never refreshes tokens itself and never reads Claude Code's
-Keychain on a timer: every probe happens under an explicit click, so the
-macOS access prompt only ever appears while you're at the keyboard.
-Claude Code's `refreshToken` is deliberately left unread — exchanging it
-could rotate the CLI's own credential out from under it.
+The pasted / imported token is never refreshed by the app: when it
+lapses, you re-import or paste a new one. A **connected account** is
+different — its OAuth session carries its own refresh token, and the app
+does renew it automatically, in the background, shortly before the
+access token expires, writing the rotated session back to the
+`oauth-session` Keychain item. Refreshes are serialized so two polls
+can't rotate the same grant twice; a refresh that fails on a network
+error or a 5xx is retried on the next poll, while an outright rejection
+retires the connection as described in
+[Connect Claude account](#connect-claude-account).
+
+The app never reads Claude Code's Keychain on a timer: every probe
+happens under an explicit click, so the macOS access prompt only ever
+appears while you're at the keyboard. Claude Code's `refreshToken` is
+deliberately left unread — exchanging it could rotate the CLI's own
+credential out from under it.
 
 ## How it works
 
