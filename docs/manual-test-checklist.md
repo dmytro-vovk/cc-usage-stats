@@ -154,3 +154,26 @@ Skip this if you've never had the Phase 1 statusline integration.
   the Keychain entry still readable, no stale state.
 - Delete `state.json` and `history.jsonl` while running — within 60s
   the poller writes fresh files. The chart starts empty and refills.
+
+## Per-model weekly meter
+
+- [ ] Fresh install with a pasted token only: 5h and 7d render; the dropdown
+      shows the "Connect your account" row; no model row appears.
+- [ ] After "Connect Claude account": browser opens, approval returns to the
+      local confirmation page, the connect row disappears within one poll.
+- [ ] A per-model row appears in the dropdown with a percentage and a reset
+      caption. Note the exact key/label observed.
+- [ ] Menubar quiet state (all windows below 80%) shows a single 5h pill.
+- [ ] Model window above 80% with 7d below: pill shows 5h │ model.
+- [ ] Both above 80%: pill shows 5h │ 7d │ model, two dividers visible,
+      readable in both light and dark menubars.
+- [ ] 5h at 100%: pill reverts to the single countdown pill regardless of the
+      other windows.
+- [ ] Kill network mid-poll: last values persist, no row disappears.
+- [ ] Restart the app: the model row is still populated from cache.
+- [ ] Go offline for longer than the access-token lifetime: the dropdown
+      shows "Offline — last value shown", NOT the connect-your-account row.
+      (A failed refresh must not be reported as a scope problem.)
+- [ ] Disconnect the account, keep a pasted token: within one poll the
+      per-model pill segment disappears once that window's reset passes,
+      and the connect row returns.

@@ -8,7 +8,9 @@
 macOS menubar app that shows your Claude.ai 5-hour and 7-day rate-limit
 usage — the same numbers Claude Desktop's **Settings → Usage** screen
 displays. Live-updates regardless of whether you use Claude via the
-desktop app, the web, or the CLI.
+desktop app, the web, or the CLI. Connect your account (optional) to
+also see the per-model weekly window (e.g. the premium-model weekly
+cap) that Anthropic doesn't expose any other way.
 
 ## What you see
 
@@ -29,11 +31,13 @@ desktop app, the web, or the CLI.
   through orange to red at 100%), with the icon+text inverted (white in
   light mode, dark in dark mode) for high contrast against any menubar
   background.
-- When the 7-day window is both **above 80% and ≥ the 5-hour fraction**,
-  the pill splits into two colour-coded halves — left for the 5h
-  session (gauge icon), right for the 7d window (calendar icon) — so
-  you see "7d critical while 5h is fine" at a glance. Below that
-  threshold the menubar stays as a slim single 5h pill.
+- The pill can split into up to three colour-coded segments — 5h
+  session, 7d window, and (once connected) the busiest per-model
+  weekly window — each joining only when it's both **above 80% and ≥
+  the 5-hour fraction**, so you see whichever window is critical at a
+  glance: `5h`, `5h│7d`, `5h│model`, or `5h│7d│model`. Below that
+  threshold for every other window the menubar stays as a slim single
+  5h pill.
 - At 100% (5h) the percentage swaps to a live `H:MM:SS` countdown to
   the window reset (single pill again — the countdown is the headline).
 - A severity-tinted SF Symbol appended to the right when
@@ -51,6 +55,15 @@ desktop app, the web, or the CLI.
 
 - 5-hour and 7-day windows: title + bold gradient-coloured percentage,
   a tinted progress bar, and a `Resets in …` caption.
+- One row per per-model weekly window, once an account is connected —
+  same percentage/bar/caption treatment as 5h and 7d, without the
+  sparkline. The row title is derived from whatever key the API
+  returns for your account (e.g. a `seven_day_opus` key would render
+  as "Opus weekly"), so a renamed or new model shows up with no app
+  update needed.
+- Without a connected account, a **"Connect your account to see
+  per-model weekly usage."** row prompts you instead; see
+  [Connect Claude account](#connect-claude-account).
 - For the 5-hour row, a **filled-area sparkline** of the last samples
   with a dashed forecast line projecting toward 100% based on a linear
   regression of the recent trend. Y-axis auto-zooms (25 / 50 / 75 /
@@ -96,6 +109,28 @@ token is successfully verified — cancelling leaves everything as it
 was. A 401/403 from Anthropic surfaces inline; the existing-good token
 is not overwritten by a bad new one.
 
+### Connect Claude account
+
+Optional. Click **Connect Claude account** in the Settings window (next
+to **Paste from Claude Code Keychain**) to unlock the per-model weekly
+window in the dropdown and pill.
+
+This runs a standard PKCE OAuth authorization-code flow in your
+default browser: the app opens `claude.com`'s authorize page requesting
+only the `user:profile` scope, listens on a loopback-only ephemeral
+port for the redirect, and exchanges the returned code for a token once
+the browser lands on the local "You can close this window and return
+to CCUsageStats." confirmation page. Nothing is pasted by hand.
+
+The resulting session is stored in its own Keychain item (service
+`cc-usage-stats`, account `oauth-session`) — separate from the legacy
+pasted token (account `oauth-token`), which is left untouched. If you
+never connect, or the connection lapses, the app keeps working exactly
+as before on the response-header path; only the per-model row and pill
+segment are unavailable. To disconnect, delete the `oauth-session`
+Keychain item (see [Uninstall](#uninstall) for the exact command) — the
+pasted token keeps the 5h/7d path working.
+
 ### Token lifetime
 
 The two ways of supplying a token do **not** last equally long:
@@ -136,11 +171,32 @@ could rotate the CLI's own credential out from under it.
 
 ## How it works
 
-The app polls Anthropic's `POST /v1/messages` endpoint with a long-lived
-OAuth token. Anthropic includes rate-limit headers
-(`anthropic-ratelimit-unified-{5h,7d}-{utilization,reset}`) on every
-successful response. The app parses those, writes them to a cache file,
-and renders the menubar.
+The app gets its rate-limit numbers from one of two data sources,
+depending on whether you've connected an account:
+
+- **Response headers (default, no connection needed).** The app polls
+  Anthropic's `POST /v1/messages` endpoint with a long-lived OAuth
+  token — a billed 1-token request. Anthropic includes rate-limit
+  headers (`anthropic-ratelimit-unified-{5h,7d}-{utilization,reset}`)
+  on every successful response. This is the only source available to a
+  pasted `claude setup-token` token, and it carries the 5-hour and
+  7-day windows only — the headers have no way to express a per-model
+  limit.
+- **`GET /api/oauth/usage` (after [Connect Claude
+  account](#connect-claude-account)).** A plain GET, so it costs no
+  quota. It returns every window as flat top-level keys — `five_hour`,
+  `seven_day`, and one `seven_day_<model>` key per model with its own
+  weekly cap — each as `{utilization, resets_at}`. This requires the
+  `user:profile` OAuth scope, which a pasted token does not carry, so
+  it's only used once a scoped session exists. The dropdown row's label
+  is derived from whichever key the API returns for your account (e.g.
+  a `seven_day_opus` key would render as "Opus weekly"), so a renamed
+  or newly added model appears with no code change.
+
+When a scoped session is available the app prefers it (every window,
+no quota cost) and falls back to the pasted token's header path only if
+that request fails. Either way, the app parses the response, writes it
+to a cache file, and renders the menubar and dropdown from that cache.
 
 Polling cadence is adaptive:
 
@@ -164,8 +220,10 @@ to the current 5-hour window. It survives app restarts so the chart
 isn't blank after relaunch.
 
 See [docs/superpowers/specs/2026-04-25-cc-usage-stats-poller-design.md](docs/superpowers/specs/2026-04-25-cc-usage-stats-poller-design.md)
-for the original v0.2 design (some details have evolved — this README
-is the current source of truth).
+for the original v0.2 design and
+[docs/superpowers/specs/2026-07-27-fable-usage-meter-design.md](docs/superpowers/specs/2026-07-27-fable-usage-meter-design.md)
+for the per-model weekly meter and connect flow (some details have
+evolved in both — this README is the current source of truth).
 
 ## Install
 
@@ -210,6 +268,9 @@ rm -rf ~/Applications/CCUsageStats.app
 # Forget the OAuth token in Keychain
 security delete-generic-password -s cc-usage-stats -a oauth-token
 
+# Forget the connected-account session, if you connected one
+security delete-generic-password -s cc-usage-stats -a oauth-session
+
 # Remove cache + history + sentinel
 rm -rf ~/Library/Application\ Support/cc-usage-stats/
 
@@ -223,7 +284,13 @@ security delete-identity -c "CCUsageStats Dev"
   the baseline cadence; up to once every 10 seconds when within 2% of
   the cap.
 - No telemetry, no analytics, no third-party servers.
-- OAuth token in Keychain only. Never logged.
+- OAuth token and connected-account session in Keychain only. Never
+  logged.
+- Connecting an account opens your default browser to `claude.com` for
+  authorization; the redirect is captured by a loopback-only listener
+  on your own machine (see [Connect Claude
+  account](#connect-claude-account)) — no third party sees the
+  callback.
 - On disk under `~/Library/Application Support/cc-usage-stats/`:
   - `state.json` — latest rate-limit numbers + capture timestamp.
   - `history.jsonl` — sample log for the sparkline (current 5h window only).
