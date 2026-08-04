@@ -155,7 +155,7 @@ Skip this if you've never had the Phase 1 statusline integration.
 - Delete `state.json` and `history.jsonl` while running — within 60s
   the poller writes fresh files. The chart starts empty and refills.
 
-## Per-model weekly meter
+### 13. Per-model weekly meter
 
 - [ ] Fresh install with a pasted token only: 5h and 7d render; the dropdown
       shows the "Connect your account" row; no model row appears.

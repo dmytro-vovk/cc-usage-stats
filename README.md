@@ -10,7 +10,8 @@ usage — the same numbers Claude Desktop's **Settings → Usage** screen
 displays. Live-updates regardless of whether you use Claude via the
 desktop app, the web, or the CLI. Connect your account (optional) to
 also see the per-model weekly window (e.g. the premium-model weekly
-cap) that Anthropic doesn't expose any other way.
+cap) — the same meter Claude Code's own `/usage` panel shows — right
+here in the menubar, without opening Claude Code.
 
 ## What you see
 
@@ -125,9 +126,10 @@ to CCUsageStats." confirmation page. Nothing is pasted by hand.
 The resulting session is stored in its own Keychain item (service
 `cc-usage-stats`, account `oauth-session`) — separate from the legacy
 pasted token (account `oauth-token`), which is left untouched. If you
-never connect, or the connection lapses, the app keeps working exactly
-as before on the response-header path; only the per-model row and pill
-segment are unavailable. To disconnect, delete the `oauth-session`
+never connect, or the connection lapses, the app keeps working on the
+response-header path exactly as before, as long as a pasted token is
+still set — only the per-model row and pill segment are unavailable.
+To disconnect, delete the `oauth-session`
 Keychain item (see [Uninstall](#uninstall) for the exact command) — the
 pasted token keeps the 5h/7d path working.
 
@@ -186,17 +188,24 @@ depending on whether you've connected an account:
   account](#connect-claude-account)).** A plain GET, so it costs no
   quota. It returns every window as flat top-level keys — `five_hour`,
   `seven_day`, and one `seven_day_<model>` key per model with its own
-  weekly cap — each as `{utilization, resets_at}`. This requires the
-  `user:profile` OAuth scope, which a pasted token does not carry, so
-  it's only used once a scoped session exists. The dropdown row's label
-  is derived from whichever key the API returns for your account (e.g.
+  weekly cap — each as `{utilization, resets_at}`. Not every
+  `seven_day_*` key is a model window, though — `seven_day_oauth_apps`
+  shares the prefix but is deliberately filtered out and never rendered
+  as a row. This requires the `user:profile` OAuth scope, which a
+  pasted token does not carry, so it's only used once a scoped session
+  exists. The dropdown row's label is derived from whichever key the
+  API returns for your account (e.g.
   a `seven_day_opus` key would render as "Opus weekly"), so a renamed
   or newly added model appears with no code change.
 
 When a scoped session is available the app prefers it (every window,
-no quota cost) and falls back to the pasted token's header path only if
-that request fails. Either way, the app parses the response, writes it
-to a cache file, and renders the menubar and dropdown from that cache.
+no quota cost) and falls back to the pasted token's header path only on
+a refusal — an insufficient-scope response, a rejected session token, or
+a 200 with no recognizable window. Transient network failures and 429s
+do **not** trigger the fallback; they're retried on the scoped path
+itself and accumulate toward the offline state like any other poll.
+Either way, the app parses the response, writes it to a cache file, and
+renders the menubar and dropdown from that cache.
 
 Polling cadence is adaptive:
 
