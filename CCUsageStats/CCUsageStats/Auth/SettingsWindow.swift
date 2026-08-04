@@ -58,7 +58,12 @@ final class SettingsViewModel: ObservableObject {
 
     /// Set by the caller that owns the poller. Optional because the settings
     /// window is constructible without it in previews and tests.
-    var onConnect: (() -> Void)?
+    ///
+    /// `async` so the button can stay disabled for the duration of the
+    /// browser round-trip. It used to be fire-and-forget, which left a live
+    /// button that silently did nothing on a second click — the connect path
+    /// refuses to run twice concurrently.
+    var onConnect: (() async -> Void)?
 
     /// Expiry to persist alongside the token, or nil if the field no longer
     /// matches what was imported.
@@ -137,6 +142,7 @@ struct SettingsView: View {
     let onClose: () -> Void
 
     @State private var saving = false
+    @State private var connecting = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -147,7 +153,14 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
             HStack {
                 Button("Paste from Claude Code Keychain") { vm.tryClaudeCodeKeychain() }
-                Button("Connect Claude account") { vm.onConnect?() }
+                Button(connecting ? "Connecting…" : "Connect Claude account") {
+                    connecting = true
+                    Task {
+                        await vm.onConnect?()
+                        connecting = false
+                    }
+                }
+                .disabled(connecting)
                 Spacer()
             }
             if let err = vm.error {

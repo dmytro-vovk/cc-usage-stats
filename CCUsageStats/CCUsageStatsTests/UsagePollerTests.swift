@@ -223,7 +223,17 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertFalse(poller.needsReauthorization, "a scoped success must clear the flag")
     }
 
-    func testInsufficientScopeWithoutFallbackDoesNotStopPolling() async throws {
+    /// Replaces a `testInsufficientScopeWithoutFallbackDoesNotStopPolling`
+    /// that asserted only `authState != .invalidToken` — which the buggy
+    /// behaviour (never assigning `authState` at all) satisfied. It pinned
+    /// the bug instead of catching it.
+    ///
+    /// `.insufficientScope` is what `OAuthUsageClient` returns for both "no
+    /// session" and "the grant is permanently dead". With no fallback there
+    /// is nothing else to poll with, so a user in this state used to poll
+    /// forever behind a slowly-greying number and was never told anything
+    /// was wrong.
+    func testInsufficientScopeWithoutFallbackReportsAnExpiredConnection() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cc-usage-nofallback-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -233,9 +243,67 @@ final class UsagePollerTests: XCTestCase {
         let poller = UsagePoller(api: primary, fallback: nil, cacheURL: url, clock: { 1 })
         await poller.tickForTest()
 
+        XCTAssertEqual(poller.authState, .connectionExpired,
+                       "the user must be told, with advice that fits a dead OAuth grant")
+        XCTAssertNotEqual(poller.authState, .invalidToken,
+                          "'re-import from Claude Code Keychain' cannot revive an OAuth grant")
+        XCTAssertFalse(poller.isPolling, "retrying a permanently dead grant gets the same answer")
         XCTAssertTrue(poller.needsReauthorization)
-        XCTAssertNotEqual(poller.authState, .invalidToken)
-        XCTAssertTrue(poller.isPolling, "the name of this test is the assertion")
+    }
+
+    /// The guard rail on the test above: a network blip must not evict the
+    /// user's account. `OAuthUsageClient` maps a refresh that failed for
+    /// transport or 5xx reasons to `.transient`, never `.insufficientScope`,
+    /// and the offline detector must keep counting those.
+    func testTransientFailuresWithoutFallbackNeverReportAnExpiredConnection() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-transient-nofallback-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = Array(repeating: .transient("token refresh: offline"), count: 6)
+        let poller = UsagePoller(api: primary, fallback: nil, cacheURL: url, clock: { 1 })
+        for _ in 0..<6 { await poller.tickForTest() }
+
+        XCTAssertEqual(poller.authState, .offline, "unchanged: five transients still mean offline")
+        XCTAssertNotEqual(poller.authState, .connectionExpired)
+        XCTAssertTrue(poller.isPolling, "a transient failure must keep retrying")
+    }
+
+    /// The Critical, through the poller rather than the store: the fallback's
+    /// header snapshot cannot see model windows, so the ones the scoped path
+    /// cached must not survive it with a freshly-stamped `captured_at`.
+    func testFallingBackToTheHeaderPathRetiresCachedModelWindows() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cc-usage-model-retire-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let primary = StubAPI()
+        primary.queue = [
+            .success(RateLimitsSnapshot(
+                fiveHour: WindowSnapshot(usedPercentage: 10, resetsAt: 9_999),
+                sevenDay: nil,
+                models: ["seven_day_opus": WindowSnapshot(usedPercentage: 83, resetsAt: 9_999)]
+            )),
+            .insufficientScope,
+        ]
+        let fallback = StubAPI()
+        fallback.queue = [.success(RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 11, resetsAt: 9_999), sevenDay: nil
+        ))]
+
+        let poller = UsagePoller(api: primary, fallback: fallback, cacheURL: url, clock: { 1 })
+        await poller.tickForTest()
+        XCTAssertEqual(
+            try XCTUnwrap(CacheStore.read(at: url)).snapshot.models["seven_day_opus"]?.usedPercentage,
+            83
+        )
+
+        await poller.tickForTest()
+        let after = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(after.snapshot.fiveHour?.usedPercentage, 11)
+        XCTAssertTrue(after.snapshot.models.isEmpty,
+                      "a frozen per-model row must not outlive the source that could refresh it")
     }
 
     func testOAuth401FallsBackInsteadOfStoppingWhenFallbackExists() async throws {
@@ -339,5 +407,18 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(value("state"), "STATE")
         XCTAssertEqual(value("scope"), "user:profile")
         XCTAssertEqual(value("redirect_uri"), "http://localhost:9999/callback")
+    }
+
+    /// The listener binds IPv4 loopback only, while `localhost` also resolves
+    /// to `::1` — which browsers commonly try first and which nothing here is
+    /// listening on. RFC 8252 §8.3 recommends the literal address for exactly
+    /// this reason, and the production redirect URI is otherwise never
+    /// exercised: the listener tests connect to `127.0.0.1` themselves.
+    func testRedirectURIUsesTheLiteralLoopbackAddress() {
+        let uri = OAuthFlow.redirectURI(port: 49_152)
+        XCTAssertEqual(uri, "http://127.0.0.1:49152/callback")
+        XCTAssertFalse(uri.contains("localhost"))
+        XCTAssertTrue(uri.hasSuffix(LoopbackRedirectListener.callbackPath),
+                      "the redirect path must match the only path the listener accepts")
     }
 }

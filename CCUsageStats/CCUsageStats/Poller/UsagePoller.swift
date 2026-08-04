@@ -121,9 +121,28 @@ final class UsagePoller: ObservableObject {
         if refused {
             if let fallback {
                 handle(await fallback.fetchRateLimits())
+            } else if case .insufficientScope = result {
+                // Terminal. `.insufficientScope` from the primary means the
+                // grant is permanently unusable — revoked, expired past
+                // refresh, or genuinely missing `user:profile` — and with no
+                // fallback there is nothing else to poll with. Retrying gets
+                // the same answer forever, so this used to sit in a silent
+                // loop showing a slowly-greying number that never changed.
+                //
+                // Deliberately NOT `.invalidToken`: that state's copy sends
+                // the user to "Re-import from Claude Code Keychain", which
+                // cannot fix a dead OAuth grant.
+                //
+                // Only a *permanent* refusal lands here. A network failure or
+                // a 5xx during refresh is classified `.transient` by
+                // `OAuthUsageClient` and never reaches this branch.
+                Self.log.warning("oauth grant unusable and no fallback; stopping")
+                authState = .connectionExpired
+                stop()
             } else {
-                // Keep polling and keep the flag set; the scope may come
-                // back if the user authorizes in another window.
+                // `.invalidToken` / `.notSubscriber` only mark `refused` when
+                // a fallback exists, so this is unreachable today; keep the
+                // non-fatal behaviour rather than assuming otherwise.
                 transientFailureCount = 0
                 currentBackoffSeconds = Self.baseInterval
             }

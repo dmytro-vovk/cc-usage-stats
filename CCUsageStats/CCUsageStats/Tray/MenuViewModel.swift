@@ -84,13 +84,42 @@ final class MenuViewModel: ObservableObject {
     /// time a fresh poll advances `resetsAt`.
     private var refreshedForResetAt: Int64?
 
+    /// True while a browser authorization is in flight. Published so the
+    /// Connect button can show it, and read by `performConnect` as the
+    /// re-entrancy guard.
+    @Published private(set) var isConnecting = false
+
     /// How a poller's API client is built. Injected so tests can drive the
     /// token state machine — adopt, restart, recover — without a network call
     /// or a 60-second timer. Production uses the default.
     private let apiFactory: (String) -> AnthropicAPIClient
 
-    init(apiFactory: @escaping (String) -> AnthropicAPIClient = { LiveAnthropicAPIClient(token: $0) }) {
+    /// How the scoped client is built from a stored session. Injected for the
+    /// same reason as `apiFactory`, and specifically so a test that stores an
+    /// OAuth session doesn't reach `api.anthropic.com` for real the moment
+    /// `attachPoller` runs.
+    ///
+    /// `@MainActor` on the closure type, unlike `apiFactory` above: the
+    /// module isolates new declarations to the main actor, so the default
+    /// argument's `OAuthUsageClient.init` would otherwise be a cross-actor
+    /// call from a nonisolated default-argument context.
+    private let oauthClientFactory: @MainActor (OAuthSession) -> AnthropicAPIClient
+
+    /// The browser authorization round-trip. Injected for the same reason:
+    /// the real one binds a loopback listener, opens a browser and waits up
+    /// to five minutes, none of which a test can do.
+    private let connectFlow: () async throws -> OAuthSession
+
+    init(
+        apiFactory: @escaping (String) -> AnthropicAPIClient = { LiveAnthropicAPIClient(token: $0) },
+        oauthClientFactory: @escaping @MainActor (OAuthSession) -> AnthropicAPIClient = {
+            OAuthUsageClient(provider: OAuthTokenProvider(session: $0))
+        },
+        connectFlow: @escaping () async throws -> OAuthSession = { try await OAuthFlow.runInteractive() }
+    ) {
         self.apiFactory = apiFactory
+        self.oauthClientFactory = oauthClientFactory
+        self.connectFlow = connectFlow
     }
 
     func start() {
@@ -188,20 +217,54 @@ final class MenuViewModel: ObservableObject {
         let vm = SettingsViewModel { [weak self] _ in
             self?.restartPolling()
         }
-        vm.onConnect = { [weak self] in self?.connectAccount() }
+        vm.onConnect = { [weak self] in await self?.performConnect() }
         SettingsWindowController.shared.show(viewModel: vm)
     }
 
     /// Runs the browser OAuth flow and rebuilds the poller on success.
     func connectAccount() {
-        Task { @MainActor in
-            do {
-                let session = try await OAuthFlow.runInteractive()
-                try OAuthSessionStore.write(session)
-                restartPolling()
-            } catch {
-                lastError = "Connect failed: \(error)"
+        Task { @MainActor in await performConnect() }
+    }
+
+    /// The body of `connectAccount`, exposed so tests can await it.
+    ///
+    /// Three rules the previous version broke:
+    ///
+    ///   - **One at a time.** It was freely re-entrant, so a user who
+    ///     abandoned one browser flow and completed a second ended up with
+    ///     the first flow's 300-second timeout landing on top of a healthy
+    ///     connected account.
+    ///   - **`lastError` is owned here.** Nothing else clears it, so a stale
+    ///     "Connect failed: …" survived until relaunch. A new attempt clears
+    ///     it; only this attempt's own outcome may set it.
+    ///   - **A session without `user:profile` is not a connection.** Storing
+    ///     one made `attachPoller` refuse it and fall through to the pasted
+    ///     token, leaving the reconnect prompt up with no explanation — the
+    ///     user completed the flow, saw the success page, and nothing
+    ///     changed, forever.
+    func performConnect() async {
+        // Read-and-set is atomic here: this is @MainActor and there is no
+        // suspension point between the guard and the assignment.
+        guard !isConnecting else { return }
+        isConnecting = true
+        defer { isConnecting = false }
+        lastError = nil
+
+        do {
+            let session = try await connectFlow()
+            guard session.hasProfileScope else {
+                lastError = """
+                Connect failed: the authorization didn't grant the \
+                "\(OAuthFlow.scope)" permission needed to read per-model \
+                usage. Try connecting again and approve everything the \
+                page asks for.
+                """
+                return
             }
+            try OAuthSessionStore.write(session)
+            restartPolling()
+        } catch {
+            lastError = "Connect failed: \(error)"
         }
     }
 
@@ -247,6 +310,23 @@ final class MenuViewModel: ObservableObject {
     func applyAuthState(_ new: AuthState) {
         authState = new
         recoveryHint = new.lacksWorkingToken ? recoveryHint : nil
+        if new == .connectionExpired { evictDeadOAuthSession() }
+    }
+
+    /// Removes a permanently-dead grant from the Keychain.
+    ///
+    /// Without this the poller's in-memory `OAuthTokenProvider` drops the
+    /// session but the Keychain item survives, so the next launch reads it,
+    /// sees `hasProfileScope`, and rebuilds a poller around a grant the
+    /// server has already refused — landing straight back in
+    /// `.connectionExpired` with no way out but a manual `security
+    /// delete-generic-password`. Owned here rather than in `UsagePoller`
+    /// because credential storage is this type's job, and routing it through
+    /// `applyAuthState` means it happens on exactly the transition that
+    /// justifies it.
+    private func evictDeadOAuthSession() {
+        do { try OAuthSessionStore.delete() }
+        catch { lastError = "Couldn't clear the expired account session: \(error)" }
     }
 
     /// Reads our own Keychain item, publishing the token's deadline as a side
@@ -298,7 +378,7 @@ final class MenuViewModel: ObservableObject {
         let fallback: AnthropicAPIClient?
 
         if let session, session.hasProfileScope {
-            primary = OAuthUsageClient(provider: OAuthTokenProvider(session: session))
+            primary = oauthClientFactory(session)
             fallback = token.map(apiFactory)
         } else if let token {
             primary = apiFactory(token)
