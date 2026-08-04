@@ -13,7 +13,15 @@ import Foundation
 /// Resolved once, from the process itself, rather than passed in by callers —
 /// an isolation scheme that depends on each test remembering to opt in stops
 /// being true the first time someone adds a test.
-enum TestEnvironment {
+/// `nonisolated`: pure process-environment queries, resolved once from
+/// `ProcessInfo`, with no main-actor state to protect — it only inherits
+/// the module's default isolation otherwise. `TokenStore` (`nonisolated`,
+/// for the same reason) reads these from a plain (non-MainActor) actor's
+/// call chain (`OAuthTokenProvider` → `OAuthSessionStore.write` →
+/// `TokenStore.serviceName`); without this every declaration in that chain
+/// would need an `await` hop to the main actor for no reason other than
+/// that inherited default.
+nonisolated enum TestEnvironment {
     /// True inside `xcodebuild test` (the env var) and inside any process with
     /// XCTest loaded (the class lookup). Both signals, because the app is the
     /// test host and neither alone covers every launch path.

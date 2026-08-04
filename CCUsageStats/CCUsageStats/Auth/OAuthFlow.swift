@@ -357,21 +357,33 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
         // cooperative executor would block a thread that the listener's own
         // queue may need.
         let port: UInt16 = try await withCheckedThrowingContinuation { cont in
-            var resumed = false
+            // `NWListener.stateUpdateHandler` is `@Sendable`, so Swift 6
+            // treats a plain captured `var` as shared mutable state — even
+            // though, by construction (`l.start(queue: .main)` below), every
+            // invocation of this closure actually runs serially on `.main`.
+            // `OSAllocatedUnfairLock` gives the compiler real, checked
+            // synchronization for the double-resume guard instead of an
+            // isolation annotation that wouldn't reflect how this is
+            // actually called.
+            let resumed = OSAllocatedUnfairLock(initialState: false)
+            @Sendable func resumeOnce(_ body: () -> Void) {
+                let shouldResume = resumed.withLock { done -> Bool in
+                    guard !done else { return false }
+                    done = true
+                    return true
+                }
+                if shouldResume { body() }
+            }
             l.stateUpdateHandler = { state in
-                guard !resumed else { return }
                 switch state {
                 case .ready:
                     guard let p = l.port?.rawValue, p != 0 else {
-                        resumed = true
-                        cont.resume(throwing: OAuthFlow.FlowError.listenerFailed)
+                        resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
                         return
                     }
-                    resumed = true
-                    cont.resume(returning: p)
+                    resumeOnce { cont.resume(returning: p) }
                 case .failed, .cancelled:
-                    resumed = true
-                    cont.resume(throwing: OAuthFlow.FlowError.listenerFailed)
+                    resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
                 default:
                     break
                 }

@@ -1,6 +1,7 @@
 import Darwin
 import Network
 import XCTest
+import os
 @testable import CCUsageStats
 
 /// Exercises `LoopbackRedirectListener` in-process, without a browser.
@@ -141,17 +142,29 @@ final class LoopbackRedirectListenerTests: XCTestCase {
         guard let listener = try? NWListener(using: params) else { return false }
 
         return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            var resumed = false
+            // Same fix as `LoopbackRedirectListener.start()`: the handler is
+            // `@Sendable`, so Swift 6 treats a plain captured `var` as shared
+            // mutable state even though every call actually runs serially on
+            // `.main` (see `listener.start(queue:)` below). Use a real,
+            // checked lock for the double-resume guard instead.
+            let resumed = OSAllocatedUnfairLock(initialState: false)
+            @Sendable func resumeOnce(_ body: () -> Void) {
+                let shouldResume = resumed.withLock { done -> Bool in
+                    guard !done else { return false }
+                    done = true
+                    return true
+                }
+                if shouldResume { body() }
+            }
             listener.stateUpdateHandler = { state in
-                guard !resumed else { return }
                 switch state {
                 case .ready:
-                    resumed = true
-                    listener.cancel()
-                    cont.resume(returning: true)
+                    resumeOnce {
+                        listener.cancel()
+                        cont.resume(returning: true)
+                    }
                 case .failed, .cancelled:
-                    resumed = true
-                    cont.resume(returning: false)
+                    resumeOnce { cont.resume(returning: false) }
                 default:
                     break
                 }
