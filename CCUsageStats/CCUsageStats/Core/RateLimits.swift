@@ -19,14 +19,40 @@ struct RateLimitsSnapshot: Codable, Equatable {
     /// the response-header path cannot see these windows at all.
     let models: [String: WindowSnapshot]
 
+    /// Whether `models` is a *complete statement* of the per-model weekly
+    /// windows that exist for this account, or merely "this source has
+    /// nothing to say about them".
+    ///
+    /// The two are not the same fact, and an empty dictionary cannot tell
+    /// them apart. `GET /api/oauth/usage` returns every window it knows
+    /// about in one body, so its answer — including an empty one — is
+    /// authoritative and replaces whatever was cached. The response-header
+    /// path physically cannot express a per-model limit, so its snapshots
+    /// are `false`: they must neither define model windows nor keep an
+    /// earlier source's alive. See `CacheStore.update`.
+    let modelsAreAuthoritative: Bool
+
+    /// Header-path shape: two windows, and no opinion about model windows.
+    init(fiveHour: WindowSnapshot?, sevenDay: WindowSnapshot?) {
+        self.fiveHour = fiveHour
+        self.sevenDay = sevenDay
+        self.models = [:]
+        self.modelsAreAuthoritative = false
+    }
+
+    /// Usage-endpoint shape. Passing `models` at all is the claim that this
+    /// source can see them, so `modelsAreAuthoritative` is true even when the
+    /// dictionary is empty — "this account has no per-model window" is a real
+    /// answer, and must clear a stale one.
     init(
         fiveHour: WindowSnapshot?,
         sevenDay: WindowSnapshot?,
-        models: [String: WindowSnapshot] = [:]
+        models: [String: WindowSnapshot]
     ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.models = models
+        self.modelsAreAuthoritative = true
     }
 
     enum CodingKeys: String, CodingKey {
@@ -39,7 +65,16 @@ struct RateLimitsSnapshot: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         fiveHour = try c.decodeIfPresent(WindowSnapshot.self, forKey: .fiveHour)
         sevenDay = try c.decodeIfPresent(WindowSnapshot.self, forKey: .sevenDay)
-        models = try c.decodeIfPresent([String: WindowSnapshot].self, forKey: .models) ?? [:]
+        let decodedModels = try c.decodeIfPresent(
+            [String: WindowSnapshot].self, forKey: .models
+        ) ?? [:]
+        models = decodedModels
+        // Not persisted: the flag describes where a *freshly parsed* snapshot
+        // came from, and `CacheStore.update` only ever consults it on the
+        // incoming snapshot. Derived here so a decoded value is still
+        // self-consistent — model windows only ever reach the file from an
+        // authoritative source.
+        modelsAreAuthoritative = !decodedModels.isEmpty
     }
 
     func encode(to encoder: Encoder) throws {

@@ -55,10 +55,13 @@ enum PillLayout {
         // Independent of whether 7d qualified: the model window is a
         // separate limit and can be the only one in trouble.
         //
-        // Expired windows are excluded. Model windows are merged per key and
-        // never deleted from the cache, so a user who disconnects their
-        // account leaves a frozen value behind — without this guard it would
-        // claim menubar space forever with data nothing can refresh.
+        // Expired windows are excluded. `CacheStore.update` now drops model
+        // windows the moment a source that cannot see them writes, so the
+        // "frozen after disconnect" case this guard was written for is gone
+        // at the source. It still earns its keep for the case the cache
+        // cannot fix: a window the endpoint keeps reporting past its own
+        // `resets_at`, which would otherwise claim menubar space for a
+        // period that has already ended.
         let candidates = UsageWindows.orderedModelKeys(models)
             .compactMap { key -> (String, WindowSnapshot)? in
                 guard let w = models[key], w.resetsAt > now else { return nil }
