@@ -40,8 +40,8 @@ struct SparklineView: View {
             if pts.count >= 2 {
                 fillPath(points: pts, height: size.height)
                     .fill(LinearGradient(
-                        colors: [color.opacity(0.40), color.opacity(0.0)],
-                        startPoint: .top,
+                        colors: [color.opacity(0.55), color.opacity(0.12)],
+                        startPoint: Self.fillGradientStart(points: pts, height: size.height),
                         endPoint: .bottom
                     ))
                 linePath(points: pts)
@@ -107,6 +107,14 @@ struct SparklineView: View {
         guard capT > windowEnd, secondsToCap > 0 else { return UsageSample(t: capT, p: 100) }
         let frac = Double(max(0, windowEnd - last.t)) / Double(secondsToCap)
         return UsageSample(t: windowEnd, p: last.p + (100 - last.p) * frac)
+    }
+
+    /// Anchors the fill gradient's strongest stop at the line's peak, so
+    /// the area under the line gets the full ramp instead of only the
+    /// faded tail of a ramp spanning the whole (mostly empty) frame.
+    static func fillGradientStart(points: [CGPoint], height: CGFloat) -> UnitPoint {
+        guard let peak = points.map(\.y).min(), height > 0 else { return .top }
+        return UnitPoint(x: 0.5, y: max(0, min(1, peak / height)))
     }
 
     private func fillPath(points: [CGPoint], height: CGFloat) -> Path {

@@ -63,4 +63,13 @@ final class SparklineViewTests: XCTestCase {
             XCTAssertEqual(Double(x), want, accuracy: 0.001)
         }
     }
+
+    func testFillGradientStartsAtLinePeak() {
+        // Line peaks 60pt down a 100pt chart: the gradient's strongest
+        // stop sits at the peak, not the empty top of the frame.
+        let pts = [CGPoint(x: 0, y: 95), CGPoint(x: 50, y: 60), CGPoint(x: 100, y: 70)]
+        let start = SparklineView.fillGradientStart(points: pts, height: 100)
+        XCTAssertEqual(start.y, 0.6, accuracy: 0.001)
+        XCTAssertEqual(SparklineView.fillGradientStart(points: [], height: 100).y, 0, accuracy: 0.001)
+    }
 }
