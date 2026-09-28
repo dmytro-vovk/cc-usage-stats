@@ -28,4 +28,15 @@ final class PKCETests: XCTestCase {
         XCTAssertFalse(a.isEmpty)
         XCTAssertNotEqual(a, PKCE.randomState())
     }
+
+    /// Claude Code's `state` is 32 random bytes as base64url (43 chars).
+    /// A 16-byte (22-char) state got "Authorization failed — Invalid
+    /// request format" from the authorize page for every scope tried.
+    func testStateMatchesClaudeCodeLength() {
+        let s = PKCE.randomState()
+        XCTAssertEqual(s.count, 43)
+        let allowed = CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+        XCTAssertNil(s.rangeOfCharacter(from: allowed.inverted))
+    }
 }

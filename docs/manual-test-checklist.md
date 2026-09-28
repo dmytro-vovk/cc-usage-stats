@@ -264,5 +264,7 @@ Skip this if you've never had the Phase 1 statusline integration.
 - [ ] The authorize page opened by Connect shows Claude's consent screen,
       not "Authorization failed — Invalid request format", and approving
       it lands on the local "You can close this window" page.
+      (That error was the server's format check on `state`: it must be 43
+      base64url chars, i.e. 32 random bytes, as Claude Code sends it.)
 - [ ] Complete a connect after a failed one: the red "Connect failed: …"
       text clears rather than persisting under a healthy readout.

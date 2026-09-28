@@ -12,8 +12,10 @@ enum PKCE {
         base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
     }
 
+    /// 32 bytes (43 base64url chars), as Claude Code generates it. The
+    /// authorize page rejected a 16-byte state as "Invalid request format".
     static func randomState() -> String {
-        base64URL(randomData(16))
+        base64URL(randomData(32))
     }
 
     static func base64URL(_ data: Data) -> String {
