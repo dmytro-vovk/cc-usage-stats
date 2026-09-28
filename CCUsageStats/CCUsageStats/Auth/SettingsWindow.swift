@@ -64,6 +64,7 @@ final class SettingsViewModel: ObservableObject {
     /// button that silently did nothing on a second click — the connect path
     /// refuses to run twice concurrently.
     var onConnect: (() async -> Void)?
+    var onCancelConnect: (() -> Void)?
 
     /// Expiry to persist alongside the token, or nil if the field no longer
     /// matches what was imported.
@@ -161,6 +162,9 @@ struct SettingsView: View {
                     }
                 }
                 .disabled(connecting)
+                if connecting {
+                    Button("Cancel") { vm.onCancelConnect?() }
+                }
                 Spacer()
             }
             if let err = vm.error {

@@ -217,13 +217,38 @@ final class MenuViewModel: ObservableObject {
         let vm = SettingsViewModel { [weak self] _ in
             self?.restartPolling()
         }
-        vm.onConnect = { [weak self] in await self?.performConnect() }
+        // Through `connectTask`, so the same attempt is cancellable from
+        // either the dropdown or this window.
+        vm.onConnect = { [weak self] in
+            guard let self else { return }
+            self.connectAccount()
+            await self.connectTask?.value
+        }
+        vm.onCancelConnect = { [weak self] in self?.cancelConnect() }
         SettingsWindowController.shared.show(viewModel: vm)
     }
 
     /// Runs the browser OAuth flow and rebuilds the poller on success.
+    /// The attempt in flight, so `cancelConnect` can end it; tests await it.
+    private(set) var connectTask: Task<Void, Never>?
+
     func connectAccount() {
-        Task { @MainActor in await performConnect() }
+        // Guarded on the task, not `isConnecting`: that flag is only set once
+        // the task runs, so two taps in one turn would both pass it and leave
+        // `connectTask` pointing at the no-op second task — Cancel would
+        // then cancel nothing.
+        guard connectTask == nil else { return }
+        connectTask = Task { @MainActor in
+            await performConnect()
+            connectTask = nil
+        }
+    }
+
+    /// Abandons the attempt in flight. The browser may be showing an error
+    /// that will never call back, so without this "Connecting…" held for
+    /// the full timeout with no way out.
+    func cancelConnect() {
+        connectTask?.cancel()
     }
 
     /// The body of `connectAccount`, exposed so tests can await it.
@@ -263,8 +288,13 @@ final class MenuViewModel: ObservableObject {
             }
             try OAuthSessionStore.write(session)
             restartPolling()
+        } catch is CancellationError {
+            // The user cancelled; nothing failed.
         } catch let flowError as OAuthFlow.FlowError {
             lastError = "Connect failed: \(flowError.message)"
+        } catch where Task.isCancelled {
+            // Cancelled mid-network: URLSession reports the user's cancel
+            // as `URLError(.cancelled)`, not `CancellationError`.
         } catch {
             lastError = "Connect failed: \(error)"
         }

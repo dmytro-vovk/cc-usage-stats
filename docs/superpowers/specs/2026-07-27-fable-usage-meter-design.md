@@ -139,7 +139,10 @@ weekly". This is intended.
 1. Generate a 43–128 char base64url `code_verifier`, `code_challenge =
    base64url(SHA256(verifier))`, and a random `state`.
 2. Bind a loopback listener on `127.0.0.1` at an ephemeral port, path
-   `/callback`. If binding fails, fall back to the manual redirect URL and a
+   `/callback`. (As built: the redirect URI names it `localhost`, because
+   claude.com rewrites a `127.0.0.1` redirect to `localhost` before issuing
+   the code, and the authorize URL leads with `code=true` as Claude Code's
+   does.) If binding fails, fall back to the manual redirect URL and a
    paste-the-code field in Settings.
 3. Open the authorize URL with `scope=user:profile` only. The app needs no
    other scope; requesting the minimum limits blast radius.

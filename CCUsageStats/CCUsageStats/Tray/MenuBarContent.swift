@@ -537,11 +537,7 @@ struct MenuBarDropdown: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .wrapsFully()
-                Button(vm.isConnecting ? "Connecting…" : "Reconnect Claude account") {
-                    vm.connectAccount()
-                }
-                .controlSize(.small)
-                .disabled(vm.isConnecting)
+                connectButtons(label: "Reconnect Claude account")
             }
         case .notSubscriber:
             Label("No Claude.ai subscription rate-limit data.", systemImage: "info.circle")
@@ -575,13 +571,26 @@ struct MenuBarDropdown: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Button(vm.isConnecting ? "Connecting…" : "Connect Claude account") {
-                    vm.connectAccount()
-                }
-                .controlSize(.small)
-                .disabled(vm.isConnecting)
+                connectButtons(label: "Connect Claude account")
             }
         }
+    }
+
+    /// Connect (or Reconnect) plus, while an attempt is in flight, Cancel:
+    /// a browser-side failure never calls back, so without Cancel
+    /// "Connecting…" held for the whole timeout.
+    @ViewBuilder
+    private func connectButtons(label: String) -> some View {
+        HStack(spacing: 6) {
+            Button(vm.isConnecting ? "Connecting…" : label) {
+                vm.connectAccount()
+            }
+            .disabled(vm.isConnecting)
+            if vm.isConnecting {
+                Button("Cancel") { vm.cancelConnect() }
+            }
+        }
+        .controlSize(.small)
     }
 
     /// Shared shape for the two "can't poll" states: headline, the Keychain

@@ -134,6 +134,11 @@ port for the redirect, and exchanges the returned code for a token once
 the browser lands on the local "You can close this window and return
 to CCUsageStats." confirmation page. Nothing is pasted by hand.
 
+While the browser step is open the button reads **Connecting…** with a
+**Cancel** button beside it. If the browser shows an error instead of
+the confirmation page, click **Cancel** and try again; otherwise the
+attempt gives up on its own after 5 minutes.
+
 The resulting session is stored in its own Keychain item (service
 `cc-usage-stats`, account `oauth-session`) — separate from the legacy
 pasted token (account `oauth-token`), which is left untouched.

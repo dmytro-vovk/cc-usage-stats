@@ -36,13 +36,16 @@ enum OAuthFlow {
     /// The loopback redirect handed to the authorization server, for a
     /// listener already bound on `port`.
     ///
-    /// The literal `127.0.0.1`, never `localhost`: the listener binds IPv4
-    /// only (`.hostPort(host: .ipv4(.loopback), …)`), while `localhost` also
-    /// resolves to `::1`, which browsers commonly try first and which nothing
-    /// here is listening on. RFC 8252 §8.3 recommends the literal address for
-    /// exactly this reason.
+    /// `localhost`, exactly as Claude Code sends it. RFC 8252 §8.3 prefers
+    /// the literal `127.0.0.1`, but claude.com's authorize endpoint rewrites
+    /// a `127.0.0.1` redirect to `localhost` before the code is issued, so
+    /// the token exchange — which must repeat the redirect verbatim — then
+    /// mismatches. The listener binds IPv4 loopback only; a browser that
+    /// tries `::1` first is refused instantly and falls back to `127.0.0.1`
+    /// (checked with curl and a Chromium browser against an IPv4-only
+    /// listener).
     static func redirectURI(port: UInt16) -> String {
-        "http://127.0.0.1:\(port)\(LoopbackRedirectListener.callbackPath)"
+        "http://localhost:\(port)\(LoopbackRedirectListener.callbackPath)"
     }
 
     enum FlowError: Error, Equatable {
@@ -74,6 +77,9 @@ enum OAuthFlow {
     static func authorizeURL(challenge: String, state: String, redirectURI: String) -> URL {
         var c = URLComponents(string: authorizeEndpoint)!
         c.queryItems = [
+            // Leads Claude Code's own authorize request; without it the
+            // authorize page answers "Invalid request format".
+            .init(name: "code", value: "true"),
             .init(name: "client_id", value: clientID),
             .init(name: "response_type", value: "code"),
             .init(name: "redirect_uri", value: redirectURI),
@@ -188,6 +194,9 @@ enum OAuthFlow {
         defer { listener.stop() }
         let redirectURI = redirectURI(port: listener.port)
 
+        // Binding ignores cancellation; don't open a browser for an
+        // attempt the user already cancelled.
+        try Task.checkCancellation()
         NSWorkspace.shared.open(
             authorizeURL(challenge: challenge, state: state, redirectURI: redirectURI)
         )
@@ -211,10 +220,11 @@ enum OAuthFlow {
 /// Split out because it could not otherwise be tested. `LoopbackRedirectListener`
 /// is only constructible by binding a real port, and its tests were long
 /// skipped by a probe that misread our own handler-ordering bug as "this
-/// machine cannot bind" — so this logic had no coverage at all, which is how a half-finished version of it shipped: the
-/// listener grew a `pendingResult` field and a reader for it, and nothing
-/// anywhere ever wrote it. The early-arrival case it was added for was still
-/// dropped, silently, and everything compiled.
+/// machine cannot bind" — so this logic had no coverage at all. That is
+/// how a half-finished version of it shipped: the listener grew a
+/// `pendingResult` field and a reader for it, and nothing anywhere ever
+/// wrote it. The early-arrival case it was added for was still dropped,
+/// silently, and everything compiled.
 ///
 /// `nonisolated` / `@unchecked Sendable`: `wait` runs on the caller's task
 /// (which need not be `@MainActor`), `settle` runs from `.main` — an
@@ -488,7 +498,15 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [gate] in
             gate.settle(.failure(OAuthFlow.FlowError.cancelled))
         }
-        return try await gate.wait()
+        // A browser that shows an error never calls back, so the user's
+        // Cancel (task cancellation) must end the wait, not the timeout.
+        // Cancelled-before-waiting is covered too: the gate stashes an
+        // early settle for the first `wait`.
+        return try await withTaskCancellationHandler {
+            try await gate.wait()
+        } onCancel: { [gate] in
+            gate.settle(.failure(CancellationError()))
+        }
     }
 
     private func handle(_ conn: NWConnection) {

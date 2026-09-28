@@ -532,17 +532,18 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(value("state"), "STATE")
         XCTAssertEqual(value("scope"), "user:profile")
         XCTAssertEqual(value("redirect_uri"), "http://localhost:9999/callback")
+        // Claude Code's own authorize request leads with `code=true`; the
+        // authorize page rejected ours without it ("Invalid request format").
+        XCTAssertEqual(value("code"), "true")
     }
 
-    /// The listener binds IPv4 loopback only, while `localhost` also resolves
-    /// to `::1` — which browsers commonly try first and which nothing here is
-    /// listening on. RFC 8252 §8.3 recommends the literal address for exactly
-    /// this reason, and the production redirect URI is otherwise never
-    /// exercised: the listener tests connect to `127.0.0.1` themselves.
-    func testRedirectURIUsesTheLiteralLoopbackAddress() {
+    /// `localhost`, as Claude Code uses: claude.com's authorize endpoint
+    /// rewrites a `127.0.0.1` redirect to `localhost` before issuing the
+    /// code, so a literal-address redirect then mismatches at the token
+    /// exchange.
+    func testRedirectURIUsesLocalhost() {
         let uri = OAuthFlow.redirectURI(port: 49_152)
-        XCTAssertEqual(uri, "http://127.0.0.1:49152/callback")
-        XCTAssertFalse(uri.contains("localhost"))
+        XCTAssertEqual(uri, "http://localhost:49152/callback")
         XCTAssertTrue(uri.hasSuffix(LoopbackRedirectListener.callbackPath),
                       "the redirect path must match the only path the listener accepts")
     }

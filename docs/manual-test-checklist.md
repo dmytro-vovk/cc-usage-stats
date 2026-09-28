@@ -258,5 +258,11 @@ Skip this if you've never had the Phase 1 statusline integration.
 - [ ] Click **Connect Claude account** twice in quick succession: the
       second click is ignored, the button reads "Connecting…" and is
       disabled while the browser flow is open.
+- [ ] While "Connecting…", a **Cancel** button is shown (dropdown and
+      Settings). Clicking it ends the attempt at once: the button returns
+      to "Connect Claude account" and no red error appears.
+- [ ] The authorize page opened by Connect shows Claude's consent screen,
+      not "Authorization failed — Invalid request format", and approving
+      it lands on the local "You can close this window" page.
 - [ ] Complete a connect after a failed one: the red "Connect failed: …"
       text clears rather than persisting under a healthy readout.

@@ -212,4 +212,25 @@ final class LoopbackRedirectListenerTests: XCTestCase {
         XCTAssertEqual(callback.code, "A")
         XCTAssertEqual(callback.state, "B")
     }
+
+    /// A browser that shows an error never calls back; cancelling the task
+    /// must end the wait at once rather than after the full timeout.
+    func testWaitForCallbackEndsWhenItsTaskIsCancelled() async throws {
+        let listener = try await LoopbackRedirectListener.start()
+        defer { listener.stop() }
+
+        let waitTask = Task { try await listener.waitForCallback(timeout: 60) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let started = Date()
+        waitTask.cancel()
+
+        do {
+            _ = try await waitTask.value
+            XCTFail("a cancelled wait must throw")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "cancel must not wait out the timeout")
+    }
 }

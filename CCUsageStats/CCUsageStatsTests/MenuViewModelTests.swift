@@ -323,6 +323,54 @@ final class MenuViewModelTests: XCTestCase {
         vm.stop()
     }
 
+    /// "Connecting…" used to be a dead end: a browser-side failure never
+    /// calls back, so the button stayed disabled for the full 5-minute
+    /// timeout. Cancel ends the attempt immediately, with no error shown.
+    func testCancelConnectEndsTheAttemptWithoutAnError() async {
+        let vm = viewModel(connect: {
+            try await Task.sleep(nanoseconds: 60_000_000_000)
+            return self.session(scopes: ["user:profile"])
+        })
+
+        vm.connectAccount()
+        var spins = 0
+        while !vm.isConnecting, spins < 1_000 {
+            await Task.yield()
+            spins += 1
+        }
+        XCTAssertTrue(vm.isConnecting, "the attempt never started")
+
+        let started = Date()
+        vm.cancelConnect()
+        await vm.connectTask?.value
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "cancel must end the attempt now, not when the flow gives up")
+        XCTAssertFalse(vm.isConnecting)
+        XCTAssertNil(vm.lastError, "the user cancelled; that is not a failure")
+        vm.stop()
+    }
+
+    /// Cancelling during the token exchange surfaces from URLSession as
+    /// `URLError(.cancelled)`, not `CancellationError` — still the user's
+    /// cancel, so still no red "-999" error.
+    func testCancelDuringTheNetworkStepShowsNoError() async {
+        let vm = viewModel(connect: {
+            do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { throw URLError(.cancelled) }
+            return self.session(scopes: ["user:profile"])
+        })
+
+        vm.connectAccount()
+        var spins = 0
+        while !vm.isConnecting, spins < 1_000 {
+            await Task.yield()
+            spins += 1
+        }
+        vm.cancelConnect()
+        await vm.connectTask?.value
+        XCTAssertFalse(vm.isConnecting)
+        XCTAssertNil(vm.lastError)
+        vm.stop()
+    }
+
     // MARK: - A dead grant is evicted, not rebuilt around
 
     /// `OAuthTokenProvider` drops a permanently-refused session from memory,
