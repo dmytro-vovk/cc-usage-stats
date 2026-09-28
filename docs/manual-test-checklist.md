@@ -86,6 +86,8 @@ Skip this if you've never had the Phase 1 statusline integration.
 - The chart is to scale: the Y axis is a fixed 0–100% (at 50% usage the dot
   sits at half height), and the X axis spans the whole 5-hour window (with
   "Resets in 1h" the latest sample sits at ~80% of the width).
+- Dashed vertical gridlines mark elapsed session hours: four of them, at
+  20/40/60/80% of the width, regardless of the clock time the window began.
 - A dashed line from the latest point follows the trend: to 100% if it caps
   before reset, otherwise to the projected value at reset. The caption
   appends `· forecast 100% in Nm` when the slope predicts a cap.

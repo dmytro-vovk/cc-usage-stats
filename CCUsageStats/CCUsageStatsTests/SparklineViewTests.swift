@@ -49,4 +49,18 @@ final class SparklineViewTests: XCTestCase {
         XCTAssertEqual(fc.t, end)
         XCTAssertEqual(fc.p, 28, accuracy: 0.001)
     }
+
+    func testGridlinesMarkElapsedSessionHours() {
+        // Window starts at :37 past a clock hour; gridlines still sit at
+        // 1h/2h/3h/4h elapsed, not at wall-clock hour boundaries. Edges
+        // (0h, 5h) are drawn by the border, not gridlines.
+        let offStart: Int64 = 1_790_620_200 + 37 * 60
+        let v = SparklineView(samples: [], windowStart: offStart, windowEnd: offStart + 5 * 3600,
+                              color: .green, forecastSecondsToCap: nil)
+        let xs = v.hourBoundaries(width: 500)
+        XCTAssertEqual(xs.count, 4)
+        for (x, want) in zip(xs, [100.0, 200.0, 300.0, 400.0]) {
+            XCTAssertEqual(Double(x), want, accuracy: 0.001)
+        }
+    }
 }

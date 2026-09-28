@@ -15,7 +15,7 @@ struct SparklineView: View {
         }
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
+                .stroke(Color.secondary.opacity(0.4), lineWidth: 0.75)
         )
     }
 
@@ -25,7 +25,7 @@ struct SparklineView: View {
         let hourXs = hourBoundaries(width: size.width)
 
         ZStack {
-            // Dashed hour gridlines (local-time hour marks within the window).
+            // Dashed gridlines at each whole hour elapsed in the session.
             if !hourXs.isEmpty {
                 Path { p in
                     for x in hourXs {
@@ -72,21 +72,15 @@ struct SparklineView: View {
         }
     }
 
-    /// Returns the X positions of every wall-clock hour boundary that
-    /// falls inside `[windowStart, windowEnd]`, in chart-local pixels.
-    private func hourBoundaries(width: CGFloat) -> [CGFloat] {
-        let cal = Calendar.current
-        let startDate = Date(timeIntervalSince1970: TimeInterval(windowStart))
-        let comps = cal.dateComponents([.year, .month, .day, .hour], from: startDate)
-        guard let firstHour = cal.date(from: comps) else { return [] }
-        var t = Int64(firstHour.timeIntervalSince1970)
-        if t < windowStart { t += 3600 }
-
+    /// Returns the X positions of each whole hour elapsed since
+    /// `windowStart` (1h, 2h, … before `windowEnd`), in chart-local pixels.
+    /// The window edges themselves are left to the border.
+    func hourBoundaries(width: CGFloat) -> [CGFloat] {
         let xRange = max(1.0, Double(windowEnd - windowStart))
         var out: [CGFloat] = []
-        while t <= windowEnd {
-            let xClamp = max(0.0, min(1.0, Double(t - windowStart) / xRange))
-            out.append(CGFloat(xClamp) * width)
+        var t = windowStart + 3600
+        while t < windowEnd {
+            out.append(CGFloat(Double(t - windowStart) / xRange) * width)
             t += 3600
         }
         return out
