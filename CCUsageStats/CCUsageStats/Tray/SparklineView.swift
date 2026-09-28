@@ -25,7 +25,7 @@ struct SparklineView: View {
         let hourXs = hourBoundaries(width: size.width)
 
         ZStack {
-            // Faint hour gridlines (local-time hour marks within the window).
+            // Dashed hour gridlines (local-time hour marks within the window).
             if !hourXs.isEmpty {
                 Path { p in
                     for x in hourXs {
@@ -33,8 +33,8 @@ struct SparklineView: View {
                         p.addLine(to: CGPoint(x: x, y: size.height))
                     }
                 }
-                .stroke(Color.secondary.opacity(0.18),
-                        style: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
+                .stroke(Color.secondary.opacity(0.45),
+                        style: StrokeStyle(lineWidth: 0.75, dash: [2, 2]))
             }
 
             if pts.count >= 2 {

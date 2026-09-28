@@ -75,7 +75,7 @@ here in the menubar, without opening Claude Code.
   full 5-hour window (window start → reset) and the Y axis is a fixed
   0–100%, so a 50% session fills half the chart's height. The
   caption appends `· forecast 100% in Nm` when the slope predicts a
-  cap before reset. Faint dashed vertical gridlines at every wall-clock
+  cap before reset. Dashed vertical gridlines at every wall-clock
   hour boundary inside the window.
 - "Last updated Xs ago" with a small ↻ refresh button (⌘R).
 - Auth / connectivity / outage rows when relevant
