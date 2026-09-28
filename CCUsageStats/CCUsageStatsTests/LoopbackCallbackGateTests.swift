@@ -5,8 +5,9 @@ import XCTest
 /// with no socket in sight.
 ///
 /// This exists because the equivalent logic previously lived inside the
-/// listener, which is only constructible by binding a real port — and this
-/// machine cannot bind one at all (see `LoopbackRedirectListenerTests`). So
+/// listener, which is only constructible by binding a real port — and the
+/// listener tests were silently skipped by a probe that mistook our own
+/// handler-ordering bug for "this machine cannot bind". So
 /// the early-arrival case shipped as a `pendingResult` field plus a reader
 /// for it and *nothing that ever wrote it*: the result it existed to rescue
 /// was still dropped, the flow still hung, and everything still compiled and

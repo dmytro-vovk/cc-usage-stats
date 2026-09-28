@@ -14,7 +14,8 @@ import os
 /// manual `https://platform.claude.com/oauth/code/callback` redirect, but no
 /// paste-the-code UI exists here: binding an ephemeral loopback port does not
 /// fail in practice, and a second redirect path would be an untested branch.
-/// If `listenerFailed` ever surfaces in the wild, build the manual path then.
+/// (The one `listenerFailed` seen in the wild was our own bug — starting the
+/// listener before installing its connection handler — not a bind failure.)
 enum OAuthFlow {
     // `nonisolated`: the module defaults new declarations to MainActor
     // isolation, but `Logger` is Sendable and this is read from the plain
@@ -50,6 +51,24 @@ enum OAuthFlow {
         case malformedTokenResponse
         case listenerFailed
         case cancelled
+
+        /// User-facing wording; shown after "Connect failed: ".
+        var message: String {
+            switch self {
+            case .stateMismatch:
+                return "the browser returned an unexpected response. Try again."
+            case .badResponse(0):
+                return "Claude's sign-in server sent a non-HTTP response. Try again later."
+            case .badResponse(let status):
+                return "Claude's sign-in server answered with HTTP \(status). Try again later."
+            case .malformedTokenResponse:
+                return "Claude's sign-in server sent a response the app couldn't read."
+            case .listenerFailed:
+                return "couldn't open the local port the browser returns to. Try again."
+            case .cancelled:
+                return "the browser sign-in didn't finish in time. Try again."
+            }
+        }
     }
 
     static func authorizeURL(challenge: String, state: String, redirectURI: String) -> URL {
@@ -190,9 +209,9 @@ enum OAuthFlow {
 /// out into a type with no socket in it.
 ///
 /// Split out because it could not otherwise be tested. `LoopbackRedirectListener`
-/// is only constructible by binding a real port, so on any machine that
-/// cannot bind (see `LoopbackRedirectListenerTests`) this logic has no
-/// coverage at all — which is how a half-finished version of it shipped: the
+/// is only constructible by binding a real port, and its tests were long
+/// skipped by a probe that misread our own handler-ordering bug as "this
+/// machine cannot bind" — so this logic had no coverage at all, which is how a half-finished version of it shipped: the
 /// listener grew a `pendingResult` field and a reader for it, and nothing
 /// anywhere ever wrote it. The early-arrival case it was added for was still
 /// dropped, silently, and everything compiled.
@@ -352,54 +371,107 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
             throw OAuthFlow.FlowError.listenerFailed
         }
 
+        // Must be installed before `l.start(queue:)`: Network.framework
+        // fails a listener started without a new-connection handler
+        // ("Started without setting either new connection handler…",
+        // state `.failed(EINVAL)`). The instance that handles connections
+        // can't exist until `.ready` reports the port, so the relay holds
+        // anything accepted in between and hands it over on `attach`.
+        let relay = ConnectionRelay()
+        l.newConnectionHandler = { conn in relay.deliver(conn) }
+
         // Wait for .ready rather than polling `listener.port` — the port is
         // not assigned until the listener is ready, and a busy-wait on the
         // cooperative executor would block a thread that the listener's own
         // queue may need.
-        let port: UInt16 = try await withCheckedThrowingContinuation { cont in
-            // `NWListener.stateUpdateHandler` is `@Sendable`, so Swift 6
-            // treats a plain captured `var` as shared mutable state — even
-            // though, by construction (`l.start(queue: .main)` below), every
-            // invocation of this closure actually runs serially on `.main`.
-            // `OSAllocatedUnfairLock` gives the compiler real, checked
-            // synchronization for the double-resume guard instead of an
-            // isolation annotation that wouldn't reflect how this is
-            // actually called.
-            let resumed = OSAllocatedUnfairLock(initialState: false)
-            @Sendable func resumeOnce(_ body: () -> Void) {
-                let shouldResume = resumed.withLock { done -> Bool in
-                    guard !done else { return false }
-                    done = true
-                    return true
-                }
-                if shouldResume { body() }
-            }
-            l.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    guard let p = l.port?.rawValue, p != 0 else {
-                        resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
-                        return
+        let port: UInt16
+        do {
+            port = try await withCheckedThrowingContinuation { cont in
+                // `NWListener.stateUpdateHandler` is `@Sendable`, so Swift 6
+                // treats a plain captured `var` as shared mutable state — even
+                // though, by construction (`l.start(queue: .main)` below), every
+                // invocation of this closure actually runs serially on `.main`.
+                // `OSAllocatedUnfairLock` gives the compiler real, checked
+                // synchronization for the double-resume guard instead of an
+                // isolation annotation that wouldn't reflect how this is
+                // actually called.
+                let resumed = OSAllocatedUnfairLock(initialState: false)
+                @Sendable func resumeOnce(_ body: () -> Void) {
+                    let shouldResume = resumed.withLock { done -> Bool in
+                        guard !done else { return false }
+                        done = true
+                        return true
                     }
-                    resumeOnce { cont.resume(returning: p) }
-                case .failed, .cancelled:
-                    resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
-                default:
-                    break
+                    if shouldResume { body() }
                 }
+                l.stateUpdateHandler = { state in
+                    switch state {
+                    case .ready:
+                        guard let p = l.port?.rawValue, p != 0 else {
+                            resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
+                            return
+                        }
+                        resumeOnce { cont.resume(returning: p) }
+                    case .failed, .cancelled:
+                        resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
+                    default:
+                        break
+                    }
+                }
+                l.start(queue: .main)
             }
-            l.start(queue: .main)
+        } catch {
+            // A failed listener's state handler captures `l`, keeping it
+            // alive; cancel it, and anything the relay queued, explicitly.
+            l.cancel()
+            relay.cancelPending()
+            throw error
         }
 
         let instance = LoopbackRedirectListener(listener: l, port: port)
-        // Installed here rather than in `waitForCallback`: the listener has
-        // been accepting connections since `l.start(queue:)` above, and the
-        // caller opens the browser before it starts waiting. A connection
-        // accepted in that window used to have no handler at all.
-        l.newConnectionHandler = { [weak instance] conn in
-            instance?.handle(conn)
-        }
+        relay.attach(instance)
         return instance
+    }
+
+    /// Bridges `newConnectionHandler`, which must be set before the
+    /// listener starts, to the instance, which only exists once it is
+    /// ready. Connections accepted before `attach` are queued, not dropped.
+    private nonisolated final class ConnectionRelay: @unchecked Sendable {
+        private let lock = NSLock()
+        private weak var target: LoopbackRedirectListener?
+        private var attached = false
+        private var pending: [NWConnection] = []
+
+        func deliver(_ conn: NWConnection) {
+            lock.lock()
+            guard attached else {
+                pending.append(conn)
+                lock.unlock()
+                return
+            }
+            let t = target
+            lock.unlock()
+            if let t { t.handle(conn) } else { conn.cancel() }
+        }
+
+        func attach(_ instance: LoopbackRedirectListener) {
+            lock.lock()
+            target = instance
+            attached = true
+            let queued = pending
+            pending = []
+            lock.unlock()
+            for conn in queued { instance.handle(conn) }
+        }
+
+        func cancelPending() {
+            lock.lock()
+            attached = true
+            let queued = pending
+            pending = []
+            lock.unlock()
+            for conn in queued { conn.cancel() }
+        }
     }
 
     private init(listener: NWListener, port: UInt16) {

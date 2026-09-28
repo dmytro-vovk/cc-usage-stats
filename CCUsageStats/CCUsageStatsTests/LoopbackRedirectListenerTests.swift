@@ -1,7 +1,6 @@
 import Darwin
 import Network
 import XCTest
-import os
 @testable import CCUsageStats
 
 /// Exercises `LoopbackRedirectListener` in-process, without a browser.
@@ -110,89 +109,9 @@ final class LoopbackRedirectListenerTests: XCTestCase {
         return sock
     }
 
-    // MARK: - environment probe
-
-    /// Whether `NWListener` can bind a loopback socket at all in this
-    /// process's execution environment. Some environments reject the bind
-    /// outright: a standalone Swift program using a plain `NWParameters.tcp`
-    /// listener with no other configuration — run independently of this
-    /// test target, and independent of sandboxing (reproduces identically
-    /// with sandboxing disabled) — fails the same way, with
-    /// `POSIXErrorCode(rawValue: 22)` ("Invalid argument"). That is an
-    /// environment limitation, not a defect in `LoopbackRedirectListener`,
-    /// so the tests below skip (not fail) when it's true, while still
-    /// running normally wherever binding actually works (a developer
-    /// machine, most CI runners).
-    ///
-    /// Deliberately does NOT call `LoopbackRedirectListener.start()`: this
-    /// probe must stay independent of the code under test. `start()` can
-    /// throw `FlowError.listenerFailed` for reasons that have nothing to do
-    /// with bind capability (e.g. a regression that fails to read back the
-    /// assigned port), and folding that into "environment can't bind" would
-    /// turn a real regression into a silent SKIP instead of a FAILURE. So
-    /// this constructs a bare `NWListener` inline, mirroring only the
-    /// bind/`.ready` step, and nothing else.
-    ///
-    /// Probed once, via that bare listener, and cached in this `Task` —
-    /// every test after the first `await` of `.value` gets the cached
-    /// result immediately, with no extra listener churn.
-    private static let canBindLoopbackListener: Task<Bool, Never> = Task {
-        let params = NWParameters.tcp
-        params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
-        guard let listener = try? NWListener(using: params) else { return false }
-
-        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            // Same fix as `LoopbackRedirectListener.start()`: the handler is
-            // `@Sendable`, so Swift 6 treats a plain captured `var` as shared
-            // mutable state even though every call actually runs serially on
-            // `.main` (see `listener.start(queue:)` below). Use a real,
-            // checked lock for the double-resume guard instead.
-            let resumed = OSAllocatedUnfairLock(initialState: false)
-            @Sendable func resumeOnce(_ body: () -> Void) {
-                let shouldResume = resumed.withLock { done -> Bool in
-                    guard !done else { return false }
-                    done = true
-                    return true
-                }
-                if shouldResume { body() }
-            }
-            listener.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    resumeOnce {
-                        listener.cancel()
-                        cont.resume(returning: true)
-                    }
-                case .failed, .cancelled:
-                    resumeOnce { cont.resume(returning: false) }
-                default:
-                    break
-                }
-            }
-            listener.start(queue: .main)
-        }
-    }
-
-    /// Skips the calling test — rather than failing it — when this
-    /// environment cannot bind an `NWListener` at all. Must run before the
-    /// test's own `LoopbackRedirectListener.start()`: when a bare listener
-    /// binds fine, this environment can bind, so the test proceeds and any
-    /// throw from `LoopbackRedirectListener.start()` is a genuine failure,
-    /// not a skip.
-    private func skipUnlessLoopbackListenerCanBind() async throws {
-        let canBind = await Self.canBindLoopbackListener.value
-        try XCTSkipUnless(
-            canBind,
-            "NWListener cannot bind a loopback socket in this execution environment " +
-            "(fails with POSIXErrorCode(rawValue: 22) \"Invalid argument\"); this is an " +
-            "environment limitation, not a defect in LoopbackRedirectListener — skipping."
-        )
-    }
-
     // MARK: - (a) happy path
 
     func testHappyPathCallbackCarriesCodeAndState() async throws {
-        try await skipUnlessLoopbackListenerCanBind()
         let listener = try await LoopbackRedirectListener.start()
         defer { listener.stop() }
         let port = listener.port
@@ -211,7 +130,6 @@ final class LoopbackRedirectListenerTests: XCTestCase {
     // MARK: - (b) invariant 2 — an unparseable/non-callback connection must not abort the wait
 
     func testNonCallbackConnectionDoesNotAbortWaitThenRealCallbackStillResolves() async throws {
-        try await skipUnlessLoopbackListenerCanBind()
         let listener = try await LoopbackRedirectListener.start()
         defer { listener.stop() }
         let port = listener.port
@@ -248,7 +166,6 @@ final class LoopbackRedirectListenerTests: XCTestCase {
     // MARK: - (c) timeout
 
     func testWaitForCallbackTimesOutWithCancelled() async throws {
-        try await skipUnlessLoopbackListenerCanBind()
         let listener = try await LoopbackRedirectListener.start()
         defer { listener.stop() }
 
@@ -265,7 +182,6 @@ final class LoopbackRedirectListenerTests: XCTestCase {
     // MARK: - (d) invariant 2, browser-preconnect shape — a connection that sends nothing at all must not abort the wait
 
     func testEmptyPreconnectSocketDoesNotAbortWaitThenRealCallbackStillResolves() async throws {
-        try await skipUnlessLoopbackListenerCanBind()
         let listener = try await LoopbackRedirectListener.start()
         defer { listener.stop() }
         let port = listener.port

@@ -259,6 +259,22 @@ final class MenuViewModelTests: XCTestCase {
         vm.stop()
     }
 
+    /// "Connect failed: listenerFailed" told the user nothing. Every flow
+    /// error reads as a sentence, never as the Swift case name.
+    func testConnectFailureIsReadableNotACaseName() async {
+        let cases: [OAuthFlow.FlowError] = [
+            .listenerFailed, .cancelled, .stateMismatch, .malformedTokenResponse, .badResponse(500),
+        ]
+        for flowError in cases {
+            let vm = viewModel(connect: { throw flowError })
+            await vm.performConnect()
+            let message = vm.lastError ?? ""
+            XCTAssertTrue(message.hasPrefix("Connect failed: "), message)
+            XCTAssertFalse(message.contains("\(flowError)"), "raw case name leaked: \(message)")
+            vm.stop()
+        }
+    }
+
     func testAFreshAttemptClearsTheErrorFromTheLastOne() async {
         let calls = CallCount()
         let vm = viewModel(connect: {

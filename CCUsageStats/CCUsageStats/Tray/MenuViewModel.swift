@@ -263,6 +263,8 @@ final class MenuViewModel: ObservableObject {
             }
             try OAuthSessionStore.write(session)
             restartPolling()
+        } catch let flowError as OAuthFlow.FlowError {
+            lastError = "Connect failed: \(flowError.message)"
         } catch {
             lastError = "Connect failed: \(error)"
         }
