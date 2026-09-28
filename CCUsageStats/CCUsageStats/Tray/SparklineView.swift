@@ -52,9 +52,9 @@ struct SparklineView: View {
                secs > 0,
                let last = samples.last
             {
-                let endT = min(windowEnd, last.t + secs)
+                let end = Self.forecastEnd(last: last, secondsToCap: secs, windowEnd: windowEnd)
                 let startPt = pointFor(t: last.t, p: last.p, in: size)
-                let endPt   = pointFor(t: endT,   p: 100,    in: size)
+                let endPt   = pointFor(t: end.t,  p: end.p,  in: size)
                 Path { p in
                     p.move(to: startPt)
                     p.addLine(to: endPt)
@@ -96,25 +96,23 @@ struct SparklineView: View {
         samples.map { pointFor(t: $0.t, p: $0.p, in: size) }
     }
 
-    /// Y-axis ceiling. Tier-zooms based on the max observed sample so the
-    /// fill stays visible at low utilization. Tiers: 25 / 50 / 75 / 100.
-    /// At ~7% the chart shows 0–25 scale → line lives in the upper third
-    /// of the chart instead of glued to the bottom edge.
-    private var yMax: Double {
-        let m = samples.map(\.p).max() ?? 0
-        if m > 75 { return 100 }
-        if m > 50 { return 75 }
-        if m > 25 { return 50 }
-        return 25
-    }
-
-    private func pointFor(t: Int64, p: Double, in size: CGSize) -> CGPoint {
+    /// Maps a sample to chart-local pixels. The chart is drawn to scale:
+    /// X spans the whole 5-hour window, Y spans 0–100% utilization.
+    func pointFor(t: Int64, p: Double, in size: CGSize) -> CGPoint {
         let xRange = max(1.0, Double(windowEnd - windowStart))
         let xClamp = max(0.0, min(1.0, Double(t - windowStart) / xRange))
-        // Clamp p to yMax so the forecast line (which projects to 100%)
-        // exits cleanly off the top edge when the chart is zoomed in.
-        let yClamp = max(0.0, min(yMax, p)) / yMax
+        let yClamp = max(0.0, min(100.0, p)) / 100.0
         return CGPoint(x: xClamp * size.width, y: size.height - yClamp * size.height)
+    }
+
+    /// Where the dashed forecast line ends: at 100% if the trend caps before
+    /// reset, otherwise at reset on the trend's projected value — never at a
+    /// cap the trend doesn't reach inside the window.
+    static func forecastEnd(last: UsageSample, secondsToCap: Int64, windowEnd: Int64) -> UsageSample {
+        let capT = last.t + secondsToCap
+        guard capT > windowEnd, secondsToCap > 0 else { return UsageSample(t: capT, p: 100) }
+        let frac = Double(max(0, windowEnd - last.t)) / Double(secondsToCap)
+        return UsageSample(t: windowEnd, p: last.p + (100 - last.p) * frac)
     }
 
     private func fillPath(points: [CGPoint], height: CGFloat) -> Path {

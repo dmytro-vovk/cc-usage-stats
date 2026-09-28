@@ -83,7 +83,11 @@ Skip this if you've never had the Phase 1 statusline integration.
 - After at least two polls, the 5-hour section shows a filled-area
   sparkline beneath the progress bar with a subtle 4pt rounded border.
 - The line ends at the current sample (small dot).
-- A dashed line from the latest point projects toward 100%; the caption
+- The chart is to scale: the Y axis is a fixed 0–100% (at 50% usage the dot
+  sits at half height), and the X axis spans the whole 5-hour window (with
+  "Resets in 1h" the latest sample sits at ~80% of the width).
+- A dashed line from the latest point follows the trend: to 100% if it caps
+  before reset, otherwise to the projected value at reset. The caption
   appends `· forecast 100% in Nm` when the slope predicts a cap.
 - Force-fill the chart for testing:
 

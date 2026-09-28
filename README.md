@@ -69,9 +69,11 @@ here in the menubar, without opening Claude Code.
   per-model weekly usage."** row prompts you instead; see
   [Connect Claude account](#connect-claude-account).
 - For the 5-hour row, a **filled-area sparkline** of the last samples
-  with a dashed forecast line projecting toward 100% based on a linear
-  regression of the recent trend. Y-axis auto-zooms (25 / 50 / 75 /
-  100% tiers) so the fill stays visible at low utilization. The
+  with a dashed forecast line following a linear regression of the
+  recent trend (to 100% if it caps before reset, else to the projected
+  value at reset). Drawn to scale: the X axis spans the
+  full 5-hour window (window start → reset) and the Y axis is a fixed
+  0–100%, so a 50% session fills half the chart's height. The
   caption appends `· forecast 100% in Nm` when the slope predicts a
   cap before reset. Faint dashed vertical gridlines at every wall-clock
   hour boundary inside the window.
