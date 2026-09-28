@@ -562,15 +562,24 @@ struct MenuBarDropdown: View {
     private var reauthorizeRow: some View {
         // Suppressed when there is no working token at all — "connect for the
         // model meter" is noise next to "token rejected, set a token".
+        // The action lives in the row itself: a prompt that only names the
+        // fix sent users hunting for the button in Settings.
         if vm.needsReauthorization, !vm.authState.lacksWorkingToken {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Connect your account to see per-model weekly usage.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Connect your account to see per-model weekly usage.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button(vm.isConnecting ? "Connecting…" : "Connect Claude account") {
+                    vm.connectAccount()
+                }
+                .controlSize(.small)
+                .disabled(vm.isConnecting)
             }
         }
     }

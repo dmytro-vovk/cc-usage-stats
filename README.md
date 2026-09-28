@@ -66,7 +66,8 @@ here in the menubar, without opening Claude Code.
   see them is reporting: the set is replaced wholesale on every scoped
   poll, and cleared entirely by any poll from the header path.
 - Without a connected account, a **"Connect your account to see
-  per-model weekly usage."** row prompts you instead; see
+  per-model weekly usage."** row with a **Connect Claude account**
+  button prompts you instead; see
   [Connect Claude account](#connect-claude-account).
 - For the 5-hour row, a **filled-area sparkline** of the last samples
   with a dashed forecast line following a linear regression of the
@@ -121,9 +122,10 @@ is not overwritten by a bad new one.
 
 ### Connect Claude account
 
-Optional. Click **Connect Claude account** in the Settings window (next
-to **Paste from Claude Code Keychain**) to unlock the per-model weekly
-window in the dropdown and pill.
+Optional. Click **Connect Claude account** — in the dropdown's connect
+prompt, or in the Settings window next to **Paste from Claude Code
+Keychain** — to unlock the per-model weekly windows (e.g. "Fable
+weekly") in the dropdown and pill.
 
 This runs a standard PKCE OAuth authorization-code flow in your
 default browser: the app opens `claude.com`'s authorize page requesting

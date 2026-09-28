@@ -164,7 +164,8 @@ Skip this if you've never had the Phase 1 statusline integration.
 ### 13. Per-model weekly meter
 
 - [ ] Fresh install with a pasted token only: 5h and 7d render; the dropdown
-      shows the "Connect your account" row; no model row appears.
+      shows the "Connect your account" row with a **Connect Claude account**
+      button (clicking it starts the browser flow); no model row appears.
 - [ ] After "Connect Claude account": browser opens, approval returns to the
       local confirmation page, and the connect row disappears as soon as the
       flow returns — the poller is rebuilt immediately, so this does not wait
