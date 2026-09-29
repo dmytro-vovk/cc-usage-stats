@@ -197,4 +197,56 @@ final class OAuthUsageTests: XCTestCase {
         XCTAssertNil(UsageShare.caption([]))
         XCTAssertNil(UsageShare.caption([UsageShare(key: "other", name: "Other", percent: 0)]))
     }
+
+    /// Only weekly limits are weekly windows: a model-scoped limit of any
+    /// other kind (a future per-model session cap, say) must not overwrite
+    /// or impersonate "Fable weekly".
+    func testOnlyWeeklyScopedLimitsBecomeModelWindows() throws {
+        let json = """
+        {"limits":[
+          {"kind":"weekly_scoped","percent":8,"resets_at":"2026-10-05T09:59:59Z",
+           "scope":{"model":{"display_name":"Fable"}}},
+          {"kind":"session_scoped","percent":55,"resets_at":"2026-09-29T04:29:59Z",
+           "scope":{"model":{"display_name":"Fable"}}}]}
+        """
+        guard case let .success(snap) = OAuthUsage.parse(status: 200, body: body(json)) else {
+            return XCTFail("expected success")
+        }
+        XCTAssertEqual(snap.models["seven_day_fable"]?.usedPercentage, 8)
+        XCTAssertEqual(snap.models.count, 1)
+    }
+
+    /// A model name that slugs to a key the app never renders (the
+    /// denylist) must not become a model window.
+    func testLimitSlugThatIsNotAModelKeyIsSkipped() {
+        let json = """
+        {"five_hour":{"utilization":1,"resets_at":"2026-10-05T09:59:59Z"},
+         "limits":[{"kind":"weekly_scoped","percent":8,"resets_at":"2026-10-05T09:59:59Z",
+                    "scope":{"model":{"display_name":"OAuth Apps"}}}]}
+        """
+        guard case let .success(snap) = OAuthUsage.parse(status: 200, body: body(json)) else {
+            return XCTFail("expected success")
+        }
+        XCTAssertTrue(snap.models.isEmpty)
+    }
+
+    /// A share that rounds to 0% is dropped after rounding, not before:
+    /// 99.6 / 0.4 must not render "Claude Code 100% · Chats 0%".
+    func testBreakdownCaptionDropsSharesThatRoundToZero() {
+        let rows = [
+            UsageShare(key: "claude_code", name: "Claude Code", percent: 99.6),
+            UsageShare(key: "chat", name: "Chats", percent: 0.4),
+        ]
+        XCTAssertEqual(UsageShare.caption(rows), "Claude Code 100%")
+    }
+
+    /// Shares of one window: the displayed integers must still total 100
+    /// (largest remainder), not 101 from rounding 50.5 and 49.5 both up.
+    func testBreakdownCaptionKeepsTheTotalAtOneHundred() {
+        let rows = [
+            UsageShare(key: "claude_code", name: "Claude Code", percent: 50.5),
+            UsageShare(key: "chat", name: "Chats", percent: 49.5),
+        ]
+        XCTAssertEqual(UsageShare.caption(rows), "Claude Code 51% · Chats 49%")
+    }
 }

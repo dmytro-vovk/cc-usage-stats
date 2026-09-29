@@ -34,8 +34,9 @@ Skip this if you've never had the Phase 1 statusline integration.
 - On first launch with no token, the menubar shows a red
   `exclamationmark.triangle.fill` icon.
 - Click it → dropdown shows **Set Token…** at the bottom. Click that.
-- Settings window opens with a `SecureField` and two buttons:
-  **Paste from Claude Code Keychain** and **Save & Test**.
+- Settings window opens with a `SecureField`, **Paste from Claude Code
+  Keychain** and **Connect Claude account** beside it, and **Cancel** /
+  **Save & Test** at the bottom.
 
 **Path A — auto-fill from Claude Code Keychain:**
 - Click **Paste from Claude Code Keychain**. macOS shows a one-time
@@ -113,15 +114,16 @@ Skip this if you've never had the Phase 1 statusline integration.
 
 ### 7. Notification sounds
 
-- **Mute Sounds OFF**, no warning configured:
+- Default per-event sounds, no warning configured:
   - Mock five_hour from 99% → 100% via two sequential cache writes
     (sleep 1 second between). Hear **Bottle**.
   - Bump `resets_at` to a later value. Hear **Hero**.
 - **Warn at threshold ON**, set to e.g. 80%, sound `Tink`:
   - Cross from 79% → 81% via two writes. Hear **Tink** then nothing
     on subsequent polls (one-shot per crossing).
-- Choose a different sound from the picker — it previews on change.
-- Toggle **Mute Sounds** — no further sounds fire.
+- Choose a different sound from a picker — it previews on change.
+- Set an event's sound to **None** — that event goes silent; the others
+  still fire. (There is no global mute.)
 
 ### 8. Auth recovery
 
@@ -180,7 +182,9 @@ Skip this if you've never had the Phase 1 statusline integration.
       flow returns — the poller is rebuilt immediately, so this does not wait
       for a poll.
 - [ ] A per-model row appears in the dropdown within one poll, with a
-      percentage and a reset caption. Note the exact key/label observed.
+      percentage and a reset caption — unless it resets together with the
+      7-day window directly above it, in which case the caption is
+      omitted rather than repeated. Note the exact key/label observed.
 - [ ] Menubar quiet state (all windows below 80%) shows a single 5h pill.
 - [ ] Model window above 80% **and at or above the 5h percentage**, with 7d
       below that bar: pill shows 5h │ model. (A window only earns menubar
@@ -270,6 +274,10 @@ Skip this if you've never had the Phase 1 statusline integration.
 - [ ] While "Connecting…", a **Cancel** button is shown (dropdown and
       Settings). Clicking it ends the attempt at once: the button returns
       to "Connect Claude account" and no red error appears.
+- [ ] Click **Deny** on Claude's consent page: the browser shows "Sign-in
+      was not completed", and the app ends the attempt immediately with
+      "Connect failed: you declined access in the browser." (in the
+      dropdown, or in Settings if started from there).
 - [ ] The authorize page opened by Connect shows Claude's consent screen,
       not "Authorization failed — Invalid request format", and approving
       it lands on the local "You can close this window" page.

@@ -63,7 +63,9 @@ final class SettingsViewModel: ObservableObject {
     /// browser round-trip. It used to be fire-and-forget, which left a live
     /// button that silently did nothing on a second click — the connect path
     /// refuses to run twice concurrently.
-    var onConnect: (() async -> Void)?
+    /// Returns the failure text, if any, so this window can show it — the
+    /// dropdown's error line isn't visible from here.
+    var onConnect: (() async -> String?)?
     var onCancelConnect: (() -> Void)?
 
     /// Expiry to persist alongside the token, or nil if the field no longer
@@ -144,6 +146,7 @@ struct SettingsView: View {
 
     @State private var saving = false
     @State private var connecting = false
+    @State private var cancelled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -157,13 +160,24 @@ struct SettingsView: View {
                 Button(connecting ? "Connecting…" : "Connect Claude account") {
                     connecting = true
                     Task {
-                        await vm.onConnect?()
+                        let failure = await vm.onConnect?() ?? nil
+                        // A cancel says nothing about any other error on
+                        // screen (e.g. a rejected token), so leave it be.
+                        if let failure {
+                            vm.error = failure
+                        } else if !cancelled {
+                            vm.error = nil
+                        }
+                        cancelled = false
                         connecting = false
                     }
                 }
                 .disabled(connecting)
                 if connecting {
-                    Button("Cancel") { vm.onCancelConnect?() }
+                    Button("Cancel") {
+                        cancelled = true
+                        vm.onCancelConnect?()
+                    }
                 }
                 Spacer()
             }

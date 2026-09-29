@@ -233,4 +233,43 @@ final class LoopbackRedirectListenerTests: XCTestCase {
         }
         XCTAssertLessThan(Date().timeIntervalSince(started), 5, "cancel must not wait out the timeout")
     }
+
+    /// Declining consent redirects to `/callback?error=access_denied&state=…`
+    /// with no `code`. That used to be a 404 that left the wait running
+    /// until Cancel or the 5-minute timeout; it must end the wait.
+    func testErrorCallbackResolvesTheWait() async throws {
+        let listener = try await LoopbackRedirectListener.start()
+        defer { listener.stop() }
+        let port = listener.port
+        let waitTask = Task { try await listener.waitForCallback(timeout: 30) }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/callback?error=access_denied&state=B")!
+        let (_, response) = try await URLSession.shared.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+
+        let callback = try await waitTask.value
+        XCTAssertEqual(callback.error, "access_denied")
+        XCTAssertNil(callback.code)
+        XCTAssertEqual(callback.state, "B")
+    }
+
+    /// The flow stops the listener as soon as the wait ends. The result must
+    /// only be delivered once the browser's page has been sent, or `stop()`
+    /// can cancel the connection mid-response and the user sees an error
+    /// page instead of "Sign-in was not completed".
+    func testBrowserGetsThePageEvenWhenTheListenerStopsOnResult() async throws {
+        let listener = try await LoopbackRedirectListener.start()
+        let port = listener.port
+        let waitTask = Task {
+            let cb = try await listener.waitForCallback(timeout: 30)
+            listener.stop()
+            return cb
+        }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/callback?error=access_denied&state=B")!
+        let (data, response) = try await URLSession.shared.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Sign-in was not completed"))
+        _ = try await waitTask.value
+    }
 }

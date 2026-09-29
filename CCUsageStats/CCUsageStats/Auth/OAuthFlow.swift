@@ -54,6 +54,7 @@ enum OAuthFlow {
         case malformedTokenResponse
         case listenerFailed
         case cancelled
+        case authorizationDenied(String)
 
         /// User-facing wording; shown after "Connect failed: ".
         var message: String {
@@ -70,6 +71,10 @@ enum OAuthFlow {
                 return "couldn't open the local port the browser returns to. Try again."
             case .cancelled:
                 return "the browser sign-in didn't finish in time. Try again."
+            case .authorizationDenied("access_denied"):
+                return "you declined access in the browser."
+            case .authorizationDenied(let reason):
+                return "Claude's sign-in page returned \"\(reason)\". Try again."
             }
         }
     }
@@ -203,9 +208,11 @@ enum OAuthFlow {
 
         let callback = try await listener.waitForCallback(timeout: timeout)
         guard callback.state == state else { throw FlowError.stateMismatch }
+        if let error = callback.error { throw FlowError.authorizationDenied(error) }
+        guard let code = callback.code else { throw FlowError.malformedTokenResponse }
 
         return try await exchange(
-            code: callback.code,
+            code: code,
             verifier: verifier,
             state: state,
             redirectURI: redirectURI,
@@ -328,7 +335,10 @@ nonisolated final class LoopbackCallbackGate: @unchecked Sendable {
 /// state is guarded: `openConnections` by `stateLock`, and the
 /// wait/resolve handshake by `LoopbackCallbackGate`'s own lock.
 nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
-    struct Callback { let code: String; let state: String }
+    /// A redirect to the callback path: `code` on approval, or `error`
+    /// (e.g. `access_denied`) when the user declines — which must end the
+    /// wait too, not fall into the 404 bucket.
+    struct Callback { let code: String?; let state: String; var error: String? = nil }
 
     /// The only path treated as the OAuth redirect — must match the path
     /// `OAuthFlow.redirectURI` builds into the redirect URI. Any other path
@@ -417,12 +427,16 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
                 l.stateUpdateHandler = { state in
                     switch state {
                     case .ready:
+                        // Answered: release the handler, which captures
+                        // `l` strongly — a listener→handler→listener cycle.
+                        l.stateUpdateHandler = nil
                         guard let p = l.port?.rawValue, p != 0 else {
                             resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
                             return
                         }
                         resumeOnce { cont.resume(returning: p) }
                     case .failed, .cancelled:
+                        l.stateUpdateHandler = nil
                         resumeOnce { cont.resume(throwing: OAuthFlow.FlowError.listenerFailed) }
                     default:
                         break
@@ -547,15 +561,22 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
                   let pathPart = line.split(separator: " ").dropFirst().first,
                   let comps = URLComponents(string: "http://localhost\(pathPart)"),
                   comps.path == Self.callbackPath,
-                  let code = comps.queryItems?.first(where: { $0.name == "code" })?.value,
                   let state = comps.queryItems?.first(where: { $0.name == "state" })?.value
             else { return nil }
-            return Callback(code: code, state: state)
+            let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
+            let error = comps.queryItems?.first(where: { $0.name == "error" })?.value
+            guard code != nil || error != nil else { return nil }
+            return Callback(code: code, state: state, error: error)
         }()
 
-        let body = parsed == nil
-            ? "Not found."
-            : "You can close this window and return to CCUsageStats."
+        let body: String
+        if parsed == nil {
+            body = "Not found."
+        } else if parsed?.error != nil {
+            body = "Sign-in was not completed. You can close this window and return to CCUsageStats."
+        } else {
+            body = "You can close this window and return to CCUsageStats."
+        }
         let status = parsed == nil ? "404 Not Found" : "200 OK"
         let response = """
         HTTP/1.1 \(status)\r
@@ -566,24 +587,24 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
         \(body)
         """
         let id = ObjectIdentifier(conn)
-        conn.send(content: Data(response.utf8), completion: .contentProcessed { [weak self] _ in
+        conn.send(content: Data(response.utf8), completion: .contentProcessed { [weak self, gate] _ in
             conn.cancel()
+            // Only a well-formed callback to the exact redirect path ends
+            // the wait. Browsers open speculative preconnect sockets that
+            // carry no request at all, and any other stray probe (wrong
+            // path, wrong or missing state) would otherwise abort an
+            // in-progress authorization. Failure comes from the timeout.
+            //
+            // Settled only once the page is sent: the flow stops the
+            // listener as soon as the wait ends, and a declined consent
+            // throws straight away — settling earlier let `stop()` cancel
+            // this connection mid-response.
+            if let parsed { gate.settle(.success(parsed)) }
             guard let self else { return }
             self.stateLock.lock()
             self.openConnections.removeValue(forKey: id)
             self.stateLock.unlock()
         })
-
-        // Only a well-formed callback to the exact redirect path ends the
-        // wait. Browsers open speculative preconnect sockets that carry no
-        // request at all, and any other stray probe (wrong path, wrong or
-        // missing state) would otherwise abort an in-progress
-        // authorization. Failure comes from the timeout alone.
-        if let parsed { self.finish(.success(parsed)) }
-    }
-
-    private func finish(_ result: Result<Callback, Error>) {
-        gate.settle(result)
     }
 
     func stop() {

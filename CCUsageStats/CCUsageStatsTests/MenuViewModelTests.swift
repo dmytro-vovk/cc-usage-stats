@@ -371,6 +371,34 @@ final class MenuViewModelTests: XCTestCase {
         vm.stop()
     }
 
+    /// Cancel can race another failure (the timeout, a flow error thrown
+    /// on the way out). The user cancelled, so no red error either way.
+    func testCancelRacingAFlowErrorShowsNoError() async {
+        let vm = viewModel(connect: {
+            do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { throw OAuthFlow.FlowError.cancelled }
+            return self.session(scopes: ["user:profile"])
+        })
+
+        vm.connectAccount()
+        var spins = 0
+        while !vm.isConnecting, spins < 1_000 {
+            await Task.yield()
+            spins += 1
+        }
+        vm.cancelConnect()
+        await vm.connectTask?.value
+        XCTAssertNil(vm.lastError)
+        vm.stop()
+    }
+
+    /// Declining consent in the browser reads as a sentence, not a case name.
+    func testDeclinedAuthorizationHasAReadableMessage() async {
+        let vm = viewModel(connect: { throw OAuthFlow.FlowError.authorizationDenied("access_denied") })
+        await vm.performConnect()
+        XCTAssertEqual(vm.lastError, "Connect failed: you declined access in the browser.")
+        vm.stop()
+    }
+
     // MARK: - A dead grant is evicted, not rebuilt around
 
     /// `OAuthTokenProvider` drops a permanently-refused session from memory,

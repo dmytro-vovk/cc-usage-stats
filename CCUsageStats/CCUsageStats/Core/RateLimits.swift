@@ -17,13 +17,28 @@ struct UsageShare: Codable, Equatable {
     let name: String
     let percent: Double
 
-    /// "Claude Code 93% · Chats 7%": API order, 0% shares dropped; nil when
-    /// nothing is left to show.
+    /// "Claude Code 93% · Chats 7%": API order, shares that *display* as 0%
+    /// dropped (filtered after rounding, so 99.6/0.4 is not "100% · 0%");
+    /// nil when nothing is left to show.
     static func caption(_ shares: [UsageShare]) -> String? {
-        let parts = shares
-            .filter { $0.percent > 0 }
-            .map { "\($0.name) \(Int($0.percent.rounded()))%" }
+        let parts = zip(shares, wholePercents(shares.map(\.percent)))
+            .filter { $0.1 > 0 }
+            .map { "\($0.0.name) \($0.1)%" }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Largest-remainder rounding: floors each share, then hands the points
+    /// lost to flooring to the largest fractions, so the integers keep the
+    /// rounded total (50.5 / 49.5 → 51 / 49, not 51 / 50).
+    static func wholePercents(_ values: [Double]) -> [Int] {
+        let floors = values.map { Int($0.rounded(.down)) }
+        let target = Int(values.reduce(0, +).rounded())
+        var result = floors
+        let order = values.indices.sorted {
+            (values[$0] - Double(floors[$0])) > (values[$1] - Double(floors[$1]))
+        }
+        for i in order.prefix(max(0, target - floors.reduce(0, +))) { result[i] += 1 }
+        return result
     }
 }
 

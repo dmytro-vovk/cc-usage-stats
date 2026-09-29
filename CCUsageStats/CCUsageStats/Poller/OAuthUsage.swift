@@ -103,7 +103,10 @@ enum OAuthUsage {
         // `seven_day_<slug>` so it reuses the model-window labels, rows and
         // pill segment. Surface-scoped entries (e.g. Cowork) are not models.
         for entry in obj["limits"] as? [[String: Any]] ?? [] {
-            guard let scope = entry["scope"] as? [String: Any],
+            // Weekly only: a model-scoped limit of another kind must not
+            // overwrite or impersonate the weekly window.
+            guard entry["kind"] as? String == "weekly_scoped",
+                  let scope = entry["scope"] as? [String: Any],
                   let model = scope["model"] as? [String: Any],
                   let name = model["display_name"] as? String,
                   let percent = entry["percent"] as? Double,
@@ -113,8 +116,11 @@ enum OAuthUsage {
             let slug = name.lowercased()
                 .split(whereSeparator: \.isWhitespace)
                 .joined(separator: "_")
-            guard !slug.isEmpty else { continue }
-            models[UsageWindows.modelKeyPrefix + slug] = WindowSnapshot(usedPercentage: percent, resetsAt: reset)
+            let key = UsageWindows.modelKeyPrefix + slug
+            // A name that slugs to a non-model key (e.g. the denylist) would
+            // be stored and then never rendered.
+            guard UsageWindows.isModelKey(key) else { continue }
+            models[key] = WindowSnapshot(usedPercentage: percent, resetsAt: reset)
         }
         // Older shape; an explicit `seven_day_<model>` window wins.
         for key in obj.keys where UsageWindows.isModelKey(key) {

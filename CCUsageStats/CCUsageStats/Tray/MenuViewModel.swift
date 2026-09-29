@@ -220,9 +220,10 @@ final class MenuViewModel: ObservableObject {
         // Through `connectTask`, so the same attempt is cancellable from
         // either the dropdown or this window.
         vm.onConnect = { [weak self] in
-            guard let self else { return }
+            guard let self else { return nil }
             self.connectAccount()
             await self.connectTask?.value
+            return self.lastError
         }
         vm.onCancelConnect = { [weak self] in self?.cancelConnect() }
         SettingsWindowController.shared.show(viewModel: vm)
@@ -288,13 +289,12 @@ final class MenuViewModel: ObservableObject {
             }
             try OAuthSessionStore.write(session)
             restartPolling()
-        } catch is CancellationError {
-            // The user cancelled; nothing failed.
+        } catch where Task.isCancelled || error is CancellationError {
+            // The user cancelled; nothing failed — whatever error the
+            // unwinding flow threw (URLSession's `URLError(.cancelled)`, or
+            // a flow error that raced the cancel).
         } catch let flowError as OAuthFlow.FlowError {
             lastError = "Connect failed: \(flowError.message)"
-        } catch where Task.isCancelled {
-            // Cancelled mid-network: URLSession reports the user's cancel
-            // as `URLError(.cancelled)`, not `CancellationError`.
         } catch {
             lastError = "Connect failed: \(error)"
         }
