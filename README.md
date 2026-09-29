@@ -59,10 +59,10 @@ here in the menubar, without opening Claude Code.
   a tinted progress bar, and a `Resets in …` caption.
 - One row per per-model weekly window, once an account is connected —
   same percentage/bar/caption treatment as 5h and 7d, without the
-  sparkline. The row title is derived from whatever key the API
-  returns for your account (e.g. a `seven_day_opus` key would render
-  as "Opus weekly"), so a renamed or new model shows up with no app
-  update needed. These rows exist only while a source that can actually
+  sparkline. The row title comes from the model name the API reports
+  for your account (e.g. a Fable-scoped limit renders as "Fable
+  weekly"), so a renamed or new model shows up with no app update
+  needed. These rows exist only while a source that can actually
   see them is reporting: the set is replaced wholesale on every scoped
   poll, and cleared entirely by any poll from the header path.
 - Without a connected account, a **"Connect your account to see
@@ -242,17 +242,22 @@ depending on whether you've connected an account:
   limit.
 - **`GET /api/oauth/usage` (after [Connect Claude
   account](#connect-claude-account)).** A plain GET, so it costs no
-  quota. It returns every window as flat top-level keys — `five_hour`,
-  `seven_day`, and one `seven_day_<model>` key per model with its own
-  weekly cap — each as `{utilization, resets_at}`. Not every
-  `seven_day_*` key is a model window, though — `seven_day_oauth_apps`
-  shares the prefix but is deliberately filtered out and never rendered
-  as a row. This requires the `user:profile` OAuth scope, which a
+  quota. It returns `five_hour` and `seven_day` as top-level
+  `{utilization, resets_at}` objects. Per-model weekly caps arrive in
+  a `limits` array: each entry with `kind: "weekly_scoped"` and a
+  `scope.model.display_name` (e.g. `"Fable"`) becomes a model row,
+  keyed `seven_day_<name>`; surface-scoped entries (e.g. Cowork) are
+  not models and are ignored. Older responses instead carried one
+  top-level `seven_day_<model>` key per model — still parsed, and they
+  now arrive as `null`. Not every `seven_day_*` key is a model window,
+  though — `seven_day_oauth_apps` shares the prefix but is deliberately
+  filtered out and never rendered as a row. Each poll logs the
+  response's key set (names and percentages only) to the system log
+  under subsystem `dev.dv.ccusagestats`, category `usage`. This requires the `user:profile` OAuth scope, which a
   pasted token does not carry, so it's only used once a scoped session
-  exists. The dropdown row's label is derived from whichever key the
-  API returns for your account (e.g.
-  a `seven_day_opus` key would render as "Opus weekly"), so a renamed
-  or newly added model appears with no code change.
+  exists. The dropdown row's label is derived from the model name the
+  API reports (e.g. "Fable weekly"), so a renamed or newly added model
+  appears with no code change.
 
 When a scoped session is available the app prefers it (every window,
 no quota cost) and falls back to the pasted token's header path only on

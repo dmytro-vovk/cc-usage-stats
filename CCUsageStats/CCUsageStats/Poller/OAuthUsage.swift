@@ -79,27 +79,6 @@ enum OAuthUsage {
         }.joined(separator: " ")
     }
 
-    /// Compact, key-sorted JSON of only the named top-level subtrees (those
-    /// present and non-null), sorted by key, each capped at 1500 chars. For
-    /// the structures that may carry per-model usage but whose shape isn't
-    /// known yet. Usage figures and labels only — the endpoint returns no
-    /// credentials.
-    static func detailSummary(_ data: Data, keys: [String]) -> String {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return "unparseable body"
-        }
-        return keys.sorted().compactMap { key -> String? in
-            guard let value = obj[key], !(value is NSNull),
-                  let json = try? JSONSerialization.data(
-                      withJSONObject: value,
-                      options: [.sortedKeys, .fragmentsAllowed, .withoutEscapingSlashes]
-                  ),
-                  let text = String(data: json, encoding: .utf8)
-            else { return nil }
-            return "\(key)=\(text.prefix(1500))"
-        }.joined(separator: " ")
-    }
-
     /// Returns nil when the body carries no recognizable window — an empty
     /// object, or the in-band error envelope the endpoint sometimes returns
     /// with a 200.
@@ -119,6 +98,25 @@ enum OAuthUsage {
         }
 
         var models: [String: WindowSnapshot] = [:]
+        // Newer shape: per-model weekly limits live in `limits`, and every
+        // `seven_day_<model>` key is null. A model-scoped entry is keyed
+        // `seven_day_<slug>` so it reuses the model-window labels, rows and
+        // pill segment. Surface-scoped entries (e.g. Cowork) are not models.
+        for entry in obj["limits"] as? [[String: Any]] ?? [] {
+            guard let scope = entry["scope"] as? [String: Any],
+                  let model = scope["model"] as? [String: Any],
+                  let name = model["display_name"] as? String,
+                  let percent = entry["percent"] as? Double,
+                  let iso = entry["resets_at"] as? String,
+                  let reset = epochSeconds(fromISO8601: iso)
+            else { continue }
+            let slug = name.lowercased()
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: "_")
+            guard !slug.isEmpty else { continue }
+            models[UsageWindows.modelKeyPrefix + slug] = WindowSnapshot(usedPercentage: percent, resetsAt: reset)
+        }
+        // Older shape; an explicit `seven_day_<model>` window wins.
         for key in obj.keys where UsageWindows.isModelKey(key) {
             if let w = window(key) { models[key] = w }
         }

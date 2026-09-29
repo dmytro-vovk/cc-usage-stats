@@ -166,6 +166,11 @@ Skip this if you've never had the Phase 1 statusline integration.
 - [ ] Fresh install with a pasted token only: 5h and 7d render; the dropdown
       shows the "Connect your account" row with a **Connect Claude account**
       button (clicking it starts the browser flow); no model row appears.
+- [ ] After connecting, a "Fable weekly" row (or whichever models your
+      account has a weekly cap for) appears within a poll, matching the
+      model entries in the `limits` array. Check what the API sent with
+      `/usr/bin/log show --last 5m --predicate 'subsystem ==
+      "dev.dv.ccusagestats" AND category == "usage"'`.
 - [ ] After "Connect Claude account": browser opens, approval returns to the
       local confirmation page, and the connect row disappears as soon as the
       flow returns — the poller is rebuilt immediately, so this does not wait

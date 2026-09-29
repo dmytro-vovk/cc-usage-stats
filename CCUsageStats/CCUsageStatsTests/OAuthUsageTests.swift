@@ -121,19 +121,49 @@ final class OAuthUsageTests: XCTestCase {
         XCTAssertEqual(OAuthUsage.windowSummary(body("not json")), "unparseable body")
     }
 
-    /// One level deeper for the structures that may carry per-model usage
-    /// (`seven_day_breakdown`, `limits`, `nimbus_quill`): compact, key-sorted
-    /// JSON of just those subtrees, so their shape can be read from the log.
-    func testDetailSummaryDumpsOnlyTheNamedSubtrees() {
+    /// The endpoint now reports per-model weekly limits in `limits`, with
+    /// every `seven_day_<model>` key null. Shape copied from a live
+    /// response (2026-09-29). A model-scoped entry becomes a model window
+    /// keyed `seven_day_<slug>`, so it flows through the existing labels
+    /// ("Fable weekly"), rows and pill segment.
+    func testModelScopedLimitsBecomeModelWindows() throws {
         let json = """
-        {"five_hour":{"utilization":9,"resets_at":"2026-07-28T04:00:00Z"},
-         "limits":[{"name":"Fable","utilization":40}],
-         "seven_day_breakdown":{"rows":[{"model":"fable","pct":12.5}]},
-         "secretish":"x"}
+        {"five_hour":{"utilization":9,"resets_at":"2026-09-29T04:29:59.801490+00:00"},
+         "seven_day":{"utilization":24,"resets_at":"2026-10-05T09:59:59.801517+00:00"},
+         "seven_day_opus":null,"seven_day_sonnet":null,
+         "limits":[
+          {"group":"session","is_active":false,"kind":"session","percent":9,
+           "resets_at":"2026-09-29T04:29:59.801490+00:00","scope":null,"severity":"normal"},
+          {"group":"weekly","is_active":true,"kind":"weekly_all","percent":24,
+           "resets_at":"2026-10-05T09:59:59.801517+00:00","scope":null,"severity":"normal"},
+          {"group":"weekly","is_active":false,"kind":"weekly_scoped","percent":8,
+           "resets_at":"2026-10-05T09:59:59.801738+00:00",
+           "scope":{"model":{"display_name":"Fable","id":null},"surface":null},"severity":"normal"},
+          {"group":"weekly","is_active":false,"kind":"weekly_scoped","percent":3,
+           "resets_at":"2026-10-05T09:59:59Z",
+           "scope":{"model":null,"surface":{"display_name":"Cowork"}},"severity":"normal"}
+         ]}
         """
-        XCTAssertEqual(
-            OAuthUsage.detailSummary(body(json), keys: ["seven_day_breakdown", "limits", "nimbus_quill"]),
-            #"limits=[{"name":"Fable","utilization":40}] seven_day_breakdown={"rows":[{"model":"fable","pct":12.5}]}"#
-        )
+        guard case let .success(snap) = OAuthUsage.parse(status: 200, body: body(json)) else {
+            return XCTFail("expected success")
+        }
+        XCTAssertEqual(Set(snap.models.keys), ["seven_day_fable"], "only model-scoped limits are model windows")
+        let fable = try XCTUnwrap(snap.models["seven_day_fable"])
+        XCTAssertEqual(fable.usedPercentage, 8, accuracy: 0.001)
+        XCTAssertEqual(fable.resetsAt, OAuthUsage.epochSeconds(fromISO8601: "2026-10-05T09:59:59.801738+00:00"))
+        XCTAssertEqual(UsageWindows.label(for: "seven_day_fable"), "Fable weekly")
+        XCTAssertEqual(snap.fiveHour?.usedPercentage, 9)
+    }
+
+    func testMultiWordModelNameSlugsToAModelKey() throws {
+        let json = """
+        {"limits":[{"kind":"weekly_scoped","percent":50,"resets_at":"2026-10-05T09:59:59Z",
+                    "scope":{"model":{"display_name":"Opus 4.5"}}}]}
+        """
+        guard case let .success(snap) = OAuthUsage.parse(status: 200, body: body(json)) else {
+            return XCTFail("expected success")
+        }
+        XCTAssertEqual(Array(snap.models.keys), ["seven_day_opus_4.5"])
+        XCTAssertEqual(UsageWindows.label(for: "seven_day_opus_4.5"), "Opus 4.5 weekly")
     }
 }
