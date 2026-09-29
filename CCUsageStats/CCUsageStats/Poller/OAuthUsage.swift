@@ -46,6 +46,39 @@ enum OAuthUsage {
         }
     }
 
+    /// One line naming every top-level key the endpoint returned, sorted,
+    /// each tagged `NN%` (a usable window), `null`, `object[fields]` or its
+    /// JSON type. Logged per poll so an account's real key set — e.g.
+    /// whether any per-model window exists — can be read from the system
+    /// log. Carries key names and percentages only, never the body.
+    static func windowSummary(_ data: Data) -> String {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "unparseable body"
+        }
+        return obj.keys.sorted().map { key -> String in
+            let value = obj[key]
+            let tag: String
+            if value is NSNull {
+                tag = "null"
+            } else if let o = value as? [String: Any] {
+                if let util = o["utilization"] as? Double, o["resets_at"] is String {
+                    tag = String(format: "%g%%", util)
+                } else {
+                    tag = "object[\(o.keys.sorted().joined(separator: ","))]"
+                }
+            } else if value is String {
+                tag = "string"
+            } else if value is NSNumber {
+                tag = "number"
+            } else if value is [Any] {
+                tag = "array"
+            } else {
+                tag = "other"
+            }
+            return "\(key)=\(tag)"
+        }.joined(separator: " ")
+    }
+
     /// Returns nil when the body carries no recognizable window — an empty
     /// object, or the in-band error envelope the endpoint sometimes returns
     /// with a 200.

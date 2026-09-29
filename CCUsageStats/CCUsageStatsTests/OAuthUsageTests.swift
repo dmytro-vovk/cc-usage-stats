@@ -99,4 +99,25 @@ final class OAuthUsageTests: XCTestCase {
         if case .transient = result { return }
         XCTFail()
     }
+
+    /// Diagnostic summary of what the endpoint actually returned: every
+    /// top-level key, sorted, tagged with whether it is a usable window,
+    /// null, or some other shape — so an account's real key set can be read
+    /// from the system log without exposing the body.
+    func testWindowSummaryTagsEveryKey() {
+        let json = """
+        {"seven_day":{"utilization":24,"resets_at":"2026-07-28T04:00:00Z"},
+         "five_hour":{"utilization":7.5,"resets_at":"2026-07-28T04:00:00Z"},
+         "seven_day_sonnet":null,
+         "cinder_cove":{"utilization":null,"resets_at":null},
+         "extra_usage":{"is_enabled":false},
+         "odd":3}
+        """
+        XCTAssertEqual(
+            OAuthUsage.windowSummary(body(json)),
+            "cinder_cove=object[resets_at,utilization] extra_usage=object[is_enabled] "
+            + "five_hour=7.5% odd=number seven_day=24% seven_day_sonnet=null"
+        )
+        XCTAssertEqual(OAuthUsage.windowSummary(body("not json")), "unparseable body")
+    }
 }

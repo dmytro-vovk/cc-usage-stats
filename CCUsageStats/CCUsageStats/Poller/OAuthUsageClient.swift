@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Reads every rate-limit window from `GET /api/oauth/usage`.
 ///
@@ -6,6 +7,8 @@ import Foundation
 /// the only source that exposes per-model weekly windows.
 struct OAuthUsageClient: AnthropicAPIClient {
     static let endpoint = "https://api.anthropic.com/api/oauth/usage"
+
+    nonisolated private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "usage")
 
     let provider: OAuthTokenProvider
     let session: URLSession
@@ -47,6 +50,10 @@ struct OAuthUsageClient: AnthropicAPIClient {
             guard let http = resp as? HTTPURLResponse else {
                 return .transient("no http response")
             }
+            // Key names and percentages only (see `windowSummary`), so
+            // `.public` exposes nothing sensitive.
+            let summary = OAuthUsage.windowSummary(data)
+            Self.log.notice("usage \(http.statusCode): \(summary, privacy: .public)")
             return OAuthUsage.parse(status: http.statusCode, body: data)
         } catch {
             return .transient(error.localizedDescription)
