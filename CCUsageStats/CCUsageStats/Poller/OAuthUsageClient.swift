@@ -54,6 +54,10 @@ struct OAuthUsageClient: AnthropicAPIClient {
             // `.public` exposes nothing sensitive.
             let summary = OAuthUsage.windowSummary(data)
             Self.log.notice("usage \(http.statusCode): \(summary, privacy: .public)")
+            let detail = OAuthUsage.detailSummary(
+                data, keys: ["seven_day_breakdown", "limits", "nimbus_quill"]
+            )
+            Self.log.notice("usage detail: \(detail, privacy: .public)")
             return OAuthUsage.parse(status: http.statusCode, body: data)
         } catch {
             return .transient(error.localizedDescription)

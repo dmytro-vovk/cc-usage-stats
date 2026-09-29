@@ -120,4 +120,20 @@ final class OAuthUsageTests: XCTestCase {
         )
         XCTAssertEqual(OAuthUsage.windowSummary(body("not json")), "unparseable body")
     }
+
+    /// One level deeper for the structures that may carry per-model usage
+    /// (`seven_day_breakdown`, `limits`, `nimbus_quill`): compact, key-sorted
+    /// JSON of just those subtrees, so their shape can be read from the log.
+    func testDetailSummaryDumpsOnlyTheNamedSubtrees() {
+        let json = """
+        {"five_hour":{"utilization":9,"resets_at":"2026-07-28T04:00:00Z"},
+         "limits":[{"name":"Fable","utilization":40}],
+         "seven_day_breakdown":{"rows":[{"model":"fable","pct":12.5}]},
+         "secretish":"x"}
+        """
+        XCTAssertEqual(
+            OAuthUsage.detailSummary(body(json), keys: ["seven_day_breakdown", "limits", "nimbus_quill"]),
+            #"limits=[{"name":"Fable","utilization":40}] seven_day_breakdown={"rows":[{"model":"fable","pct":12.5}]}"#
+        )
+    }
 }

@@ -79,6 +79,27 @@ enum OAuthUsage {
         }.joined(separator: " ")
     }
 
+    /// Compact, key-sorted JSON of only the named top-level subtrees (those
+    /// present and non-null), sorted by key, each capped at 1500 chars. For
+    /// the structures that may carry per-model usage but whose shape isn't
+    /// known yet. Usage figures and labels only — the endpoint returns no
+    /// credentials.
+    static func detailSummary(_ data: Data, keys: [String]) -> String {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "unparseable body"
+        }
+        return keys.sorted().compactMap { key -> String? in
+            guard let value = obj[key], !(value is NSNull),
+                  let json = try? JSONSerialization.data(
+                      withJSONObject: value,
+                      options: [.sortedKeys, .fragmentsAllowed, .withoutEscapingSlashes]
+                  ),
+                  let text = String(data: json, encoding: .utf8)
+            else { return nil }
+            return "\(key)=\(text.prefix(1500))"
+        }.joined(separator: " ")
+    }
+
     /// Returns nil when the body carries no recognizable window — an empty
     /// object, or the in-band error envelope the endpoint sometimes returns
     /// with a 200.
