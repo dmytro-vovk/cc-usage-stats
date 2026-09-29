@@ -76,6 +76,28 @@ final class UsageEventDetectorTests: XCTestCase {
         )
     }
 
+    /// Observed live (2026-09-29): the usage endpoint reports one window's
+    /// reset with sub-second jitter, so the parsed epoch flips …199 ↔ …200
+    /// between polls. The …199 → …200 step is not a new window — a real
+    /// reset moves the reset time forward by hours.
+    func testSubMinuteJitterIsNotAWindowReset() {
+        let prev = WindowSnapshot(usedPercentage: 12, resetsAt: 1_790_674_199)
+        let cur  = WindowSnapshot(usedPercentage: 12, resetsAt: 1_790_674_200)
+        XCTAssertEqual(
+            UsageEventDetector.detect(previous: prev, current: cur, thresholds: [80, 100]),
+            []
+        )
+    }
+
+    func testRealResetAdvancesByHoursAndFires() {
+        let prev = WindowSnapshot(usedPercentage: 60, resetsAt: 1_790_674_200)
+        let cur  = WindowSnapshot(usedPercentage: 1,  resetsAt: 1_790_674_200 + 5 * 3600)
+        XCTAssertEqual(
+            UsageEventDetector.detect(previous: prev, current: cur, thresholds: [80, 100]),
+            [.windowReset]
+        )
+    }
+
     func testCrossingAndResetCanFireTogether() {
         let prev = WindowSnapshot(usedPercentage: 50, resetsAt: r1)
         let cur  = WindowSnapshot(usedPercentage: 100, resetsAt: r2)

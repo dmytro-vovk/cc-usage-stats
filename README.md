@@ -108,7 +108,8 @@ sound, and **None** silences that one event.
 - **Limit reached** — fired once when 5-hour utilization first crosses
   100%. Default: **Bottle**.
 - **Window reset** — fired when the 5-hour window resets (`resets_at`
-  advances). Default: **Hero**.
+  moves forward by more than 10 minutes; smaller moves are the API's
+  sub-second jitter, not a new window). Default: **Hero**.
 - **Outage detected** — fired once on the operational → outage
   transition reported by status.claude.com. Default: **Sosumi**.
 - **Warn at threshold** — your chosen sound at your chosen threshold

@@ -117,7 +117,8 @@ Skip this if you've never had the Phase 1 statusline integration.
 - Default per-event sounds, no warning configured:
   - Mock five_hour from 99% → 100% via two sequential cache writes
     (sleep 1 second between). Hear **Bottle**.
-  - Bump `resets_at` to a later value. Hear **Hero**.
+  - Bump `resets_at` by more than 10 minutes. Hear **Hero**. Bumping it
+    by 1 second (the API's jitter) must stay silent.
 - **Warn at threshold ON**, set to e.g. 80%, sound `Tink`:
   - Cross from 79% → 81% via two writes. Hear **Tink** then nothing
     on subsequent polls (one-shot per crossing).
