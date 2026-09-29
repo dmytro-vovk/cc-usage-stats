@@ -10,6 +10,23 @@ struct WindowSnapshot: Codable, Equatable {
     }
 }
 
+/// One surface's share of the weekly usage (`seven_day_breakdown.rows`),
+/// e.g. Claude Code 93%. Shares of one window, so they sum to ~100.
+struct UsageShare: Codable, Equatable {
+    let key: String
+    let name: String
+    let percent: Double
+
+    /// "Claude Code 93% · Chats 7%": API order, 0% shares dropped; nil when
+    /// nothing is left to show.
+    static func caption(_ shares: [UsageShare]) -> String? {
+        let parts = shares
+            .filter { $0.percent > 0 }
+            .map { "\($0.name) \(Int($0.percent.rounded()))%" }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
 /// The rate-limit windows cached for the menubar UI.
 struct RateLimitsSnapshot: Codable, Equatable {
     let fiveHour: WindowSnapshot?
@@ -18,6 +35,9 @@ struct RateLimitsSnapshot: Codable, Equatable {
     /// "seven_day_fable"). Only populated by the /api/oauth/usage path;
     /// the response-header path cannot see these windows at all.
     let models: [String: WindowSnapshot]
+    /// The weekly usage split by surface. Same source and same authority
+    /// rule as `models`: only the usage endpoint reports it.
+    let breakdown: [UsageShare]
 
     /// Whether `models` is a *complete statement* of the per-model weekly
     /// windows that exist for this account, or merely "this source has
@@ -37,6 +57,7 @@ struct RateLimitsSnapshot: Codable, Equatable {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.models = [:]
+        self.breakdown = []
         self.modelsAreAuthoritative = false
     }
 
@@ -47,11 +68,13 @@ struct RateLimitsSnapshot: Codable, Equatable {
     init(
         fiveHour: WindowSnapshot?,
         sevenDay: WindowSnapshot?,
-        models: [String: WindowSnapshot]
+        models: [String: WindowSnapshot],
+        breakdown: [UsageShare] = []
     ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.models = models
+        self.breakdown = breakdown
         self.modelsAreAuthoritative = true
     }
 
@@ -59,6 +82,7 @@ struct RateLimitsSnapshot: Codable, Equatable {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case models = "model_windows"
+        case breakdown = "weekly_breakdown"
     }
 
     init(from decoder: Decoder) throws {
@@ -69,6 +93,7 @@ struct RateLimitsSnapshot: Codable, Equatable {
             [String: WindowSnapshot].self, forKey: .models
         ) ?? [:]
         models = decodedModels
+        breakdown = try c.decodeIfPresent([UsageShare].self, forKey: .breakdown) ?? []
         // Not persisted, and — as things stand — never read back: the flag
         // describes where a *freshly parsed* snapshot came from, and
         // `CacheStore.update` consults it only on `incoming`, which always
@@ -87,5 +112,6 @@ struct RateLimitsSnapshot: Codable, Equatable {
         try c.encodeIfPresent(fiveHour, forKey: .fiveHour)
         try c.encodeIfPresent(sevenDay, forKey: .sevenDay)
         if !models.isEmpty { try c.encode(models, forKey: .models) }
+        if !breakdown.isEmpty { try c.encode(breakdown, forKey: .breakdown) }
     }
 }

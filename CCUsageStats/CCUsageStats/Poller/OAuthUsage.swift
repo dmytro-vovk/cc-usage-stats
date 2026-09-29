@@ -121,9 +121,18 @@ enum OAuthUsage {
             if let w = window(key) { models[key] = w }
         }
 
+        let rows = (obj["seven_day_breakdown"] as? [String: Any])?["rows"] as? [[String: Any]] ?? []
+        let breakdown = rows.compactMap { row -> UsageShare? in
+            guard let key = row["key"] as? String,
+                  let name = row["display_name"] as? String,
+                  let percent = row["percent"] as? Double
+            else { return nil }
+            return UsageShare(key: key, name: name, percent: percent)
+        }
+
         let five = window("five_hour")
         let seven = window("seven_day")
         if five == nil, seven == nil, models.isEmpty { return nil }
-        return RateLimitsSnapshot(fiveHour: five, sevenDay: seven, models: models)
+        return RateLimitsSnapshot(fiveHour: five, sevenDay: seven, models: models, breakdown: breakdown)
     }
 }

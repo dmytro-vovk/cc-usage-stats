@@ -65,7 +65,8 @@ enum CacheStore {
         let merged = RateLimitsSnapshot(
             fiveHour: incoming.fiveHour ?? existing?.fiveHour,
             sevenDay: incoming.sevenDay ?? existing?.sevenDay,
-            models: incoming.modelsAreAuthoritative ? incoming.models : [:]
+            models: incoming.modelsAreAuthoritative ? incoming.models : [:],
+            breakdown: incoming.modelsAreAuthoritative ? incoming.breakdown : []
         )
         let state = CachedState(capturedAt: now, snapshot: merged)
 

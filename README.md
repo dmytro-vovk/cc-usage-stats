@@ -57,6 +57,11 @@ here in the menubar, without opening Claude Code.
 
 - 5-hour and 7-day windows: title + bold gradient-coloured percentage,
   a tinted progress bar, and a `Resets in …` caption.
+- Under the 7-day bar, once an account is connected, where that week's
+  usage came from — e.g. **"Claude Code 93% · Chats 7%"** (surfaces at
+  0% are omitted). From the usage endpoint's `seven_day_breakdown`; like
+  the per-model rows, it disappears if the app falls back to the
+  response-header path, which cannot see it.
 - One row per per-model weekly window, once an account is connected —
   same percentage/bar/caption treatment as 5h and 7d, without the
   sparkline. The row title comes from the model name the API reports

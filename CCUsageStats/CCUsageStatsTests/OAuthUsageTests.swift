@@ -166,4 +166,35 @@ final class OAuthUsageTests: XCTestCase {
         XCTAssertEqual(Array(snap.models.keys), ["seven_day_opus_4.5"])
         XCTAssertEqual(UsageWindows.label(for: "seven_day_opus_4.5"), "Opus 4.5 weekly")
     }
+
+    /// `seven_day_breakdown.rows` splits the weekly usage by surface. Shape
+    /// from a live response (2026-09-29); API order is kept.
+    func testWeeklyBreakdownIsParsedInOrder() {
+        let json = """
+        {"seven_day":{"utilization":24,"resets_at":"2026-10-05T09:59:59Z"},
+         "seven_day_breakdown":{"as_of":"2026-09-29T00:07:39Z","window_started_at":"2026-09-28T09:59:59Z",
+          "rows":[{"display_name":"Claude Code","key":"claude_code","percent":93},
+                  {"display_name":"Chats","key":"chat","percent":7},
+                  {"display_name":"Cowork","key":"cowork","percent":0}]}}
+        """
+        guard case let .success(snap) = OAuthUsage.parse(status: 200, body: body(json)) else {
+            return XCTFail("expected success")
+        }
+        XCTAssertEqual(snap.breakdown, [
+            UsageShare(key: "claude_code", name: "Claude Code", percent: 93),
+            UsageShare(key: "chat", name: "Chats", percent: 7),
+            UsageShare(key: "cowork", name: "Cowork", percent: 0),
+        ])
+    }
+
+    func testBreakdownCaptionSkipsZeroShares() {
+        let rows = [
+            UsageShare(key: "claude_code", name: "Claude Code", percent: 93),
+            UsageShare(key: "chat", name: "Chats", percent: 7),
+            UsageShare(key: "cowork", name: "Cowork", percent: 0),
+        ]
+        XCTAssertEqual(UsageShare.caption(rows), "Claude Code 93% · Chats 7%")
+        XCTAssertNil(UsageShare.caption([]))
+        XCTAssertNil(UsageShare.caption([UsageShare(key: "other", name: "Other", percent: 0)]))
+    }
 }

@@ -231,7 +231,12 @@ struct MenuBarDropdown: View {
                         )
                     }
                 )
-                WindowSection(title: "7-day window", window: cached.snapshot.sevenDay, now: now)
+                WindowSection(
+                    title: "7-day window",
+                    window: cached.snapshot.sevenDay,
+                    now: now,
+                    breakdown: UsageShare.caption(cached.snapshot.breakdown)
+                )
 
                 ForEach(UsageWindows.orderedModelKeys(cached.snapshot.models), id: \.self) { key in
                     WindowSection(
@@ -628,6 +633,8 @@ private struct WindowSection: View {
     let window: WindowSnapshot?
     let now: Int64
     var sparkline: SparklineData? = nil
+    /// Where this window's usage came from, e.g. "Claude Code 93% · Chats 7%".
+    var breakdown: String? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -661,6 +668,12 @@ private struct WindowSection: View {
                         forecastSecondsToCap: sl.forecastSecondsToCap
                     )
                     .frame(height: 32)
+                }
+                if let breakdown {
+                    Text(breakdown)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .wrapsFully()
                 }
                 Text(resetCaption(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
                     .font(.caption)

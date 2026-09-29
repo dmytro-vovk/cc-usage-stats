@@ -242,4 +242,23 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertFalse(withoutModels.modelsAreAuthoritative,
                        "a legacy or header-written file states nothing about model windows")
     }
+
+    /// The weekly breakdown follows the model windows' rule: only the usage
+    /// endpoint can see it, so it persists from there and a header-path
+    /// poll clears it rather than keeping a split nothing can refresh.
+    func testWeeklyBreakdownPersistsAndHeaderPollClearsIt() throws {
+        let shares = [UsageShare(key: "claude_code", name: "Claude Code", percent: 93)]
+        try CacheStore.update(at: tmpFile, with: RateLimitsSnapshot(
+            fiveHour: nil,
+            sevenDay: WindowSnapshot(usedPercentage: 24, resetsAt: 200),
+            models: [:],
+            breakdown: shares
+        ), now: 1)
+        XCTAssertEqual(try CacheStore.read(at: tmpFile)?.snapshot.breakdown, shares)
+
+        try CacheStore.update(at: tmpFile, with: RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 9, resetsAt: 100), sevenDay: nil
+        ), now: 2)
+        XCTAssertEqual(try CacheStore.read(at: tmpFile)?.snapshot.breakdown, [])
+    }
 }
