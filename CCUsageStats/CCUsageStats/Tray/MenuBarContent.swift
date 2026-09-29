@@ -218,6 +218,11 @@ struct MenuBarDropdown: View {
 
             // Window rows.
             if let cached = vm.cached {
+                let modelKeys = UsageWindows.orderedModelKeys(cached.snapshot.models)
+                let hideReset = UsageWindows.hidesResetCaption(
+                    [cached.snapshot.fiveHour?.resetsAt, cached.snapshot.sevenDay?.resetsAt]
+                        + modelKeys.map { cached.snapshot.models[$0]?.resetsAt }
+                )
                 WindowSection(
                     title: "5-hour session",
                     window: cached.snapshot.fiveHour,
@@ -235,14 +240,16 @@ struct MenuBarDropdown: View {
                     title: "7-day window",
                     window: cached.snapshot.sevenDay,
                     now: now,
-                    breakdown: UsageShare.caption(cached.snapshot.breakdown)
+                    breakdown: UsageShare.caption(cached.snapshot.breakdown),
+                    showsReset: !hideReset[1]
                 )
 
-                ForEach(UsageWindows.orderedModelKeys(cached.snapshot.models), id: \.self) { key in
+                ForEach(Array(modelKeys.enumerated()), id: \.element) { index, key in
                     WindowSection(
                         title: UsageWindows.label(for: key),
                         window: cached.snapshot.models[key],
-                        now: now
+                        now: now,
+                        showsReset: !hideReset[2 + index]
                     )
                 }
 
@@ -635,6 +642,9 @@ private struct WindowSection: View {
     var sparkline: SparklineData? = nil
     /// Where this window's usage came from, e.g. "Claude Code 93% · Chats 7%".
     var breakdown: String? = nil
+    /// False when the window above resets at the same moment, so the
+    /// "Resets in …" line would only repeat it.
+    var showsReset = true
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -675,10 +685,12 @@ private struct WindowSection: View {
                         .foregroundStyle(.secondary)
                         .wrapsFully()
                 }
-                Text(resetCaption(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .wrapsFully()
+                if showsReset {
+                    Text(resetCaption(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .wrapsFully()
+                }
             }
         } else {
             VStack(alignment: .leading, spacing: 2) {

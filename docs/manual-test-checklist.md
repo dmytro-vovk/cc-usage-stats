@@ -170,7 +170,9 @@ Skip this if you've never had the Phase 1 statusline integration.
       account has a weekly cap for) appears within a poll, matching the
       model entries in the `limits` array.
 - [ ] Under the 7-day bar, a caption like "Claude Code 93% · Chats 7%"
-      shows where the week's usage came from, omitting 0% surfaces. Check what the API sent with
+      shows where the week's usage came from, omitting 0% surfaces.
+- [ ] When a model's weekly window resets with the 7-day window, only the
+      7-day row shows "Resets in …"; the model row has no reset line. Check what the API sent with
       `/usr/bin/log show --last 5m --predicate 'subsystem ==
       "dev.dv.ccusagestats" AND category == "usage"'`.
 - [ ] After "Connect Claude account": browser opens, approval returns to the

@@ -35,4 +35,20 @@ final class UsageWindowsTests: XCTestCase {
         XCTAssertEqual(UsageWindows.orderedModelKeys(models),
                        ["seven_day_fable", "seven_day_sonnet"])
     }
+
+    /// The dropdown stacks 5h, 7d, then model windows. A window that resets
+    /// together with the one above it (7d and "Fable weekly" do) drops its
+    /// "Resets in …" line; the first of the run keeps it. Resets within a
+    /// minute count as together — the API stamps one moment with differing
+    /// sub-second fractions, so parsed epochs can differ by a second.
+    func testResetCaptionHiddenWhenItMatchesTheWindowAbove() {
+        XCTAssertEqual(
+            UsageWindows.hidesResetCaption([1_000, 500_000, 500_001, 500_000, 900_000]),
+            [false, false, true, true, false]
+        )
+        // A missing window breaks the run: nothing above to repeat.
+        XCTAssertEqual(UsageWindows.hidesResetCaption([500_000, nil, 500_000]), [false, false, false])
+        XCTAssertEqual(UsageWindows.hidesResetCaption([500_000, 500_061]), [false, false])
+        XCTAssertEqual(UsageWindows.hidesResetCaption([]), [])
+    }
 }

@@ -37,6 +37,19 @@ enum UsageWindows {
         }
     }
 
+    /// For windows stacked top to bottom, whether each should drop its
+    /// "Resets in …" line because the window directly above resets at the
+    /// same moment (7d and a model's weekly cap usually do). The first of a
+    /// run keeps it. Within `tolerance` seconds counts as the same moment:
+    /// the API stamps one reset with differing sub-second fractions. A nil
+    /// (unobserved) window breaks the run.
+    static func hidesResetCaption(_ resets: [Int64?], tolerance: Int64 = 60) -> [Bool] {
+        resets.indices.map { i in
+            guard i > 0, let this = resets[i], let above = resets[i - 1] else { return false }
+            return abs(this - above) <= tolerance
+        }
+    }
+
     /// Deterministic render order so the dropdown does not reshuffle
     /// between polls.
     static func orderedModelKeys(_ models: [String: WindowSnapshot]) -> [String] {

@@ -56,7 +56,9 @@ here in the menubar, without opening Claude Code.
 </picture>
 
 - 5-hour and 7-day windows: title + bold gradient-coloured percentage,
-  a tinted progress bar, and a `Resets in …` caption.
+  a tinted progress bar, and a `Resets in …` caption. A window that
+  resets together with the one above it (typically a model's weekly cap
+  under the 7-day window) omits its caption rather than repeating it.
 - Under the 7-day bar, once an account is connected, where that week's
   usage came from — e.g. **"Claude Code 93% · Chats 7%"** (surfaces at
   0% are omitted). From the usage endpoint's `seven_day_breakdown`; like
