@@ -59,6 +59,13 @@ here in the menubar, without opening Claude Code.
   a tinted progress bar, and a `Resets in …` caption. A window that
   resets together with the one above it (typically a model's weekly cap
   under the 7-day window) omits its caption rather than repeating it.
+- On the 7-day bar and each per-model weekly bar, a **pace tick** marks
+  how much of the week has elapsed — usage left of it is on track. When
+  usage runs ahead of the tick, the part of the bar past it turns red and
+  the caption appends `· capacity at Fri 14:00` (or `capacity today at
+  18:30`): when the limit runs out at the week's average rate so far.
+  The red segment and caption are held back for the first 24 hours of a
+  window, when one burst would extrapolate to a false alarm.
 - Under the 7-day bar, once an account is connected, where that week's
   usage came from — e.g. **"Claude Code 93% · Chats 7%"** (surfaces at
   0% are omitted). From the usage endpoint's `seven_day_breakdown`; like

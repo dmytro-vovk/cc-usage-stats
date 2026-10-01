@@ -241,7 +241,8 @@ struct MenuBarDropdown: View {
                     window: cached.snapshot.sevenDay,
                     now: now,
                     breakdown: UsageShare.caption(cached.snapshot.breakdown),
-                    showsReset: !hideReset[1]
+                    showsReset: !hideReset[1],
+                    tracksPace: true
                 )
 
                 ForEach(Array(modelKeys.enumerated()), id: \.element) { index, key in
@@ -249,7 +250,8 @@ struct MenuBarDropdown: View {
                         title: UsageWindows.label(for: key),
                         window: cached.snapshot.models[key],
                         now: now,
-                        showsReset: !hideReset[2 + index]
+                        showsReset: !hideReset[2 + index],
+                        tracksPace: true
                     )
                 }
 
@@ -645,6 +647,9 @@ private struct WindowSection: View {
     /// False when the window above resets at the same moment, so the
     /// "Resets in …" line would only repeat it.
     var showsReset = true
+    /// 7-day windows: mark the even-pace point on the bar and, when usage
+    /// is ahead of it, when the limit runs out.
+    var tracksPace = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -653,6 +658,8 @@ private struct WindowSection: View {
             let fraction = max(0.0, min(1.0, w.usedPercentage / 100.0))
             let color = UsageColor.gradient(t: fraction, scheme: colorScheme)
             let delta = w.resetsAt - now
+            let pace = tracksPace ? WeeklyPace.compute(window: w, now: now) : nil
+            let caption = captionText(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap, pace: pace)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
@@ -666,9 +673,12 @@ private struct WindowSection: View {
                         .monospacedDigit()
                         .foregroundStyle(color)
                 }
-                ProgressView(value: fraction)
-                    .progressViewStyle(.linear)
-                    .tint(color)
+                UsageBar(
+                    fraction: fraction,
+                    color: color,
+                    pace: pace,
+                    overshootColor: UsageColor.gradient(t: 1, scheme: colorScheme)
+                )
                 if let sl = sparkline, sl.samples.count >= 2 {
                     SparklineView(
                         samples: sl.samples,
@@ -685,8 +695,8 @@ private struct WindowSection: View {
                         .foregroundStyle(.secondary)
                         .wrapsFully()
                 }
-                if showsReset {
-                    Text(resetCaption(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
+                if let caption {
+                    Text(caption)
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .wrapsFully()
@@ -704,6 +714,17 @@ private struct WindowSection: View {
         }
     }
 
+    private func captionText(delta: Int64, forecastSecs: Int64?, pace: WeeklyPace?) -> String? {
+        var parts: [String] = []
+        if showsReset {
+            parts.append(resetCaption(delta: delta, forecastSecs: forecastSecs))
+        }
+        if let at = pace?.capacityAt {
+            parts.append(WeeklyPace.capacityCaption(at: at, now: now))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     private func resetCaption(delta: Int64, forecastSecs: Int64?) -> String {
         let resetPart: String
         if delta >= 0 {
@@ -715,5 +736,54 @@ private struct WindowSection: View {
             return "\(resetPart) · forecast 100% in \(RelativeTime.format(seconds: f))"
         }
         return resetPart
+    }
+}
+
+/// Linear usage bar. With a pace, a tick marks how much of the window has
+/// elapsed; fill past the tick (usage ahead of an even burn) turns red.
+private struct UsageBar: View {
+    let fraction: Double
+    let color: Color
+    let pace: WeeklyPace?
+    let overshootColor: Color
+
+    private let height: CGFloat = 6
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let fillW = w * fraction
+            let tickX = w * (pace?.elapsedFraction ?? 0)
+            let normalW = pace?.isAhead == true ? min(fillW, tickX) : fillW
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.1))
+                    .frame(height: height)
+                HStack(spacing: 0) {
+                    Rectangle().fill(color).frame(width: normalW)
+                    Rectangle().fill(overshootColor).frame(width: fillW - normalW)
+                }
+                .frame(width: fillW, height: height, alignment: .leading)
+                .clipShape(Capsule())
+                if let pace {
+                    Rectangle()
+                        .fill(pace.isAhead ? Color.primary : Color.secondary)
+                        .frame(width: 2, height: height + 4)
+                        .offset(x: max(0, min(w - 2, tickX - 1)))
+                }
+            }
+            .frame(height: height + 4)
+        }
+        .frame(height: height + 4)
+        .padding(.vertical, 1)
+        .accessibilityElement()
+        .accessibilityLabel("Usage")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var accessibilityValue: String {
+        let used = "\(Int((fraction * 100).rounded()))%"
+        guard let pace else { return used }
+        let elapsed = "\(Int((pace.elapsedFraction * 100).rounded()))% of window elapsed"
+        return pace.isAhead ? "\(used), ahead of pace, \(elapsed)" : "\(used), \(elapsed)"
     }
 }

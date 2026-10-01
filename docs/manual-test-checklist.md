@@ -174,6 +174,15 @@ Skip this if you've never had the Phase 1 statusline integration.
       model entries in the `limits` array.
 - [ ] Under the 7-day bar, a caption like "Claude Code 93% · Chats 7%"
       shows where the week's usage came from, omitting 0% surfaces.
+- [ ] The 7-day and per-model weekly bars carry a pace tick at the elapsed
+      share of the week (e.g. "Resets in 4d" → tick at ~43%). The 5-hour bar
+      has none.
+- [ ] Usage left of the tick: fill keeps its usual colour, tick is muted, no
+      capacity caption.
+- [ ] Usage right of the tick (more than 24h into the window): fill past the
+      tick is red and the caption ends `· capacity at <Day HH:mm>`
+      (`capacity today at HH:mm` if it runs out today). In the first 24h of a
+      window only the tick shows.
 - [ ] When a model's weekly window resets with the 7-day window, only the
       7-day row shows "Resets in …"; the model row has no reset line. Check what the API sent with
       `/usr/bin/log show --last 5m --predicate 'subsystem ==
