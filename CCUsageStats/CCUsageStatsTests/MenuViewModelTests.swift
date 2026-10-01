@@ -64,17 +64,45 @@ final class MenuViewModelTests: XCTestCase {
 
     /// A latch the test opens by hand, so "the flow is still in flight" is a
     /// fact rather than a sleep.
-    private final class Latch {
+    ///
+    /// Locked because `wait()` and `open()` can run on different threads:
+    /// under Swift < 6.2 (CI's Xcode 16) a nonisolated async method runs on
+    /// the global executor, not the caller's actor. Checking `opened` and
+    /// storing the continuation as two unlocked steps let `open()` land in
+    /// between and find nothing to resume — the test then hung until CI's
+    /// 6-hour job limit.
+    private final class Latch: @unchecked Sendable {
+        private let lock = NSLock()
         private var continuation: CheckedContinuation<Void, Never>?
         private var opened = false
+
+        /// True once a caller is parked in `wait()`.
+        var hasWaiter: Bool { locked { continuation != nil } }
+
         func wait() async {
-            if opened { return }
-            await withCheckedContinuation { self.continuation = $0 }
+            await withCheckedContinuation { c in
+                let resumeNow = locked { () -> Bool in
+                    if opened { return true }
+                    continuation = c
+                    return false
+                }
+                if resumeNow { c.resume() }
+            }
         }
+
         func open() {
-            opened = true
-            continuation?.resume()
-            continuation = nil
+            let c = locked { () -> CheckedContinuation<Void, Never>? in
+                opened = true
+                defer { continuation = nil }
+                return continuation
+            }
+            c?.resume()
+        }
+
+        private func locked<T>(_ body: () -> T) -> T {
+            lock.lock()
+            defer { lock.unlock() }
+            return body()
         }
     }
 
@@ -305,14 +333,24 @@ final class MenuViewModelTests: XCTestCase {
         })
 
         let first = Task { await vm.performConnect() }
-        // Spin until the first attempt is provably inside the flow, rather
-        // than sleeping and hoping.
-        var spins = 0
-        while !vm.isConnecting, spins < 1_000 {
+        // Wait until the first attempt is provably parked inside the flow —
+        // not merely flagged as connecting, which happens before the flow
+        // starts and may run on another thread. Bounded by time, not spin
+        // count, since the flow can need a real thread hop to get there.
+        let deadline = Date().addingTimeInterval(10)
+        while !latch.hasWaiter, Date() < deadline {
             await Task.yield()
-            spins += 1
         }
-        XCTAssertTrue(vm.isConnecting, "the first attempt never started")
+        guard latch.hasWaiter else {
+            // Bail out rather than continue: the second Connect below could
+            // otherwise win the guard, park in the latch, and hang the run.
+            XCTFail("the first attempt never reached the flow")
+            latch.open()
+            await first.value
+            vm.stop()
+            return
+        }
+        XCTAssertTrue(vm.isConnecting)
 
         await vm.performConnect()
         XCTAssertEqual(calls.value, 1, "a second Connect while one is in flight must be ignored")
