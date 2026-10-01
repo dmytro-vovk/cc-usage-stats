@@ -10,6 +10,9 @@ jobs:
   test:
     name: Build + unit tests
     runs-on: macos-15
+    # A healthy run takes ~5 min. Without a cap, a hung test host sits
+    # until GitHub's 6-hour limit.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -30,13 +33,29 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             MACOSX_DEPLOYMENT_TARGET=13.5
 
+      # Per-test timeouts make xcodebuild kill and name a test that never
+      # returns, instead of hanging silently (it prints per-test output only
+      # at the end). The result bundle is kept even on failure or timeout.
       - name: Run unit tests
+        timeout-minutes: 15
         run: |
           xcodebuild test \
             -scheme CCUsageStats \
             -destination 'platform=macOS' \
             -project CCUsageStats/CCUsageStats.xcodeproj \
             -only-testing:CCUsageStatsTests \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 120 \
+            -resultBundlePath TestResults.xcresult \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_REQUIRED=NO \
             MACOSX_DEPLOYMENT_TARGET=13.5
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+          if-no-files-found: ignore
