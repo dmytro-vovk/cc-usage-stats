@@ -313,8 +313,10 @@ evolved in both — this README is the current source of truth).
 
 ## Install
 
-Requires macOS 13+ and Xcode. Apple Silicon — `scripts/build.sh` produces
-an arm64-only binary.
+Requires macOS 13+ and Xcode 26 or newer (CI uses 26.6). Older Xcode
+still compiles the project but ignores its Swift 6.2 concurrency settings
+(`MainActor` default isolation), so the build runs with different
+threading. Apple Silicon — `scripts/build.sh` produces an arm64-only binary.
 
 ```bash
 ./scripts/install-dev.sh
