@@ -21,7 +21,8 @@ struct SparklineView: View {
 
     @ViewBuilder
     private func content(size: CGSize) -> some View {
-        let pts = points(in: size)
+        let series = Self.series(samples: samples, windowStart: windowStart, windowEnd: windowEnd)
+        let pts = series.solid.map { pointFor(t: $0.t, p: $0.p, in: size) }
         let hourXs = hourBoundaries(width: size.width)
 
         ZStack {
@@ -48,9 +49,21 @@ struct SparklineView: View {
                     .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             }
 
+            // App joined mid-window: the line is anchored at the window's
+            // 0% start, but the path between is unobserved — dashed, like
+            // the forecast, rather than a made-up ramp.
+            if let lead = series.dashedLeadIn {
+                Path { p in
+                    p.move(to: pointFor(t: lead.from.t, p: lead.from.p, in: size))
+                    p.addLine(to: pointFor(t: lead.to.t, p: lead.to.p, in: size))
+                }
+                .stroke(color.opacity(0.65),
+                        style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
+            }
+
             if let secs = forecastSecondsToCap,
                secs > 0,
-               let last = samples.last
+               let last = series.solid.last
             {
                 let end = Self.forecastEnd(last: last, secondsToCap: secs, windowEnd: windowEnd)
                 let startPt = pointFor(t: last.t, p: last.p, in: size)
@@ -86,8 +99,28 @@ struct SparklineView: View {
         return out
     }
 
-    private func points(in size: CGSize) -> [CGPoint] {
-        samples.map { pointFor(t: $0.t, p: $0.p, in: size) }
+    /// The line to draw, anchored at the window's start.
+    ///
+    /// A window opens at 0% and usage only rises within it, so when the
+    /// first sample still reads 0% the line was flat at 0% all the way back
+    /// to the start — that segment is observed and drawn solid. When the
+    /// first sample is already above 0% (the app wasn't running when the
+    /// window opened), only the endpoints are known: the lead-in from
+    /// (start, 0%) to that sample is returned separately, to draw dashed.
+    /// Samples outside the window (leftovers from the previous one) are
+    /// dropped and the rest put in time order first.
+    static func series(
+        samples raw: [UsageSample],
+        windowStart: Int64,
+        windowEnd: Int64
+    ) -> (solid: [UsageSample], dashedLeadIn: (from: UsageSample, to: UsageSample)?) {
+        let samples = raw
+            .filter { $0.t >= windowStart && $0.t <= windowEnd }
+            .sorted { $0.t < $1.t }
+        guard let first = samples.first, first.t > windowStart else { return (samples, nil) }
+        let origin = UsageSample(t: windowStart, p: 0)
+        if first.p <= 0 { return ([origin] + samples, nil) }
+        return (samples, (origin, first))
     }
 
     /// Maps a sample to chart-local pixels. The chart is drawn to scale:

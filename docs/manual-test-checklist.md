@@ -83,6 +83,9 @@ Skip this if you've never had the Phase 1 statusline integration.
 
 - After at least two polls, the 5-hour section shows a filled-area
   sparkline beneath the progress bar with a subtle 4pt rounded border.
+- The line starts at the chart's left edge at 0% — solid if the first
+  sample was 0%, dashed up to the first sample if the app started (or woke)
+  with the window already in use.
 - The line ends at the current sample (small dot).
 - The chart is to scale: the Y axis is a fixed 0–100% (at 50% usage the dot
   sits at half height), and the X axis spans the whole 5-hour window (with

@@ -88,7 +88,10 @@ here in the menubar, without opening Claude Code.
   recent trend (to 100% if it caps before reset, else to the projected
   value at reset). Drawn to scale: the X axis spans the
   full 5-hour window (window start → reset) and the Y axis is a fixed
-  0–100%, so a 50% session fills half the chart's height. The
+  0–100%, so a 50% session fills half the chart's height. The line
+  always starts at the window's left edge at 0%: solid when the first
+  recorded sample is still 0%, dashed up to the first sample when the app
+  joined the window already in use (the path between wasn't observed). The
   caption appends `· forecast 100% in Nm` when the slope predicts a
   cap before reset. Dashed vertical gridlines mark each elapsed hour of
   the session (1h–4h, at 20/40/60/80% of the width).

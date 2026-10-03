@@ -72,4 +72,63 @@ final class SparklineViewTests: XCTestCase {
         XCTAssertEqual(start.y, 0.6, accuracy: 0.001)
         XCTAssertEqual(SparklineView.fillGradientStart(points: [], height: 100).y, 0, accuracy: 0.001)
     }
+
+    // MARK: - lead-in from window start
+
+    func testFirstSampleAtZeroExtendsSolidLineToWindowStart() {
+        // Usage only rises within a window, so 0% at the first sample means
+        // 0% all the way back to the start: an observed, solid segment.
+        let first = UsageSample(t: start + 600, p: 0)
+        let s = SparklineView.series(samples: [first, UsageSample(t: start + 1200, p: 3)], windowStart: start, windowEnd: end)
+        XCTAssertEqual(s.solid.first, UsageSample(t: start, p: 0))
+        XCTAssertEqual(s.solid.count, 3)
+        XCTAssertNil(s.dashedLeadIn)
+    }
+
+    func testFirstSampleAboveZeroGetsDashedLeadIn() {
+        // App joined mid-window: only the endpoints are known.
+        let first = UsageSample(t: start + 3 * 3600, p: 40)
+        let s = SparklineView.series(samples: [first, UsageSample(t: start + 3 * 3600 + 60, p: 41)], windowStart: start, windowEnd: end)
+        XCTAssertEqual(s.solid.first, first)
+        XCTAssertEqual(s.dashedLeadIn?.from, UsageSample(t: start, p: 0))
+        XCTAssertEqual(s.dashedLeadIn?.to, first)
+    }
+
+    func testFirstSampleAtWindowStartNeedsNoLeadIn() {
+        let samples = [UsageSample(t: start, p: 0), UsageSample(t: start + 60, p: 1)]
+        let s = SparklineView.series(samples: samples, windowStart: start, windowEnd: end)
+        XCTAssertEqual(s.solid, samples)
+        XCTAssertNil(s.dashedLeadIn)
+    }
+
+    func testNoSamplesNoSeries() {
+        let s = SparklineView.series(samples: [], windowStart: start, windowEnd: end)
+        XCTAssertTrue(s.solid.isEmpty)
+        XCTAssertNil(s.dashedLeadIn)
+    }
+
+    func testSamplesFromThePreviousWindowAreDropped() {
+        // A stale 70% from before the window must not draw a 70→0 drop or
+        // block the anchor.
+        let s = SparklineView.series(
+            samples: [UsageSample(t: start - 60, p: 70), UsageSample(t: start + 60, p: 0)],
+            windowStart: start, windowEnd: end)
+        XCTAssertEqual(s.solid, [UsageSample(t: start, p: 0), UsageSample(t: start + 60, p: 0)])
+        XCTAssertNil(s.dashedLeadIn)
+    }
+
+    func testSamplesAreDrawnInTimeOrder() {
+        let s = SparklineView.series(
+            samples: [UsageSample(t: start + 7200, p: 40), UsageSample(t: start + 3600, p: 20)],
+            windowStart: start, windowEnd: end)
+        XCTAssertEqual(s.solid.map(\.t), [start + 3600, start + 7200])
+        XCTAssertEqual(s.dashedLeadIn?.to, UsageSample(t: start + 3600, p: 20))
+    }
+
+    func testSingleSampleAboveZeroIsOnlyALeadIn() {
+        let only = UsageSample(t: start + 600, p: 5)
+        let s = SparklineView.series(samples: [only], windowStart: start, windowEnd: end)
+        XCTAssertEqual(s.solid, [only])
+        XCTAssertEqual(s.dashedLeadIn?.to, only)
+    }
 }
