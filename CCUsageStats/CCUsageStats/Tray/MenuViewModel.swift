@@ -485,13 +485,18 @@ final class MenuViewModel: ObservableObject {
             let sample = UsageSample(t: cached.capturedAt, p: five.usedPercentage)
             // Trim to current 5h window.
             let windowStart = five.resetsAt - 5 * 3600
-            history.append(sample, keepFromEpoch: windowStart)
+            history.append(sample, keepFromEpoch: windowStart, windowEnd: five.resetsAt)
             historySamples = history.samples
-            // Recompute forecast.
-            let m = UsageForecast.slope(samples: historySamples)
-            forecastSecondsToCap = UsageForecast.secondsToCap(
-                currentPercent: five.usedPercentage, slope: m
-            )
+            // Recompute forecast — none for an expired window: there is
+            // nothing left to project, and its history is the old window's.
+            if cached.capturedAt < five.resetsAt {
+                let m = UsageForecast.slope(samples: historySamples)
+                forecastSecondsToCap = UsageForecast.secondsToCap(
+                    currentPercent: five.usedPercentage, slope: m
+                )
+            } else {
+                forecastSecondsToCap = nil
+            }
         }
 
         // Each event has its own sound preference (with "None" to mute

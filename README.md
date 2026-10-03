@@ -303,7 +303,9 @@ account `oauth-token`). It is never logged or written outside Keychain.
 Sample history is appended to
 `~/Library/Application Support/cc-usage-stats/history.jsonl` and trimmed
 to the current 5-hour window. It survives app restarts so the chart
-isn't blank after relaunch.
+isn't blank after relaunch. Polls taken after a window has reset — while
+the API has not yet started the next one — are not recorded: they would
+carry the expired window's percentage into the next window's chart.
 
 See [docs/superpowers/specs/2026-04-25-cc-usage-stats-poller-design.md](docs/superpowers/specs/2026-04-25-cc-usage-stats-poller-design.md)
 for the original v0.2 design and

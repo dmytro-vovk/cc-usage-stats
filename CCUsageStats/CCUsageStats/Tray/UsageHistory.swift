@@ -21,7 +21,15 @@ final class UsageHistory {
     /// Append `sample`. Drop existing entries with `t < keepFromEpoch`.
     /// Best-effort persistence — IO errors are swallowed (the chart is
     /// non-critical UI).
-    func append(_ sample: UsageSample, keepFromEpoch: Int64) {
+    ///
+    /// A sample taken at or after `windowEnd` (its window's own reset) is
+    /// dropped: when the endpoint has no new window yet, the cached expired
+    /// one keeps being polled, and its stale percentage stamped with a fresh
+    /// time lands inside the *next* window — the chart then "falls" from it
+    /// to 0%. Half-open: the reset second itself is the next window's start.
+    /// No default, so no caller can skip the check by accident.
+    func append(_ sample: UsageSample, keepFromEpoch: Int64, windowEnd: Int64) {
+        guard sample.t < windowEnd else { return }
         let trimmed = samples.filter { $0.t >= keepFromEpoch }
         let didTrim = trimmed.count != samples.count
         // Avoid duplicate timestamps (same captured_at as last sample).
