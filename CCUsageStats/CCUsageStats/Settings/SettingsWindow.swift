@@ -33,6 +33,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var tabs: NSTabViewController?
 
     func show(vm: MenuViewModel, tab: SettingsTab) {
+        // The dropdown is a MenuBarExtra panel that stays up while another
+        // window of this app takes focus, covering the Settings window.
+        for w in NSApp.windows where w !== window && w.isVisible
+            && w.className.contains("MenuBarExtra") {
+            w.close()
+        }
         if window == nil { build(vm: vm) }
         tabs?.selectedTabViewItemIndex = tab.rawValue
         // "Last seen" should be current while the user is looking at it.
@@ -48,6 +54,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let host = NSHostingController(rootView: Self.view(for: tab, vm: vm))
             // Each tab sizes the window to its own content.
             host.sizingOptions = [.preferredContentSize]
+            // Propagated to the window title by the tab view controller.
+            host.title = tab.title
             let item = NSTabViewItem(viewController: host)
             item.label = tab.title
             item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
