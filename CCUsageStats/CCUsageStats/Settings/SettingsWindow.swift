@@ -229,6 +229,9 @@ struct AccountsSettingsView: View {
         case .ok, .unknown: break
         }
         switch vm.claudeSource {
+        case .connectedAccount where vm.needsReauthorization:
+            // The poller fell back from a refused session to the pasted token.
+            return ("Account needs reconnecting (using pasted token)", "person.crop.circle.badge.exclamationmark", true)
         case .connectedAccount: return ("Account connected", "checkmark.circle.fill", false)
         case .pastedToken: return ("Using a pasted token (no per-model windows)", "key", false)
         case .none: return ("Not set up", "key.slash", true)

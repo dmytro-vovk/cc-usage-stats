@@ -11,7 +11,8 @@ nonisolated enum CodexSessionReader {
     }
 
     static let initialTailBytes = 256 * 1024
-    /// A larger log than this is skipped rather than read whole.
+    /// The tail read never widens past this; a larger log is still read,
+    /// just only its last `maxReadBytes`.
     static let maxReadBytes = 64 * 1024 * 1024
     /// Give up after this many files without a reading.
     static let maxFiles = 50
@@ -46,12 +47,12 @@ nonisolated enum CodexSessionReader {
         return files.sorted { $0.1 > $1.1 }
     }
 
-    static func latest(inFile url: URL) -> CodexSnapshot? {
+    static func latest(inFile url: URL, maxRead: Int = maxReadBytes) -> CodexSnapshot? {
         guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? h.close() }
-        guard let size = try? h.seekToEnd(), size > 0, size <= UInt64(maxReadBytes) else { return nil }
+        guard let size = try? h.seekToEnd(), size > 0 else { return nil }
 
-        var window = UInt64(initialTailBytes)
+        var window = UInt64(min(initialTailBytes, maxRead))
         while true {
             let start = size > window ? size - window : 0
             guard (try? h.seek(toOffset: start)) != nil,
@@ -60,8 +61,8 @@ nonisolated enum CodexSessionReader {
             // Mid-file, the first line is a fragment.
             if start > 0, let nl = text.firstIndex(of: "\n") { text = text[text.index(after: nl)...] }
             if let s = CodexRolloutParser.latest(inText: text) { return s }
-            if start == 0 { return nil }
-            window *= 4
+            if start == 0 || window >= UInt64(maxRead) { return nil }
+            window = min(window * 4, UInt64(maxRead))
         }
     }
 }

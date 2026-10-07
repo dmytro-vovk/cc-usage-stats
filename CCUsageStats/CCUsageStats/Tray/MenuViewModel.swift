@@ -537,16 +537,18 @@ final class MenuViewModel: ObservableObject {
     /// is only seen when the next session writes a log line, so it would
     /// play at an arbitrary later time.
     func handleCodexChange(previous: CodexSnapshot?, current: CodexSnapshot?) {
-        let crossed = CodexSnapshot.crossedThresholds(
+        let crossed = CodexSnapshot.crossings(
             previous: previous, current: current,
             thresholds: alertThresholds, now: Int64(Date().timeIntervalSince1970)
-        )
+        ).flatMap { codexAlertLatch.admit($0.thresholds, window: $0.window) }
         if crossed.contains(100) {
             SoundPlayer.play(named: reachedLimitSound)
         } else if !crossed.isEmpty {
             SoundPlayer.play(named: warningSound)
         }
     }
+
+    private var codexAlertLatch = CodexAlertLatch()
 
     /// 100 always; the user's warning threshold when enabled.
     var alertThresholds: [Int] {

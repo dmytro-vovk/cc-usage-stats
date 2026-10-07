@@ -68,17 +68,33 @@ nonisolated struct CodexSnapshot: Equatable, Sendable {
     static func crossedThresholds(
         previous: CodexSnapshot?, current: CodexSnapshot?, thresholds: [Int], now: Int64
     ) -> [Int] {
+        Array(Set(crossings(previous: previous, current: current, thresholds: thresholds, now: now)
+            .flatMap(\.thresholds))).sorted()
+    }
+
+    /// The same crossings, per window, so a caller can latch them.
+    static func crossings(
+        previous: CodexSnapshot?, current: CodexSnapshot?, thresholds: [Int], now: Int64
+    ) -> [(window: CodexWindow, thresholds: [Int])] {
         guard let previous, let current else { return [] }
-        var crossed = Set<Int>()
-        for cur in current.windows where !cur.hasReset(now: now) {
-            guard let prev = previous.windows.first(where: {
+        return current.windows.compactMap { cur in
+            guard !cur.hasReset(now: now), let prev = previous.windows.first(where: {
                 $0.windowMinutes == cur.windowMinutes && $0.resetsAt == cur.resetsAt
-            }) else { continue }
-            for t in thresholds where prev.usedPercent < Double(t) && cur.usedPercent >= Double(t) {
-                crossed.insert(t)
-            }
+            }) else { return nil }
+            let crossed = thresholds.filter { prev.usedPercent < Double($0) && cur.usedPercent >= Double($0) }
+            return crossed.isEmpty ? nil : (cur, crossed)
         }
-        return crossed.sorted()
+    }
+}
+
+/// Remembers which Codex thresholds already sounded for a window, so readings
+/// that bounce around a threshold (e.g. a live poll and a session log
+/// disagreeing) sound once per window, not on every flip.
+nonisolated struct CodexAlertLatch {
+    private var fired = Set<String>()
+
+    mutating func admit(_ thresholds: [Int], window: CodexWindow) -> [Int] {
+        thresholds.filter { fired.insert("\(window.windowMinutes)/\(window.resetsAt)/\($0)").inserted }
     }
 }
 
@@ -111,11 +127,11 @@ nonisolated enum CodexRolloutParser {
 
         let windows = ["primary", "secondary"].compactMap { key -> CodexWindow? in
             guard let w = limits[key] as? [String: Any],
-                  let used = number(w["used_percent"]),
-                  let minutes = number(w["window_minutes"]),
-                  let resets = number(w["resets_at"])
+                  let used = number(w["used_percent"]), used.isFinite,
+                  let minutes = int64(number(w["window_minutes"])), minutes > 0, minutes <= 1_000_000,
+                  let resets = int64(number(w["resets_at"]))
             else { return nil }
-            return CodexWindow(usedPercent: used, windowMinutes: Int(minutes), resetsAt: Int64(resets))
+            return CodexWindow(usedPercent: used, windowMinutes: Int(minutes), resetsAt: resets)
         }
         guard !windows.isEmpty else { return nil }
         return CodexSnapshot(
@@ -144,6 +160,13 @@ nonisolated enum CodexRolloutParser {
         if let d = f.date(from: s) { return Int64(d.timeIntervalSince1970) }
         f.formatOptions = [.withInternetDateTime]
         return f.date(from: s).map { Int64($0.timeIntervalSince1970) }
+    }
+
+    /// Non-trapping conversion: a valid JSON number like `1e300` must be
+    /// rejected, not crash the app.
+    static func int64(_ v: Double?) -> Int64? {
+        guard let v, v.isFinite, v > -9.2e18, v < 9.2e18 else { return nil }
+        return Int64(v)
     }
 
     static func number(_ v: Any?) -> Double? {

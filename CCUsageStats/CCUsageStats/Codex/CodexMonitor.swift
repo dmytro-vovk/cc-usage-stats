@@ -47,6 +47,10 @@ final class CodexMonitor: ObservableObject {
     private var liveTimer: Timer?
     private var scanning = false
     private var rescanPending = false
+    private var polling = false
+    /// Bumped whenever a source is torn down, so a scan or poll that was in
+    /// flight at the time can tell its result is no longer wanted.
+    private var generation = 0
 
     init(
         sessionsDirectory: URL = CodexSessionReader.defaultDirectory,
@@ -68,6 +72,7 @@ final class CodexMonitor: ObservableObject {
 
     func stop() {
         started = false
+        generation += 1
         stopPassive()
         stopLive()
     }
@@ -98,9 +103,20 @@ final class CodexMonitor: ObservableObject {
         // Watch `~/.codex` rather than `sessions` itself, so a sessions folder
         // created after launch is still picked up.
         let watched = sessionsDirectory.deletingLastPathComponent().path
+        // The stream retains the monitor (released when the stream is), so
+        // its callback can never see a freed object.
         var ctx = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
-            retain: nil, release: nil, copyDescription: nil
+            retain: { info in
+                guard let info else { return nil }
+                _ = Unmanaged<CodexMonitor>.fromOpaque(info).retain()
+                return info
+            },
+            release: { info in
+                guard let info else { return }
+                Unmanaged<CodexMonitor>.fromOpaque(info).release()
+            },
+            copyDescription: nil
         )
         // `~/.codex` also holds SQLite databases that are written constantly
         // while Codex runs; only changes under `sessions/` warrant a re-read.
@@ -138,6 +154,7 @@ final class CodexMonitor: ObservableObject {
         }
         rescanTimer?.invalidate(); rescanTimer = nil
         passiveSnapshot = nil
+        generation += 1
     }
 
     /// FSEvents reports directories, with a trailing slash. A sessions folder
@@ -150,9 +167,10 @@ final class CodexMonitor: ObservableObject {
 
     /// One read at a time; a change arriving mid-read schedules one more.
     private func rescan() {
-        guard trackingEnabled else { return }
+        guard started, trackingEnabled else { return }
         if scanning { rescanPending = true; return }
         scanning = true
+        let gen = generation
         let dir = sessionsDirectory
         Task.detached(priority: .utility) {
             let exists = FileManager.default.fileExists(atPath: dir.path)
@@ -161,7 +179,7 @@ final class CodexMonitor: ObservableObject {
                 guard let self else { return }
                 self.scanning = false
                 self.sessionsDirectoryExists = exists
-                if self.trackingEnabled, s != self.passiveSnapshot {
+                if gen == self.generation, self.started, self.trackingEnabled, s != self.passiveSnapshot {
                     self.passiveSnapshot = s
                     self.publish()
                 }
@@ -185,15 +203,21 @@ final class CodexMonitor: ObservableObject {
         liveTimer?.invalidate(); liveTimer = nil
         liveSnapshot = nil
         liveError = nil
+        generation += 1
     }
 
+    /// One poll at a time, so an older response can't land after a newer one.
     private func pollLive() {
+        guard started, !polling else { return }
+        polling = true
+        let gen = generation
         let authURL = authURL
         lastLiveAttempt = Date()
         Task { @MainActor in
+            defer { self.polling = false }
             let creds = await Task.detached { CodexLiveClient.readCredentials(at: authURL) }.value
             let result = await CodexLiveClient.fetch(credentials: creds, now: Int64(Date().timeIntervalSince1970))
-            guard self.trackingEnabled, self.livePollingEnabled else { return }
+            guard gen == self.generation, self.started, self.trackingEnabled, self.livePollingEnabled else { return }
             switch result {
             case .success(let s):
                 self.liveSnapshot = s

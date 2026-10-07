@@ -129,3 +129,24 @@ final class CodexUsageTests: XCTestCase {
         XCTAssertEqual(CodexSnapshot.crossedThresholds(previous: prev, current: cur, thresholds: [80, 100], now: 6000), [])
     }
 }
+
+final class CodexHardeningTests: XCTestCase {
+    func testOutOfRangeNumbersAreRejectedNotTrapped() {
+        let huge = #"{"timestamp":"2026-10-06T21:54:06Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":1,"window_minutes":1e100,"resets_at":1e300},"secondary":{"used_percent":2,"window_minutes":300,"resets_at":5}}}}"#
+        let s = CodexRolloutParser.parse(line: huge)
+        XCTAssertEqual(s?.windows, [CodexWindow(usedPercent: 2, windowMinutes: 300, resetsAt: 5)])
+        XCTAssertNil(CodexLiveClient.parseUsage(Data(#"{"rate_limit":{"primary_window":{"used_percent":1,"limit_window_seconds":1e100,"reset_at":1}}}"#.utf8), observedAt: 0))
+        XCTAssertNil(CodexRolloutParser.int64(Double.nan))
+        XCTAssertNil(CodexRolloutParser.int64(1e30))
+        XCTAssertEqual(CodexRolloutParser.int64(42.9), 42)
+    }
+
+    func testCodexAlertLatchFiresOncePerWindow() {
+        var latch = CodexAlertLatch()
+        let w = CodexWindow(usedPercent: 81, windowMinutes: 10080, resetsAt: 500)
+        XCTAssertEqual(latch.admit([80], window: w), [80])
+        XCTAssertEqual(latch.admit([80], window: w), [])
+        let next = CodexWindow(usedPercent: 81, windowMinutes: 10080, resetsAt: 9000)
+        XCTAssertEqual(latch.admit([80], window: next), [80])
+    }
+}

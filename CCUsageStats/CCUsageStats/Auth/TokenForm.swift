@@ -121,8 +121,12 @@ struct TokenFormView: View {
             }
             HStack {
                 Spacer()
+                // Disabled mid-test: the verify can't be abandoned halfway,
+                // and a result landing after the sheet closed would still
+                // store the token behind the user's back.
                 Button("Cancel") { onClose() }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(saving)
                 Button(saving ? "Testing…" : "Save & Test") {
                     saving = true
                     Task {

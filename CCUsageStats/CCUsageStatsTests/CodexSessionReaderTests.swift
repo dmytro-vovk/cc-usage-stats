@@ -66,3 +66,15 @@ final class CodexSessionReaderTests: XCTestCase {
         XCTAssertEqual(s.windows.first?.usedPercent, 33)
     }
 }
+
+extension CodexSessionReaderTests {
+    func testOversizedFileStillReadsItsTail() throws {
+        let url = try write("2026/10/06/rollout-big.jsonl", [event("2026-10-06T10:00:00Z", 44)], mtime: Date())
+        // Pretend the cap is tiny: the file is over it, but its tail is readable.
+        XCTAssertEqual(CodexSessionReader.latest(inFile: url, maxRead: 64)?.windows.first?.usedPercent, nil)
+        XCTAssertEqual(CodexSessionReader.latest(inFile: url, maxRead: 4096)?.windows.first?.usedPercent, 44)
+        let padded = try write("2026/10/06/rollout-big2.jsonl",
+                               (0..<100).map { _ in #"{"type":"x"}"# } + [event("2026-10-06T10:00:00Z", 45)], mtime: Date())
+        XCTAssertEqual(CodexSessionReader.latest(inFile: padded, maxRead: 1024)?.windows.first?.usedPercent, 45)
+    }
+}

@@ -36,9 +36,9 @@ nonisolated struct CodexCredentials: Equatable, Sendable {
         b64 += String(repeating: "=", count: (4 - b64.count % 4) % 4)
         guard let data = Data(base64Encoded: b64),
               let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let exp = CodexRolloutParser.number(claims["exp"])
+              let exp = CodexRolloutParser.int64(CodexRolloutParser.number(claims["exp"]))
         else { return nil }
-        return Int64(exp)
+        return exp
     }
 }
 
@@ -120,11 +120,12 @@ nonisolated enum CodexLiveClient {
         else { return nil }
         let windows = ["primary_window", "secondary_window"].compactMap { key -> CodexWindow? in
             guard let w = rl[key] as? [String: Any],
-                  let used = CodexRolloutParser.number(w["used_percent"]),
-                  let secs = CodexRolloutParser.number(w["limit_window_seconds"]),
-                  let reset = CodexRolloutParser.number(w["reset_at"])
+                  let used = CodexRolloutParser.number(w["used_percent"]), used.isFinite,
+                  let secs = CodexRolloutParser.int64(CodexRolloutParser.number(w["limit_window_seconds"])),
+                  secs >= 60, secs <= 60_000_000,
+                  let reset = CodexRolloutParser.int64(CodexRolloutParser.number(w["reset_at"]))
             else { return nil }
-            return CodexWindow(usedPercent: used, windowMinutes: Int(secs) / 60, resetsAt: Int64(reset))
+            return CodexWindow(usedPercent: used, windowMinutes: Int(secs / 60), resetsAt: reset)
         }
         guard !windows.isEmpty else { return nil }
         return CodexSnapshot(windows: windows, planType: obj["plan_type"] as? String,
