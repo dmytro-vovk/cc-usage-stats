@@ -76,15 +76,18 @@ final class SessionTracker: ObservableObject {
     private var scanning = false
     private var rescanPending = false
 
+    /// Path defaults are resolved in the body: default arguments are
+    /// evaluated outside the main actor, where `Paths` lives.
     init(
-        sessionsDir: URL = Paths.liveAppSupportDir.appendingPathComponent("sessions", isDirectory: true),
-        settingsURL: URL = Paths.claudeSettings,
+        sessionsDir: URL? = nil,
+        settingsURL: URL? = nil,
         scriptURL: URL = SessionHookInstaller.defaultScriptURL,
         titlesRoot: URL = DesktopSessionTitles.defaultRoot,
         defaults: UserDefaults = .standard
     ) {
         self.sessionsDir = sessionsDir
-        self.settingsURL = settingsURL
+            ?? Paths.liveAppSupportDir.appendingPathComponent("sessions", isDirectory: true)
+        self.settingsURL = settingsURL ?? Paths.claudeSettings
         self.scriptURL = scriptURL
         self.titlesRoot = titlesRoot
         self.defaults = defaults

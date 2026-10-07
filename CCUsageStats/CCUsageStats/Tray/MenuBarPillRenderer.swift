@@ -150,6 +150,29 @@ enum MenuBarPillRenderer {
         return NSAttributedString(string: s, attributes: [.foregroundColor: color, .font: font])
     }
 
+    // MARK: - Trailing icons
+
+    static let iconGap: CGFloat = 6
+
+    /// Several badges side by side, drawn after the pill as one image.
+    static func joinIcons(_ icons: [NSImage]) -> NSImage? {
+        guard let first = icons.first else { return nil }
+        guard icons.count > 1 else { return first }
+        let width = icons.map(\.size.width).reduce(0, +) + iconGap * CGFloat(icons.count - 1)
+        let height = icons.map(\.size.height).max() ?? 0
+        let joined = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            var x: CGFloat = 0
+            for icon in icons {
+                icon.draw(in: NSRect(x: x, y: (height - icon.size.height) / 2,
+                                     width: icon.size.width, height: icon.size.height))
+                x += icon.size.width + iconGap
+            }
+            return true
+        }
+        joined.isTemplate = false
+        return joined
+    }
+
     // MARK: - Outage badge
 
     /// The badge drawn right of the pill while status.claude.com reports a

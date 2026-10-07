@@ -75,6 +75,12 @@ Compacting, Needs permission, Waiting for input, Error. Done and Idle are
 hidden, and the section disappears when nothing is active (it stays if the
 hooks failed to install, to show why).
 
+Then: rows show only the icon, title and timer — the status in words moves
+to the row tooltip (with the folder). A menu-bar icon after the pill shows
+the most severe active status (Error › Needs permission › Waiting for input
+› Working › Compacting; grey "zzz" when none), composed with the outage
+badge into one trailing image.
+
 A permission prompt stays "Needs permission" until the approved tool finishes
 (the next PostToolUse) — no hook fires on approval itself.
 

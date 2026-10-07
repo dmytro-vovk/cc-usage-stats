@@ -56,6 +56,11 @@ work between the two quotas. See [Codex usage](#codex-usage).
 - A red `⚠︎` triangle (in place of the gauge) when there is nothing left
   to poll with: no token set, the token rejected, or a connected
   account's session expired with no pasted token behind it.
+- With [session tracking](#running-sessions) on, a session icon right of
+  the pill shows the most severe status among your active Claude Code
+  sessions — error (red ×) › needs permission (orange hand) › question
+  (orange ?) › working (blue bolt) › compacting — or a grey "zzz" when none
+  is active.
 - With [Codex tracking](#codex-usage) on, **Settings → General → Menu-bar
   pill shows** picks **Claude** (the pill above, the default), **Codex**
   (one band with a `terminal` icon and the highest Codex window %), or
@@ -123,9 +128,9 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the plan and reading age in the header (`prolite · 2m ago`; hover for
   the source, `session log` or `live`). Reset times are row tooltips, as
   for Claude.
-- A **Sessions** section listing your *active* Claude Code sessions —
-  title, status (**Working**, **Needs permission**, **Waiting for input**,
-  …) and time since their last event. Click one to open it. Hidden when
+- A **Sessions** section listing your *active* Claude Code sessions — a
+  status icon, the title and the time since their last event (hover for
+  the status in words and the folder). Click one to open it. Hidden when
   nothing is active. See [Running sessions](#running-sessions).
 - The **No token set** / **Token rejected** rows offer the one-click
   Keychain import plus **Set a token…**, which opens Settings on the
@@ -202,6 +207,12 @@ left out, and the section disappears when nothing is active:
 | **Working** / **Compacting** | Busy |
 | *Done* (hidden) | The turn finished; nothing is being asked |
 | *Idle* (hidden) | Started, no prompt yet |
+
+Each row is a status icon, the title and the time since the session's last
+event; hover it for the status in words and the folder. The menu-bar icon
+next to the pill shows the most severe active status (Error › Needs
+permission › Waiting for input › Working › Compacting), or a grey "zzz"
+when nothing is active.
 
 Click a row to open it: a desktop-app session opens in the Claude app at
 that exact conversation; a terminal session brings its terminal app

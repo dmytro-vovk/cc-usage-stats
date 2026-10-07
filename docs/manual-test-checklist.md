@@ -343,6 +343,10 @@ Skip this if you've never had the Phase 1 statusline integration.
   **Done** and drops off the list (the section hides when nothing is
   active). A question from Claude shows **Waiting for input**. Trigger a permission prompt → **Needs permission**
   (orange, sorted first).
+- The menu-bar icon right of the pill: grey "zzz" with nothing active;
+  blue bolt while a session works; orange hand on a permission prompt;
+  red × after an error (red wins over everything). Rows show only icon,
+  title and timer; hovering a row shows e.g. "Needs permission — ~/path".
 - Desktop session rows show the session title; clicking opens that
   session in the Claude app. Terminal session rows show the folder;
   clicking brings the terminal forward.

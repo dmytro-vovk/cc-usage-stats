@@ -95,6 +95,8 @@ nonisolated struct RunningSession: Identifiable, Equatable, Sendable {
     let record: SessionRecord
     let title: String
     var status: SessionStatus { record.status }
+    /// The row's hover text: what it's doing, and where.
+    var tooltip: String { "\(status.label) — \(record.cwd ?? title)" }
 }
 
 nonisolated enum RunningSessions {
@@ -113,6 +115,13 @@ nonisolated enum RunningSessions {
                 if $0.record.updatedAt != $1.record.updatedAt { return $0.record.updatedAt > $1.record.updatedAt }
                 return $0.id < $1.id
             }
+    }
+
+    /// The status the menu-bar icon shows: error, then permission, then a
+    /// question, then busy. nil when nothing is active.
+    static func mostSevere(_ sessions: [RunningSession]) -> SessionStatus? {
+        let rank: [SessionStatus: Int] = [.error: 5, .needsPermission: 4, .waitingForInput: 3, .working: 2, .compacting: 1]
+        return sessions.map(\.status).filter { rank[$0] != nil }.max { rank[$0]! < rank[$1]! }
     }
 
     static func fallbackTitle(_ r: SessionRecord) -> String {

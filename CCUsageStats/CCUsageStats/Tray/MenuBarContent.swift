@@ -22,7 +22,14 @@ struct MenuBarLabel: View {
         let onColor = (isDark ? NSColor.black : NSColor.white)
             .withAlphaComponent(staleAlpha)
 
-        let outageIcon = buildOutageIcon(staleAlpha: staleAlpha)
+        // Badges after the pill: the busiest session's status (when session
+        // tracking is on), then the status.claude.com outage badge.
+        let sessionIcon = vm.sessions.enabled
+            ? SessionStatusIcon.menuBarImage(for: RunningSessions.mostSevere(vm.sessions.sessions))
+            : nil
+        let outageIcon = MenuBarPillRenderer.joinIcons(
+            [sessionIcon, buildOutageIcon(staleAlpha: staleAlpha)].compactMap { $0 }
+        )
 
         // Split-pill mode surfaces the 7-day window and/or the busiest
         // per-model weekly window in the menubar — each joins only when
@@ -591,17 +598,19 @@ private struct SessionRow: View {
         let canOpen = SessionOpener.target(for: session.record) != nil
         Button(action: open) {
             HStack(spacing: 6) {
-                Image(systemName: symbol)
+                Image(systemName: SessionStatusIcon.symbol(for: session.status))
                     .font(.caption)
-                    .foregroundStyle(color)
+                    .sessionStatusStyle(session.status)
                     .frame(width: 14)
                 Text(session.title)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 6)
-                Text("\(session.status.label) · \(RelativeTime.format(seconds: now - session.record.updatedAt))")
+                // Just the timer; the status is the icon, spelled out on hover.
+                Text(RelativeTime.format(seconds: now - session.record.updatedAt))
                     .font(.caption)
-                    .foregroundStyle(session.status.needsAttention ? color : .secondary)
+                    .foregroundStyle(session.status.needsAttention
+                                     ? Color(nsColor: SessionStatusIcon.fill(for: session.status)) : .secondary)
                     .monospacedDigit()
                     .lineLimit(1)
                     .fixedSize()
@@ -610,30 +619,8 @@ private struct SessionRow: View {
         }
         .buttonStyle(.plain)
         .disabled(!canOpen)
-        .help(session.record.cwd ?? session.title)
+        .help(session.tooltip)
         .accessibilityLabel("\(session.title), \(session.status.label)")
-    }
-
-    private var symbol: String {
-        switch session.status {
-        case .needsPermission: return "hand.raised.fill"
-        case .error: return "exclamationmark.triangle.fill"
-        case .waitingForInput: return "questionmark.bubble.fill"
-        case .done: return "checkmark.circle"
-        case .working: return "circle.dotted.circle"
-        case .compacting: return "arrow.down.right.and.arrow.up.left"
-        case .idle: return "circle"
-        }
-    }
-
-    private var color: Color {
-        switch session.status {
-        case .needsPermission: return .orange
-        case .error: return .red
-        case .waitingForInput: return .orange
-        case .working, .compacting: return .blue
-        case .done, .idle: return .secondary
-        }
     }
 }
 
