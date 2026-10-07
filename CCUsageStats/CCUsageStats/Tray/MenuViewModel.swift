@@ -81,7 +81,8 @@ final class MenuViewModel: ObservableObject {
 
     @Published private(set) var historySamples: [UsageSample] = []
     @Published private(set) var forecastSecondsToCap: Int64?
-    @Published private(set) var statusReport: StatusReport?
+    /// Settable in-module so a render can show an outage without the alert sound.
+    @Published internal(set) var statusReport: StatusReport?
 
     private var poller: UsagePoller?
     private var statusPoller: StatusPoller?
