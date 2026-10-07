@@ -347,6 +347,10 @@ Skip this if you've never had the Phase 1 statusline integration.
   blue bolt while a session works; orange hand on a permission prompt;
   red × after an error (red wins over everything). Rows show only icon,
   title and timer; hovering a row shows e.g. "Needs permission — ~/path".
+- The list sits at the top of the dropdown with no heading. With two or
+  more sessions changing state, hover the list: rows stay in place (icons
+  and timers still update); move out and it re-sorts. A session that
+  ends while you hover stays until you move out.
 - Desktop session rows show the session title; clicking opens that
   session in the Claude app. Terminal session rows show the folder;
   clicking brings the terminal forward.

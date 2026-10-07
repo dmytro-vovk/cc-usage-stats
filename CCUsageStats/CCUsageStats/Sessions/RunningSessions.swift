@@ -181,3 +181,15 @@ nonisolated struct DesktopSessionTitles {
         return nil
     }
 }
+
+/// Keeps the session list still under the pointer. While frozen, the rows
+/// and their order are the ones shown when the pointer arrived; each row's
+/// contents (status, timer) still update. New sessions, re-sorting and
+/// removals wait until the pointer leaves — a moving list is hard to click.
+nonisolated enum SessionListFreeze {
+    static func display(frozen: [RunningSession]?, live: [RunningSession]) -> [RunningSession] {
+        guard let frozen else { return live }
+        let byID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return frozen.map { byID[$0.id] ?? $0 }
+    }
+}

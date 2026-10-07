@@ -81,6 +81,12 @@ the most severe active status (Error › Needs permission › Waiting for input
 › Working › Compacting; grey "zzz" when none), composed with the outage
 badge into one trailing image.
 
+Then: the list moved to the top of the dropdown without a heading, and it
+holds still under the pointer (`SessionListFreeze`): rows and order are
+those shown when the pointer arrived, each row's contents still update,
+and additions, removals and re-sorting wait until the pointer leaves (or
+the panel closes).
+
 A permission prompt stays "Needs permission" until the approved tool finishes
 (the next PostToolUse) — no hook fires on approval itself.
 

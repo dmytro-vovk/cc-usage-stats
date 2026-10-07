@@ -212,6 +212,12 @@ struct MenuBarDropdown: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Active sessions first: the thing most likely to need a click.
+            // Shows itself only when there's something to show.
+            if vm.sessions.enabled {
+                SessionsSection(tracker: vm.sessions, now: now)
+            }
+
             // Outage banner (only when status.claude.com reports anything
             // beyond "All Systems Operational").
             statusBanner
@@ -277,12 +283,6 @@ struct MenuBarDropdown: View {
                 CodexSection(snapshot: vm.codex.snapshot, now: now)
             }
 
-            // Only while something is active (or the hooks need attention):
-            // a quiet dropdown when all sessions are done or idle.
-            if vm.sessions.enabled, !vm.sessions.sessions.isEmpty || vm.sessions.hookFailed {
-                Divider()
-                SessionsSection(tracker: vm.sessions, now: now)
-            }
 
             // Auth / connectivity status.
             authStatusRow
@@ -551,7 +551,10 @@ struct MenuBarDropdown: View {
     }
 }
 
-/// Live Claude Code sessions, from the hooks. Rows open their session.
+/// Active Claude Code sessions, from the hooks. Rows open their session.
+/// No header: the rows' icons say what they are. Frozen while hovered (see
+/// `SessionListFreeze`), and it stays on screen until the pointer leaves
+/// even if every session finishes meanwhile.
 private struct SessionsSection: View {
     @ObservedObject var tracker: SessionTracker
     let now: Int64
@@ -559,32 +562,39 @@ private struct SessionsSection: View {
     /// expands. Attention-needing sessions sort first, so they're never hidden.
     private let maxRows = 8
     @State private var expanded = false
+    /// The rows shown when the pointer arrived; nil when it isn't over the list.
+    @State private var frozen: [RunningSession]?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Sessions").font(.headline)
-                Spacer()
-                if !tracker.sessions.isEmpty {
-                    Text("\(tracker.sessions.count) active")
+        let shown = SessionListFreeze.display(frozen: frozen, live: tracker.sessions)
+        if !shown.isEmpty || tracker.hookFailed {
+            VStack(alignment: .leading, spacing: 4) {
+                if case .failed(let why) = tracker.hookState {
+                    Text("Session hooks couldn't be installed: \(why)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.red)
+                        .wrapsFully()
+                }
+                ForEach(expanded ? shown : Array(shown.prefix(maxRows))) { session in
+                    SessionRow(session: session, now: now) { tracker.open(session) }
+                }
+                if shown.count > maxRows {
+                    Button(expanded ? "Show fewer" : "+\(shown.count - maxRows) more") { expanded.toggle() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
                 }
             }
-            if case .failed(let why) = tracker.hookState {
-                Text("Session hooks couldn't be installed: \(why)")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .wrapsFully()
+            .contentShape(Rectangle())
+            .onHover { inside in
+                frozen = inside ? shown : nil
             }
-            ForEach(expanded ? Array(tracker.sessions) : Array(tracker.sessions.prefix(maxRows))) { session in
-                SessionRow(session: session, now: now) { tracker.open(session) }
+            // The panel can close with the pointer still over the list, and
+            // then no hover-exit arrives. Closing always takes key status
+            // away, so thaw on that too.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+                frozen = nil
             }
-            if tracker.sessions.count > maxRows {
-                Button(expanded ? "Show fewer" : "+\(tracker.sessions.count - maxRows) more") { expanded.toggle() }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-            }
+            Divider()
         }
     }
 }

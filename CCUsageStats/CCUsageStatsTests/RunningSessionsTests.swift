@@ -121,3 +121,26 @@ final class RunningSessionsTests: XCTestCase {
         XCTAssertNil(DesktopSessionTitles(root: root).title(forHostSession: "../../etc"))
     }
 }
+
+final class SessionListFreezeTests: XCTestCase {
+    private func s(_ sid: String, _ event: String = "PreToolUse", at: Int64 = 0) -> RunningSession {
+        let json = #"{"pid":1,"session_id":"\#(sid)","hook_event":"\#(event)","cwd":"/x/\#(sid)"}"#
+        return RunningSession(record: SessionRecord.decode(Data(json.utf8), updatedAt: at)!, title: sid)
+    }
+
+    func testNotFrozenShowsTheLiveList() {
+        let live = [s("a"), s("b")]
+        XCTAssertEqual(SessionListFreeze.display(frozen: nil, live: live), live)
+    }
+
+    func testFrozenKeepsOrderButUpdatesRowsInPlace() {
+        let frozen = [s("a", at: 1), s("b", at: 1), s("c", at: 1)]
+        // Live: b now needs permission and sorts first; c ended; d is new.
+        let live = [s("b", "PermissionRequest", at: 9), s("a", at: 5), s("d", at: 9)]
+        let shown = SessionListFreeze.display(frozen: frozen, live: live)
+        XCTAssertEqual(shown.map(\.id), ["a", "b", "c"], "same rows, same order, under the pointer")
+        XCTAssertEqual(shown[0].record.updatedAt, 5, "row contents still update")
+        XCTAssertEqual(shown[1].status, .needsPermission)
+        XCTAssertEqual(shown[2].record.updatedAt, 1, "an ended session stays until the pointer leaves")
+    }
+}

@@ -128,10 +128,10 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the plan and reading age in the header (`prolite · 2m ago`; hover for
   the source, `session log` or `live`). Reset times are row tooltips, as
   for Claude.
-- A **Sessions** section listing your *active* Claude Code sessions — a
-  status icon, the title and the time since their last event (hover for
-  the status in words and the folder). Click one to open it. Hidden when
-  nothing is active. See [Running sessions](#running-sessions).
+- At the very top, your *active* Claude Code sessions — a status icon, the
+  title and the time since their last event (hover for the status in
+  words and the folder). Click one to open it. Hidden when nothing is
+  active. See [Running sessions](#running-sessions).
 - The **No token set** / **Token rejected** rows offer the one-click
   Keychain import plus **Set a token…**, which opens Settings on the
   Accounts tab.
@@ -208,8 +208,12 @@ left out, and the section disappears when nothing is active:
 | *Done* (hidden) | The turn finished; nothing is being asked |
 | *Idle* (hidden) | Started, no prompt yet |
 
-Each row is a status icon, the title and the time since the session's last
-event; hover it for the status in words and the folder. The menu-bar icon
+They're listed at the very top of the dropdown, without a heading. Each row
+is a status icon, the title and the time since the session's last event;
+hover it for the status in words and the folder. While the pointer is over
+the list it holds still — rows keep updating in place and timers keep
+running, but nothing is added, removed or reordered until the pointer
+leaves, so the row you're aiming at doesn't move. The menu-bar icon
 next to the pill shows the most severe active status (Error › Needs
 permission › Waiting for input › Working › Compacting), or a grey "zzz"
 when nothing is active.
