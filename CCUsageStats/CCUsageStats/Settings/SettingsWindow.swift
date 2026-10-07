@@ -29,7 +29,7 @@ enum SettingsTab: Int, CaseIterable {
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowController()
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var tabs: NSTabViewController?
 
     func show(vm: MenuViewModel, tab: SettingsTab) {

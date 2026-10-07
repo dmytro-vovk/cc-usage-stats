@@ -161,8 +161,7 @@ final class MenuViewModel: ObservableObject {
         // status.claude.com from seven processes), not about safety.
         guard !TestEnvironment.isRunningTests else { return }
         // Load history once at startup; it persists across app restarts.
-        history = UsageHistory(url: Paths.historyFile)
-        historySamples = history?.samples ?? []
+        loadHistory(from: Paths.historyFile)
         // Load any cache from previous run.
         reloadCache()
 
@@ -221,6 +220,13 @@ final class MenuViewModel: ObservableObject {
         sp.start()
 
         codex.start()
+    }
+
+    /// Loads the sparkline history. Separate from `start()` so a test (or a
+    /// docs render) can point the dropdown at a copy of real history.
+    func loadHistory(from url: URL) {
+        history = UsageHistory(url: url)
+        historySamples = history?.samples ?? []
     }
 
     func stop() {

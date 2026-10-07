@@ -13,6 +13,10 @@ also see the per-model weekly window (e.g. the premium-model weekly
 cap) — the same meter Claude Code's own `/usage` panel shows — right
 here in the menubar, without opening Claude Code.
 
+Optionally tracks **OpenAI Codex** rate limits too — read from the Codex
+CLI's local session logs, with opt-in live polling — so you can balance
+work between the two quotas. See [Codex usage](#codex-usage).
+
 ## What you see
 
 ### Menubar
@@ -25,6 +29,11 @@ here in the menubar, without opening Claude Code.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-outage-dark.png">
   <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png">
+</picture>
+&nbsp;&nbsp;&nbsp;&nbsp;
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-codex-dark.png">
+  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png" width="112">
 </picture>
 
 - A gauge icon + percentage rendered on a colour-shifted pill — the
@@ -57,7 +66,7 @@ here in the menubar, without opening Claude Code.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png">
-  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png">
+  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png" width="280">
 </picture>
 
 - A **Claude** header with the ↻ refresh button (⌘R) right-aligned;
@@ -144,6 +153,21 @@ arbitrary later time.
 
 ### Settings window
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png">
+  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png" width="460">
+</picture>
+&nbsp;
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-accounts-dark.png">
+  <img alt="Settings — Accounts tab" src="docs/screenshots/settings-accounts-light.png" width="460">
+</picture>
+&nbsp;
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-alerts-dark.png">
+  <img alt="Settings — Alerts tab" src="docs/screenshots/settings-alerts-light.png" width="460">
+</picture>
+
 **⚙ Settings…** (⌘,) in the dropdown footer opens one window with three
 toolbar tabs:
 
@@ -185,11 +209,6 @@ Optional, off by default: **Settings → Accounts → Track Codex usage**.
   [design spec](docs/superpowers/specs/2026-10-07-settings-window-and-codex-usage-design.md).
 
 ### Set / Change OAuth Token
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.png">
-  <img alt="Set OAuth Token window" src="docs/screenshots/settings-light.png">
-</picture>
 
 The sheet opens via **Set token… / Change token…** on the Accounts tab
 of the [Settings window](#settings-window) (or **Set a token…** in the
