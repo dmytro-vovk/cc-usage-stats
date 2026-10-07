@@ -634,54 +634,73 @@ private struct SessionRow: View {
     }
 }
 
-/// A one-line title: truncated normally; while `active` (the row is hovered)
-/// and only if it doesn't fit, it scrolls to its end, pauses, scrolls back
-/// and repeats. Snaps back when the pointer leaves.
-private struct MarqueeText: View {
+/// A one-line title that fades out at the edge instead of an ellipsis, and
+/// — while `active` (its row is hovered), if it doesn't fit — scrolls to
+/// its end, pauses, scrolls back and repeats. Snaps back when the pointer
+/// leaves.
+///
+/// The row's layout comes only from an invisible one-line placeholder; the
+/// visible text is an overlay, so it can never resize the row. (The first
+/// version swapped in an unconstrained text, which grew the row, pushed the
+/// icon and timer out, and flipped itself back to truncated.)
+struct MarqueeText: View {
     let text: String
     let active: Bool
     @State private var textWidth: CGFloat = 0
     @State private var boxWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
 
+    /// Width of the fade at a clipped edge.
+    private static let fade: CGFloat = 16
+
     private var overflow: CGFloat { MarqueeTiming.overflow(textWidth: textWidth, boxWidth: boxWidth) }
+    private var scrolling: Bool { active && overflow > 0 }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            if active && overflow > 0 {
-                // A fresh view each hover, so the repeating animation ends
-                // with it when the pointer leaves.
+        Text(text)
+            .lineLimit(1)
+            .hidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { boxWidth = g.size.width }
+                    .onChange(of: g.size.width) { boxWidth = $0 }
+            })
+            .overlay(alignment: .leading) {
                 Text(text)
                     .fixedSize()
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { textWidth = g.size.width }
+                            .onChange(of: g.size.width) { textWidth = $0 }
+                    })
                     .offset(x: offset)
-                    .onAppear { start() }
-            } else {
-                Text(text).lineLimit(1).truncationMode(.tail)
+                    // A fresh view per scroll, so the repeating animation
+                    // ends with it when the pointer leaves.
+                    .id(scrolling)
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
-        .background(GeometryReader { g in
-            Color.clear
-                .onAppear { boxWidth = g.size.width }
-                .onChange(of: g.size.width) { boxWidth = $0 }
-        })
-        // The text's natural width, measured off-screen.
-        .background(
-            Text(text).fixedSize().hidden()
-                .background(GeometryReader { g in
-                    Color.clear
-                        .onAppear { textWidth = g.size.width }
-                        .onChange(of: g.size.width) { textWidth = $0 }
-                })
-        )
-        .onChange(of: active) { on in
-            if !on {
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) { offset = 0 }
+            .clipped()
+            .mask(fadeMask)
+            .onChange(of: scrolling) { on in
+                if on {
+                    start()
+                } else {
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) { offset = 0 }
+                }
             }
-        }
+    }
+
+    /// Fades the clipped trailing edge; while scrolling, the leading edge too.
+    private var fadeMask: LinearGradient {
+        let f = overflow > 0 ? min(Self.fade / max(boxWidth, 1), 0.3) : 0
+        return LinearGradient(stops: [
+            .init(color: scrolling ? .clear : .black, location: 0),
+            .init(color: .black, location: scrolling ? f : 0),
+            .init(color: .black, location: 1 - f),
+            .init(color: overflow > 0 ? .clear : .black, location: 1),
+        ], startPoint: .leading, endPoint: .trailing)
     }
 
     private func start() {

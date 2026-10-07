@@ -85,8 +85,11 @@ Then: the list moved to the top of the dropdown without a heading, and it
 holds still under the pointer (`SessionListFreeze`): rows and order are
 those shown when the pointer arrived, each row's contents still update, a
 new session joins at the bottom, and removals and re-sorting wait until the
-pointer leaves (or the panel closes). A truncated title scrolls sideways
-while its row is hovered (`MarqueeTiming`: 30 pt/s, pause at each end).
+pointer leaves (or the panel closes). A title too long for its row fades out
+at the edge instead of an ellipsis, and scrolls sideways while its row is
+hovered (`MarqueeTiming`: 30 pt/s, pause at each end). The visible title is
+an overlay on an invisible one-line placeholder, so it can never resize the
+row — the first version did, and never scrolled in the app.
 
 A permission prompt stays "Needs permission" until the approved tool finishes
 (the next PostToolUse) — no hook fires on approval itself.
