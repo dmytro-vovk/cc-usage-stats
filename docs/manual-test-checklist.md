@@ -329,3 +329,24 @@ Skip this if you've never had the Phase 1 statusline integration.
   afterwards (`stat -f %m ~/.codex/auth.json` before and after).
 - Tracking OFF: Codex section and band disappear; pill falls back to
   Claude.
+
+### 16. Running sessions
+
+- First launch with tracking on (default): `~/.claude/settings.json` gains
+  one entry per session event whose command is
+  `'…/cc-usage-stats/hooks/session-hook.sh'`; your existing hooks are all
+  still there; `settings.json.cc-usage-stats.bak` holds the original; the
+  file keeps its permissions. Settings → General → Hooks: "Installed just
+  now"; relaunch → "Installed".
+- Start a Claude Code session and send a prompt: the dropdown's
+  **Sessions** section shows it as **Working**, then **Waiting for input**
+  when the turn ends. Trigger a permission prompt → **Needs permission**
+  (orange, sorted first).
+- Desktop session rows show the session title; clicking opens that
+  session in the Claude app. Terminal session rows show the folder;
+  clicking brings the terminal forward.
+- Quit a session (or kill its `claude` process): its row disappears
+  within ~5 s and its file under `…/cc-usage-stats/sessions/` is gone.
+- Turn **Show running Claude Code sessions** off: the section disappears
+  and our entries are removed from `settings.json` (others untouched).
+  Back on: reinstalled.

@@ -35,6 +35,9 @@ final class MenuViewModel: ObservableObject {
     let codex: CodexMonitor
     /// Forwards `codex`'s changes; outlives `stop()` like `codex` itself.
     private var codexForwarding: AnyCancellable?
+    /// Live Claude Code sessions, reported by the hooks it installs.
+    let sessions: SessionTracker
+    private var sessionsForwarding: AnyCancellable?
     @Published var lastError: String?
     /// Why the last "Re-import from Claude Code Keychain" click couldn't help.
     ///
@@ -137,7 +140,8 @@ final class MenuViewModel: ObservableObject {
             OAuthUsageClient(provider: OAuthTokenProvider(session: $0))
         },
         connectFlow: @escaping () async throws -> OAuthSession = { try await OAuthFlow.runInteractive() },
-        codex: CodexMonitor? = nil
+        codex: CodexMonitor? = nil,
+        sessions: SessionTracker? = nil
     ) {
         self.apiFactory = apiFactory
         self.oauthClientFactory = oauthClientFactory
@@ -145,11 +149,15 @@ final class MenuViewModel: ObservableObject {
         // Built here rather than as a default argument: the default would be
         // evaluated in a nonisolated context, and CodexMonitor is main-actor.
         self.codex = codex ?? CodexMonitor()
+        self.sessions = sessions ?? SessionTracker()
         codexForwarding = self.codex.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
         self.codex.onSnapshotChange = { [weak self] old, new in
             self?.handleCodexChange(previous: old, current: new)
+        }
+        sessionsForwarding = self.sessions.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
         }
     }
 
@@ -221,6 +229,8 @@ final class MenuViewModel: ObservableObject {
         sp.start()
 
         codex.start()
+        // Verifies (and if needed installs) the session hooks.
+        sessions.start()
     }
 
     /// Loads the sparkline history. Separate from `start()` so a test (or a
@@ -237,6 +247,7 @@ final class MenuViewModel: ObservableObject {
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
         codex.stop()
+        sessions.stop()
         if let obs = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             wakeObserver = nil

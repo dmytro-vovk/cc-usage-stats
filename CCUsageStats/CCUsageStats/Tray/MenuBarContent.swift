@@ -270,6 +270,11 @@ struct MenuBarDropdown: View {
                 CodexSection(snapshot: vm.codex.snapshot, now: now)
             }
 
+            if vm.sessions.enabled {
+                Divider()
+                SessionsSection(tracker: vm.sessions, now: now)
+            }
+
             // Auth / connectivity status.
             authStatusRow
             reauthorizeRow
@@ -533,6 +538,100 @@ struct MenuBarDropdown: View {
                     .font(.caption)
                     .wrapsFully()
             }
+        }
+    }
+}
+
+/// Live Claude Code sessions, from the hooks. Rows open their session.
+private struct SessionsSection: View {
+    @ObservedObject var tracker: SessionTracker
+    let now: Int64
+    /// Keeps the panel compact when many sessions are open.
+    private let maxRows = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Sessions").font(.headline)
+                Spacer()
+                if !tracker.sessions.isEmpty {
+                    Text("\(tracker.sessions.count) running")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if case .failed(let why) = tracker.hookState {
+                Text("Session hooks couldn't be installed: \(why)")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .wrapsFully()
+            } else if tracker.sessions.isEmpty {
+                Text("No running sessions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(tracker.sessions.prefix(maxRows)) { session in
+                SessionRow(session: session, now: now) { tracker.open(session) }
+            }
+            if tracker.sessions.count > maxRows {
+                Text("+\(tracker.sessions.count - maxRows) more")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+}
+
+private struct SessionRow: View {
+    let session: RunningSession
+    let now: Int64
+    let open: () -> Void
+
+    var body: some View {
+        let canOpen = SessionOpener.target(for: session.record) != nil
+        Button(action: open) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.caption)
+                    .foregroundStyle(color)
+                    .frame(width: 14)
+                Text(session.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 6)
+                Text("\(session.status.label) · \(RelativeTime.format(seconds: now - session.record.updatedAt))")
+                    .font(.caption)
+                    .foregroundStyle(session.status.needsAttention ? color : .secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canOpen)
+        .help(session.record.cwd ?? session.title)
+        .accessibilityLabel("\(session.title), \(session.status.label)")
+    }
+
+    private var symbol: String {
+        switch session.status {
+        case .needsPermission: return "hand.raised.fill"
+        case .error: return "exclamationmark.triangle.fill"
+        case .waitingForInput: return "bubble.left.fill"
+        case .working: return "circle.dotted.circle"
+        case .compacting: return "arrow.down.right.and.arrow.up.left"
+        case .idle: return "circle"
+        }
+    }
+
+    private var color: Color {
+        switch session.status {
+        case .needsPermission: return .orange
+        case .error: return .red
+        case .waitingForInput: return .green
+        case .working, .compacting: return .blue
+        case .idle: return .secondary
         }
     }
 }

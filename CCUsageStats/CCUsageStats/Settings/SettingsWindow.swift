@@ -130,6 +130,42 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section {
+                Toggle("Show running Claude Code sessions", isOn: Binding(
+                    get: { vm.sessions.enabled },
+                    set: { vm.sessions.enabled = $0 }
+                ))
+                if vm.sessions.enabled {
+                    LabeledContent("Hooks") {
+                        HStack(spacing: 8) {
+                            Text(hookStatus).foregroundStyle(hookFailed ? Color.red : Color.secondary)
+                            if hookFailed {
+                                Button("Repair") { vm.sessions.reinstall() }
+                            }
+                        }
+                    }
+                }
+            } footer: {
+                Text("Adds hooks to ~/.claude/settings.json (your other hooks are kept; a backup is saved first) and checks them at every launch. Turning this off removes them. Sessions started before the hooks were added may not appear until they're restarted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var hookFailed: Bool {
+        if case .failed = vm.sessions.hookState { return true }
+        return false
+    }
+
+    private var hookStatus: String {
+        switch vm.sessions.hookState {
+        case .unknown: return "Not checked yet"
+        case .installed: return "Installed"
+        case .installedNow: return "Installed just now"
+        case .removed: return "Removed"
+        case .failed(let why): return why
         }
     }
 }

@@ -123,6 +123,10 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the plan and reading age in the header (`prolite · 2m ago`; hover for
   the source, `session log` or `live`). Reset times are row tooltips, as
   for Claude.
+- A **Sessions** section listing your live Claude Code sessions — title,
+  status (**Working**, **Needs permission**, **Waiting for input**, …) and
+  time since their last event. Click one to open it. See [Running
+  sessions](#running-sessions).
 - The **No token set** / **Token rejected** rows offer the one-click
   Keychain import plus **Set a token…**, which opens Settings on the
   Accounts tab.
@@ -172,7 +176,7 @@ arbitrary later time.
 toolbar tabs:
 
 - **General** — Launch at login; Menu-bar pill shows Claude / Codex /
-  Both.
+  Both; Show running Claude Code sessions (with the hook status).
 - **Accounts** — *Claude*: connection status, **Connect / Reconnect
   account** (browser OAuth, see below), **Set / Change token…** (the
   paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
@@ -183,6 +187,46 @@ toolbar tabs:
 
 Settings keep the same stored values as before the window existed;
 nothing is migrated.
+
+### Running sessions
+
+Lists every live Claude Code session — desktop-app and terminal alike —
+with what it's doing right now:
+
+| Status | Means |
+|---|---|
+| **Needs permission** | Waiting for you to approve a tool (sorted to the top) |
+| **Error** | The last turn failed (sorted to the top) |
+| **Waiting for input** | The turn finished; your move |
+| **Working** / **Compacting** | Busy |
+| **Idle** | Started, no prompt yet |
+
+Click a row to open it: a desktop-app session opens in the Claude app at
+that exact conversation; a terminal session brings its terminal app
+forward. Desktop sessions show their title; terminal ones show their
+folder.
+
+How it works: the app installs a small hook script
+(`~/Library/Application Support/cc-usage-stats/hooks/session-hook.sh`) and
+registers it in `~/.claude/settings.json` for the session events
+(SessionStart, UserPromptSubmit, Pre/PostToolUse, PermissionRequest,
+Notification, Stop, StopFailure, PreCompact, SessionEnd). On each event the
+script records that session's latest state in
+`~/Library/Application Support/cc-usage-stats/sessions/`; the app lists the
+sessions whose `claude` process is still alive and deletes the rest. The
+script is bash with builtins only, keeps just a few fields (never your
+prompts or tool output) and always exits 0, so it can't block or alter a
+session.
+
+At every launch the app checks the hooks are in place and repairs them if
+not. Your other hooks are kept; a one-time backup
+(`settings.json.cc-usage-stats.bak`) is saved before the first change, and
+a symlinked `settings.json` is written through, not replaced. Turn it off
+in **Settings → General → Show running Claude Code sessions**, which also
+removes the hooks. Sessions that were already running when the hooks were
+added may not show up until they're restarted. A permission prompt shows
+**Needs permission** until the approved tool finishes — no hook fires on
+the approval itself.
 
 ### Codex usage
 
@@ -444,7 +488,11 @@ security delete-generic-password -s cc-usage-stats -a oauth-token
 # Forget the connected-account session, if you connected one
 security delete-generic-password -s cc-usage-stats -a oauth-session
 
-# Remove cache + history + sentinel
+# Remove the session hooks first: turn off Settings → General → Show
+# running Claude Code sessions (or delete the entries whose command ends in
+# session-hook.sh from ~/.claude/settings.json)
+
+# Remove cache + history + sentinel + session records + hook script
 rm -rf ~/Library/Application\ Support/cc-usage-stats/
 
 # (Optional) remove the dev code-signing identity created by setup-signing.sh
@@ -464,6 +512,10 @@ security delete-identity -c "CCUsageStats Dev"
   on your own machine (see [Connect Claude
   account](#connect-claude-account)) — no third party sees the
   callback.
+- Session tracking adds hooks to `~/.claude/settings.json`; they write each
+  session's state (session id, folder, event name, notification text) to
+  `~/Library/Application Support/cc-usage-stats/sessions/` and nowhere
+  else. No prompts, tool input or output are stored.
 - Codex tracking (off by default) reads `~/.codex/sessions` locally.
   Opt-in live polling adds one request every 5 minutes to `chatgpt.com`
   with the Codex CLI's existing sign-in; `~/.codex` is never written.
