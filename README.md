@@ -33,7 +33,7 @@ work between the two quotas. See [Codex usage](#codex-usage).
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-codex-dark.png">
-  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png" width="112">
+  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png" width="136">
 </picture>
 
 - A gauge icon + percentage rendered on a colour-shifted pill — the
