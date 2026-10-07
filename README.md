@@ -210,10 +210,11 @@ left out, and the section disappears when nothing is active:
 
 They're listed at the very top of the dropdown, without a heading. Each row
 is a status icon, the title and the time since the session's last event;
-hover it for the status in words and the folder. While the pointer is over
-the list it holds still — rows keep updating in place and timers keep
-running, but nothing is added, removed or reordered until the pointer
-leaves, so the row you're aiming at doesn't move. The menu-bar icon
+hover it for the status in words and the folder; a title too long for the
+row scrolls sideways while hovered. While the pointer is over the list it
+holds still — rows keep updating in place and timers keep running, a new
+session joins at the bottom, and nothing is removed or reordered until the
+pointer leaves, so the row you're aiming at doesn't move. The menu-bar icon
 next to the pill shows the most severe active status (Error › Needs
 permission › Waiting for input › Working › Compacting), or a grey "zzz"
 when nothing is active.

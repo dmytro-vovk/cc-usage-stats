@@ -184,12 +184,31 @@ nonisolated struct DesktopSessionTitles {
 
 /// Keeps the session list still under the pointer. While frozen, the rows
 /// and their order are the ones shown when the pointer arrived; each row's
-/// contents (status, timer) still update. New sessions, re-sorting and
-/// removals wait until the pointer leaves — a moving list is hard to click.
+/// contents (status, timer) still update, and a session that appears
+/// meanwhile joins at the bottom — below everything the pointer could be
+/// aiming at. Re-sorting and removals wait until the pointer leaves.
 nonisolated enum SessionListFreeze {
     static func display(frozen: [RunningSession]?, live: [RunningSession]) -> [RunningSession] {
         guard let frozen else { return live }
         let byID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return frozen.map { byID[$0.id] ?? $0 }
+        let kept = Set(frozen.map(\.id))
+        return frozen.map { byID[$0.id] ?? $0 } + live.filter { !kept.contains($0.id) }
+    }
+}
+
+/// Timing for a hovered row's scrolling title.
+nonisolated enum MarqueeTiming {
+    /// Points per second: readable, the same pace for every title.
+    static let speed: Double = 30
+    static let minimumDuration: Double = 0.6
+    /// Pause at each end before turning round.
+    static let pause: Double = 0.6
+
+    static func overflow(textWidth: CGFloat, boxWidth: CGFloat) -> CGFloat {
+        max(0, textWidth - boxWidth)
+    }
+
+    static func duration(overflow: CGFloat) -> Double {
+        max(minimumDuration, Double(overflow) / speed)
     }
 }

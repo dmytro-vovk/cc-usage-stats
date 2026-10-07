@@ -138,9 +138,29 @@ final class SessionListFreezeTests: XCTestCase {
         // Live: b now needs permission and sorts first; c ended; d is new.
         let live = [s("b", "PermissionRequest", at: 9), s("a", at: 5), s("d", at: 9)]
         let shown = SessionListFreeze.display(frozen: frozen, live: live)
-        XCTAssertEqual(shown.map(\.id), ["a", "b", "c"], "same rows, same order, under the pointer")
+        XCTAssertEqual(shown.map(\.id), ["a", "b", "c", "d"],
+                       "same rows in the same order under the pointer; a new session joins at the bottom")
         XCTAssertEqual(shown[0].record.updatedAt, 5, "row contents still update")
         XCTAssertEqual(shown[1].status, .needsPermission)
         XCTAssertEqual(shown[2].record.updatedAt, 1, "an ended session stays until the pointer leaves")
+    }
+
+    func testSeveralNewSessionsJoinAtTheBottomInLiveOrder() {
+        let frozen = [s("a")]
+        let live = [s("x", "PermissionRequest"), s("a"), s("y")]
+        XCTAssertEqual(SessionListFreeze.display(frozen: frozen, live: live).map(\.id), ["a", "x", "y"])
+    }
+}
+
+final class MarqueeTimingTests: XCTestCase {
+    func testScrollSpeedIsConstant() {
+        XCTAssertEqual(MarqueeTiming.duration(overflow: 60), 2.0, accuracy: 0.001)
+        XCTAssertEqual(MarqueeTiming.duration(overflow: 150), 5.0, accuracy: 0.001)
+        XCTAssertEqual(MarqueeTiming.duration(overflow: 3), MarqueeTiming.minimumDuration, "tiny overflows still move gently")
+    }
+
+    func testOnlyTruncatedTextScrolls() {
+        XCTAssertEqual(MarqueeTiming.overflow(textWidth: 250, boxWidth: 180), 70)
+        XCTAssertEqual(MarqueeTiming.overflow(textWidth: 120, boxWidth: 180), 0)
     }
 }

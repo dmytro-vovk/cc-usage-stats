@@ -603,6 +603,7 @@ private struct SessionRow: View {
     let session: RunningSession
     let now: Int64
     let open: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         let canOpen = SessionOpener.target(for: session.record) != nil
@@ -612,9 +613,7 @@ private struct SessionRow: View {
                     .font(.caption)
                     .sessionStatusStyle(session.status)
                     .frame(width: 14)
-                Text(session.title)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                MarqueeText(text: session.title, active: hovering)
                 Spacer(minLength: 6)
                 // Just the timer; the status is the icon, spelled out on hover.
                 Text(RelativeTime.format(seconds: now - session.record.updatedAt))
@@ -629,8 +628,71 @@ private struct SessionRow: View {
         }
         .buttonStyle(.plain)
         .disabled(!canOpen)
+        .onHover { hovering = $0 }
         .help(session.tooltip)
         .accessibilityLabel("\(session.title), \(session.status.label)")
+    }
+}
+
+/// A one-line title: truncated normally; while `active` (the row is hovered)
+/// and only if it doesn't fit, it scrolls to its end, pauses, scrolls back
+/// and repeats. Snaps back when the pointer leaves.
+private struct MarqueeText: View {
+    let text: String
+    let active: Bool
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+
+    private var overflow: CGFloat { MarqueeTiming.overflow(textWidth: textWidth, boxWidth: boxWidth) }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            if active && overflow > 0 {
+                // A fresh view each hover, so the repeating animation ends
+                // with it when the pointer leaves.
+                Text(text)
+                    .fixedSize()
+                    .offset(x: offset)
+                    .onAppear { start() }
+            } else {
+                Text(text).lineLimit(1).truncationMode(.tail)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { boxWidth = g.size.width }
+                .onChange(of: g.size.width) { boxWidth = $0 }
+        })
+        // The text's natural width, measured off-screen.
+        .background(
+            Text(text).fixedSize().hidden()
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { textWidth = g.size.width }
+                        .onChange(of: g.size.width) { textWidth = $0 }
+                })
+        )
+        .onChange(of: active) { on in
+            if !on {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) { offset = 0 }
+            }
+        }
+    }
+
+    private func start() {
+        offset = 0
+        withAnimation(
+            .linear(duration: MarqueeTiming.duration(overflow: overflow))
+                .delay(MarqueeTiming.pause)
+                .repeatForever(autoreverses: true)
+        ) {
+            offset = -overflow
+        }
     }
 }
 

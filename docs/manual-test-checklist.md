@@ -350,7 +350,9 @@ Skip this if you've never had the Phase 1 statusline integration.
 - The list sits at the top of the dropdown with no heading. With two or
   more sessions changing state, hover the list: rows stay in place (icons
   and timers still update); move out and it re-sorts. A session that
-  ends while you hover stays until you move out.
+  ends while you hover stays until you move out; one that starts joins at
+  the bottom. Hovering a row with a truncated title scrolls the title
+  to its end and back; moving off snaps it back.
 - Desktop session rows show the session title; clicking opens that
   session in the Claude app. Terminal session rows show the folder;
   clicking brings the terminal forward.
