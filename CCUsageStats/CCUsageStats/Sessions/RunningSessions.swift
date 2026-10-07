@@ -16,6 +16,10 @@ nonisolated enum SessionStatus: String, Equatable, Sendable {
         }
     }
 
+    /// Shown in the list: busy, or blocked on the user. A finished turn
+    /// (`done`) or an untouched session (`idle`) is hidden.
+    var isActive: Bool { self != .done && self != .idle }
+
     /// Asks something of the user; sorted to the top. A finished turn
     /// (`done`) doesn't: the session isn't waiting on anything.
     var needsAttention: Bool { self == .needsPermission || self == .error || self == .waitingForInput }
@@ -94,14 +98,15 @@ nonisolated struct RunningSession: Identifiable, Equatable, Sendable {
 }
 
 nonisolated enum RunningSessions {
-    /// Live sessions, attention first, then most recent.
+    /// Live, active sessions (see `SessionStatus.isActive`), attention
+    /// first, then most recent.
     static func build(
         _ records: [SessionRecord],
         isAlive: (Int32) -> Bool,
         title: (SessionRecord) -> String?
     ) -> [RunningSession] {
         records
-            .filter { isAlive($0.pid) }
+            .filter { $0.status.isActive && isAlive($0.pid) }
             .map { RunningSession(record: $0, title: title($0) ?? fallbackTitle($0)) }
             .sorted {
                 if $0.status.needsAttention != $1.status.needsAttention { return $0.status.needsAttention }

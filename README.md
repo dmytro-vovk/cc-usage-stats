@@ -123,11 +123,10 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the plan and reading age in the header (`prolite · 2m ago`; hover for
   the source, `session log` or `live`). Reset times are row tooltips, as
   for Claude.
-- A **Sessions** section listing your live Claude Code sessions — title,
-  status (**Working**, **Needs permission**, **Waiting for input**,
-  **Done**, …) and
-  time since their last event. Click one to open it. See [Running
-  sessions](#running-sessions).
+- A **Sessions** section listing your *active* Claude Code sessions —
+  title, status (**Working**, **Needs permission**, **Waiting for input**,
+  …) and time since their last event. Click one to open it. Hidden when
+  nothing is active. See [Running sessions](#running-sessions).
 - The **No token set** / **Token rejected** rows offer the one-click
   Keychain import plus **Set a token…**, which opens Settings on the
   Accounts tab.
@@ -177,7 +176,7 @@ arbitrary later time.
 toolbar tabs:
 
 - **General** — Launch at login; Menu-bar pill shows Claude / Codex /
-  Both; Show running Claude Code sessions (with the hook status).
+  Both; Show active Claude Code sessions (with the hook status).
 - **Accounts** — *Claude*: connection status, **Connect / Reconnect
   account** (browser OAuth, see below), **Set / Change token…** (the
   paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
@@ -191,8 +190,9 @@ nothing is migrated.
 
 ### Running sessions
 
-Lists every live Claude Code session — desktop-app and terminal alike —
-with what it's doing right now:
+Lists every *active* Claude Code session — desktop-app and terminal
+alike — with what it's doing right now. Sessions that are done or idle are
+left out, and the section disappears when nothing is active:
 
 | Status | Means |
 |---|---|
@@ -200,8 +200,8 @@ with what it's doing right now:
 | **Waiting for input** | Claude asked you a question (`AskUserQuestion`, or an MCP server's input prompt) (sorted to the top) |
 | **Error** | The last turn failed (sorted to the top) |
 | **Working** / **Compacting** | Busy |
-| **Done** | The turn finished; nothing is being asked |
-| **Idle** | Started, no prompt yet |
+| *Done* (hidden) | The turn finished; nothing is being asked |
+| *Idle* (hidden) | Started, no prompt yet |
 
 Click a row to open it: a desktop-app session opens in the Claude app at
 that exact conversation; a terminal session brings its terminal app
@@ -224,7 +224,7 @@ At every launch the app checks the hooks are in place and repairs them if
 not. Your other hooks are kept; a one-time backup
 (`settings.json.cc-usage-stats.bak`) is saved before the first change, and
 a symlinked `settings.json` is written through, not replaced. Turn it off
-in **Settings → General → Show running Claude Code sessions**, which also
+in **Settings → General → Show active Claude Code sessions**, which also
 removes the hooks. Sessions that were already running when the hooks were
 added may not show up until they're restarted. A permission prompt shows
 **Needs permission** until the approved tool finishes — no hook fires on
@@ -491,7 +491,7 @@ security delete-generic-password -s cc-usage-stats -a oauth-token
 security delete-generic-password -s cc-usage-stats -a oauth-session
 
 # Remove the session hooks first: turn off Settings → General → Show
-# running Claude Code sessions (or delete the entries whose command ends in
+# active Claude Code sessions (or delete the entries whose command ends in
 # session-hook.sh from ~/.claude/settings.json)
 
 # Remove cache + history + sentinel + session records + hook script

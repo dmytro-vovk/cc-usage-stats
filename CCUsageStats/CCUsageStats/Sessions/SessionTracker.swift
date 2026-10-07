@@ -60,6 +60,10 @@ final class SessionTracker: ObservableObject {
     }
     @Published private(set) var sessions: [RunningSession] = []
     @Published private(set) var hookState: HookState = .unknown
+    var hookFailed: Bool {
+        if case .failed = hookState { return true }
+        return false
+    }
 
     nonisolated let sessionsDir: URL
     let settingsURL: URL

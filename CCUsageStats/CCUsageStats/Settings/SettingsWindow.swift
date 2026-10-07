@@ -131,7 +131,7 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                Toggle("Show running Claude Code sessions", isOn: Binding(
+                Toggle("Show active Claude Code sessions", isOn: Binding(
                     get: { vm.sessions.enabled },
                     set: { vm.sessions.enabled = $0 }
                 ))

@@ -24,7 +24,7 @@ final class SessionTrackerTests: XCTestCase {
         )
     }
 
-    private func writeRecord(_ sid: String, pid: Int32, event: String = "Stop", mtime: Date = Date()) throws {
+    private func writeRecord(_ sid: String, pid: Int32, event: String = "PreToolUse", mtime: Date = Date()) throws {
         let url = root.appendingPathComponent("sessions/\(sid).json")
         try #"{"v":1,"pid":\#(pid),"session_id":"\#(sid)","hook_event":"\#(event)","cwd":"/x/\#(sid)"}"#
             .write(to: url, atomically: true, encoding: .utf8)

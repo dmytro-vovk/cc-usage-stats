@@ -70,6 +70,11 @@ idle session. "Waiting for input" now means Claude actually asked something;
 it sorts to the top with permission prompts and errors. The hook records
 `tool_name` (script v3) to tell `AskUserQuestion` apart.
 
+Then, at the user's request: only **active** sessions are listed — Working,
+Compacting, Needs permission, Waiting for input, Error. Done and Idle are
+hidden, and the section disappears when nothing is active (it stays if the
+hooks failed to install, to show why).
+
 A permission prompt stays "Needs permission" until the approved tool finishes
 (the next PostToolUse) — no hook fires on approval itself.
 

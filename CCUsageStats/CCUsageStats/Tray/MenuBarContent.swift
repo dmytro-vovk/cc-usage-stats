@@ -270,7 +270,9 @@ struct MenuBarDropdown: View {
                 CodexSection(snapshot: vm.codex.snapshot, now: now)
             }
 
-            if vm.sessions.enabled {
+            // Only while something is active (or the hooks need attention):
+            // a quiet dropdown when all sessions are done or idle.
+            if vm.sessions.enabled, !vm.sessions.sessions.isEmpty || vm.sessions.hookFailed {
                 Divider()
                 SessionsSection(tracker: vm.sessions, now: now)
             }
@@ -557,7 +559,7 @@ private struct SessionsSection: View {
                 Text("Sessions").font(.headline)
                 Spacer()
                 if !tracker.sessions.isEmpty {
-                    Text("\(tracker.sessions.count) running")
+                    Text("\(tracker.sessions.count) active")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -567,10 +569,6 @@ private struct SessionsSection: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .wrapsFully()
-            } else if tracker.sessions.isEmpty {
-                Text("No running sessions.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             ForEach(expanded ? Array(tracker.sessions) : Array(tracker.sessions.prefix(maxRows))) { session in
                 SessionRow(session: session, now: now) { tracker.open(session) }

@@ -65,16 +65,32 @@ final class RunningSessionsTests: XCTestCase {
         let records = [
             rec("UserPromptSubmit", sid: "a", pid: 1, at: 500),
             rec("PermissionRequest", sid: "b", pid: 2, at: 100),
-            rec("Stop", sid: "c", pid: 3, at: 900),
-            rec("Stop", sid: "dead", pid: 4, at: 999),
+            rec("PreToolUse", sid: "c", pid: 3, at: 900),
+            rec("PreToolUse", sid: "dead", pid: 4, at: 999),
         ]
         let list = RunningSessions.build(records, isAlive: { $0 != 4 }, title: { _ in nil })
         XCTAssertEqual(list.map(\.id), ["b", "c", "a"], "permission first, then most recent")
     }
 
+    func testOnlyActiveSessionsAreListed() {
+        let records = [
+            rec("UserPromptSubmit", sid: "working"),
+            rec("PreCompact", sid: "compacting"),
+            rec("PermissionRequest", sid: "permission"),
+            rec("PreToolUse", sid: "question", payload: #","tool_name":"AskUserQuestion""#),
+            rec("StopFailure", sid: "error"),
+            rec("Stop", sid: "done"),
+            rec("SessionStart", sid: "idle"),
+        ]
+        let ids = Set(RunningSessions.build(records, isAlive: { _ in true }, title: { _ in nil }).map(\.id))
+        XCTAssertEqual(ids, ["working", "compacting", "permission", "question", "error"])
+        XCTAssertFalse(SessionStatus.done.isActive)
+        XCTAssertFalse(SessionStatus.idle.isActive)
+    }
+
     func testTitlePrefersDesktopTitleThenFolder() {
         let list = RunningSessions.build(
-            [rec("Stop", sid: "a", host: "local_A"), rec("Stop", sid: "b", host: "", cwd: "/x/my-repo")],
+            [rec("PreToolUse", sid: "a", host: "local_A"), rec("PreToolUse", sid: "b", host: "", cwd: "/x/my-repo")],
             isAlive: { _ in true },
             title: { $0.hostSessionID == "local_A" ? "Fix the parser" : nil }
         )

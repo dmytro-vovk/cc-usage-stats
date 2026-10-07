@@ -339,14 +339,15 @@ Skip this if you've never had the Phase 1 statusline integration.
   file keeps its permissions. Settings → General → Hooks: "Installed just
   now"; relaunch → "Installed".
 - Start a Claude Code session and send a prompt: the dropdown's
-  **Sessions** section shows it as **Working**, then **Waiting for input**
-  when the turn ends. Trigger a permission prompt → **Needs permission**
+  **Sessions** section shows it as **Working**; when the turn ends it is
+  **Done** and drops off the list (the section hides when nothing is
+  active). A question from Claude shows **Waiting for input**. Trigger a permission prompt → **Needs permission**
   (orange, sorted first).
 - Desktop session rows show the session title; clicking opens that
   session in the Claude app. Terminal session rows show the folder;
   clicking brings the terminal forward.
 - Quit a session (or kill its `claude` process): its row disappears
   within ~5 s and its file under `…/cc-usage-stats/sessions/` is gone.
-- Turn **Show running Claude Code sessions** off: the section disappears
+- Turn **Show active Claude Code sessions** off: the section disappears
   and our entries are removed from `settings.json` (others untouched).
   Back on: reinstalled.
