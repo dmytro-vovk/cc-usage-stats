@@ -89,7 +89,10 @@ pointer leaves (or the panel closes). A title too long for its row fades out
 at the edge instead of an ellipsis, and scrolls sideways while its row is
 hovered (`MarqueeTiming`: 30 pt/s, pause at each end). The visible title is
 an overlay on an invisible one-line placeholder, so it can never resize the
-row — the first version did, and never scrolled in the app.
+row — the first version did, and never scrolled in the app. The scroll position is
+computed per frame from the time since the hover began (`MarqueeTiming.offset`),
+so each edge fades only while text actually runs past it — not during the
+pauses at either end.
 
 A permission prompt stays "Needs permission" until the approved tool finishes
 (the next PostToolUse) — no hook fires on approval itself.

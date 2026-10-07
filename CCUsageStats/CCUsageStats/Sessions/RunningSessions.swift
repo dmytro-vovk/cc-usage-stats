@@ -196,13 +196,17 @@ nonisolated enum SessionListFreeze {
     }
 }
 
-/// Timing for a hovered row's scrolling title.
+/// Position and fades for a hovered row's scrolling title. Computed from the
+/// time since the hover began, so the fades can follow where the text
+/// actually is (a SwiftUI animation's in-flight value isn't readable).
 nonisolated enum MarqueeTiming {
     /// Points per second: readable, the same pace for every title.
     static let speed: Double = 30
     static let minimumDuration: Double = 0.6
     /// Pause at each end before turning round.
     static let pause: Double = 0.6
+    /// Width of the fade at a clipped edge.
+    static let fadeWidth: CGFloat = 16
 
     static func overflow(textWidth: CGFloat, boxWidth: CGFloat) -> CGFloat {
         max(0, textWidth - boxWidth)
@@ -210,5 +214,30 @@ nonisolated enum MarqueeTiming {
 
     static func duration(overflow: CGFloat) -> Double {
         max(minimumDuration, Double(overflow) / speed)
+    }
+
+    /// Pause at the start, scroll to the end, pause, scroll back; repeat.
+    static func offset(elapsed: Double, overflow: CGFloat) -> CGFloat {
+        guard overflow > 0, elapsed > 0 else { return 0 }
+        let d = duration(overflow: overflow)
+        let t = elapsed.truncatingRemainder(dividingBy: 2 * pause + 2 * d)
+        let progress: Double
+        switch t {
+        case ..<pause: progress = 0
+        case ..<(pause + d): progress = (t - pause) / d
+        case ..<(2 * pause + d): progress = 1
+        default: progress = 1 - (t - 2 * pause - d) / d
+        }
+        return -overflow * CGFloat(progress)
+    }
+
+    /// 0…1: how strongly to fade the left edge — only once text has moved off it.
+    static func leadingFade(offset: CGFloat) -> CGFloat {
+        min(1, max(0, -offset / fadeWidth))
+    }
+
+    /// 0…1: how strongly to fade the right edge — while text continues past it.
+    static func trailingFade(offset: CGFloat, overflow: CGFloat) -> CGFloat {
+        min(1, max(0, (offset + overflow) / fadeWidth))
     }
 }

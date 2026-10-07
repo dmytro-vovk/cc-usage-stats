@@ -642,21 +642,35 @@ private struct SessionRow: View {
 /// The row's layout comes only from an invisible one-line placeholder; the
 /// visible text is an overlay, so it can never resize the row. (The first
 /// version swapped in an unconstrained text, which grew the row, pushed the
-/// icon and timer out, and flipped itself back to truncated.)
+/// icon and timer out, and flipped itself back to truncated.) The position
+/// is computed per frame (`MarqueeTiming.offset`) rather than animated, so
+/// each edge fades only while text actually runs past it.
 struct MarqueeText: View {
     let text: String
     let active: Bool
     @State private var textWidth: CGFloat = 0
     @State private var boxWidth: CGFloat = 0
-    @State private var offset: CGFloat = 0
-
-    /// Width of the fade at a clipped edge.
-    private static let fade: CGFloat = 16
+    @State private var hoverStart: Date?
 
     private var overflow: CGFloat { MarqueeTiming.overflow(textWidth: textWidth, boxWidth: boxWidth) }
     private var scrolling: Bool { active && overflow > 0 }
 
     var body: some View {
+        Group {
+            if scrolling, let start = hoverStart {
+                // Redraws every frame, but only while hovered and too long.
+                TimelineView(.animation) { ctx in
+                    title(offset: MarqueeTiming.offset(elapsed: ctx.date.timeIntervalSince(start), overflow: overflow))
+                }
+            } else {
+                title(offset: 0)
+            }
+        }
+        .onChange(of: scrolling) { on in hoverStart = on ? Date() : nil }
+        .onAppear { if scrolling { hoverStart = Date() } }
+    }
+
+    private func title(offset: CGFloat) -> some View {
         Text(text)
             .lineLimit(1)
             .hidden()
@@ -675,43 +689,21 @@ struct MarqueeText: View {
                             .onChange(of: g.size.width) { textWidth = $0 }
                     })
                     .offset(x: offset)
-                    // A fresh view per scroll, so the repeating animation
-                    // ends with it when the pointer leaves.
-                    .id(scrolling)
             }
             .clipped()
-            .mask(fadeMask)
-            .onChange(of: scrolling) { on in
-                if on {
-                    start()
-                } else {
-                    var t = Transaction()
-                    t.disablesAnimations = true
-                    withTransaction(t) { offset = 0 }
-                }
-            }
+            .mask(fadeMask(offset: offset))
     }
 
-    /// Fades the clipped trailing edge; while scrolling, the leading edge too.
-    private var fadeMask: LinearGradient {
-        let f = overflow > 0 ? min(Self.fade / max(boxWidth, 1), 0.3) : 0
+    private func fadeMask(offset: CGFloat) -> LinearGradient {
+        let f = min(MarqueeTiming.fadeWidth / max(boxWidth, 1), 0.3)
+        let lead = MarqueeTiming.leadingFade(offset: offset)
+        let trail = MarqueeTiming.trailingFade(offset: offset, overflow: overflow)
         return LinearGradient(stops: [
-            .init(color: scrolling ? .clear : .black, location: 0),
-            .init(color: .black, location: scrolling ? f : 0),
+            .init(color: .black.opacity(1 - lead), location: 0),
+            .init(color: .black, location: f),
             .init(color: .black, location: 1 - f),
-            .init(color: overflow > 0 ? .clear : .black, location: 1),
+            .init(color: .black.opacity(1 - trail), location: 1),
         ], startPoint: .leading, endPoint: .trailing)
-    }
-
-    private func start() {
-        offset = 0
-        withAnimation(
-            .linear(duration: MarqueeTiming.duration(overflow: overflow))
-                .delay(MarqueeTiming.pause)
-                .repeatForever(autoreverses: true)
-        ) {
-            offset = -overflow
-        }
     }
 }
 

@@ -164,3 +164,39 @@ final class MarqueeTimingTests: XCTestCase {
         XCTAssertEqual(MarqueeTiming.overflow(textWidth: 120, boxWidth: 180), 0)
     }
 }
+
+final class MarqueePositionTests: XCTestCase {
+    private let overflow: CGFloat = 60  // → 2 s each way at 30 pt/s
+    private var pause: Double { MarqueeTiming.pause }
+
+    func testHoldsStillDuringTheInitialPause() {
+        XCTAssertEqual(MarqueeTiming.offset(elapsed: 0, overflow: overflow), 0)
+        XCTAssertEqual(MarqueeTiming.offset(elapsed: pause * 0.9, overflow: overflow), 0)
+    }
+
+    func testScrollsToTheEndPausesAndComesBack() {
+        XCTAssertEqual(MarqueeTiming.offset(elapsed: pause + 1, overflow: overflow), -30, accuracy: 0.01)
+        XCTAssertEqual(MarqueeTiming.offset(elapsed: pause + 2 + pause / 2, overflow: overflow), -60, accuracy: 0.01)
+        XCTAssertEqual(MarqueeTiming.offset(elapsed: 2 * pause + 2 + 1, overflow: overflow), -30, accuracy: 0.01)
+        // One full cycle later it's back at the start, pausing again.
+        let cycle = 2 * pause + 4
+        XCTAssertEqual(MarqueeTiming.offset(elapsed: cycle + pause / 2, overflow: overflow), 0, accuracy: 0.01)
+    }
+
+    func testNothingToScroll() {
+        XCTAssertEqual(MarqueeTiming.offset(elapsed: 5, overflow: 0), 0)
+    }
+
+    func testFadesFollowThePosition() {
+        // At rest: no leading fade, full trailing fade (text continues past the edge).
+        XCTAssertEqual(MarqueeTiming.leadingFade(offset: 0), 0)
+        XCTAssertEqual(MarqueeTiming.trailingFade(offset: 0, overflow: overflow), 1)
+        // Moving: the leading fade grows in as text leaves the left edge.
+        XCTAssertEqual(MarqueeTiming.leadingFade(offset: -MarqueeTiming.fadeWidth / 2), 0.5, accuracy: 0.01)
+        XCTAssertEqual(MarqueeTiming.leadingFade(offset: -40), 1)
+        // At the end: the last characters are fully visible.
+        XCTAssertEqual(MarqueeTiming.trailingFade(offset: -overflow, overflow: overflow), 0)
+        // A title that fits never fades.
+        XCTAssertEqual(MarqueeTiming.trailingFade(offset: 0, overflow: 0), 0)
+    }
+}
