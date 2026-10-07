@@ -2,7 +2,7 @@ import Foundation
 
 /// What a session is doing, from the last hook event it fired.
 nonisolated enum SessionStatus: String, Equatable, Sendable {
-    case needsPermission, error, waitingForInput, working, compacting, idle
+    case needsPermission, error, waitingForInput, working, compacting, done, idle
 
     var label: String {
         switch self {
@@ -11,12 +11,14 @@ nonisolated enum SessionStatus: String, Equatable, Sendable {
         case .waitingForInput: return "Waiting for input"
         case .working: return "Working"
         case .compacting: return "Compacting"
+        case .done: return "Done"
         case .idle: return "Idle"
         }
     }
 
-    /// Asks something of the user; sorted to the top.
-    var needsAttention: Bool { self == .needsPermission || self == .error }
+    /// Asks something of the user; sorted to the top. A finished turn
+    /// (`done`) doesn't: the session isn't waiting on anything.
+    var needsAttention: Bool { self == .needsPermission || self == .error || self == .waitingForInput }
 }
 
 /// One session's latest record, as written by `SessionHookScript`.
@@ -24,6 +26,8 @@ nonisolated struct SessionRecord: Equatable, Sendable {
     let sessionID: String
     let pid: Int32
     let event: String
+    /// For tool events: which tool.
+    let toolName: String?
     let cwd: String?
     let notificationType: String?
     let message: String?
@@ -43,6 +47,7 @@ nonisolated struct SessionRecord: Equatable, Sendable {
             sessionID: sid,
             pid: Int32(truncatingIfNeeded: (o["pid"] as? NSNumber)?.int64Value ?? 0),
             event: s("hook_event") ?? "",
+            toolName: s("tool_name"),
             cwd: s("cwd"),
             notificationType: s("notification_type"),
             message: s("message"),
@@ -59,16 +64,22 @@ nonisolated struct SessionRecord: Equatable, Sendable {
         case "SessionStart": return .idle
         case "PreCompact": return .compacting
         case "PermissionRequest": return .needsPermission
-        case "Stop": return .waitingForInput
+        // The turn finished. That's not "waiting for input": nothing was asked.
+        case "Stop": return .done
         case "StopFailure": return .error
+        // Claude put a question to the user and is blocked on the answer.
+        case "PreToolUse" where toolName == "AskUserQuestion": return .waitingForInput
         case "Notification":
             switch notificationType {
             case "permission_prompt": return .needsPermission
-            case "idle_prompt": return .waitingForInput
+            // An MCP server asking the user for input.
+            case "elicitation_dialog": return .waitingForInput
+            // Claude's reminder a minute after a finished turn.
+            case "idle_prompt": return .done
             default:
                 // Older Claude Code versions send no type, only the text.
                 return message?.localizedCaseInsensitiveContains("permission") == true
-                    ? .needsPermission : .waitingForInput
+                    ? .needsPermission : .done
             }
         default: return .working  // UserPromptSubmit, Pre/PostToolUse, anything new
         }

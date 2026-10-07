@@ -20,7 +20,8 @@ final class RunningSessionsTests: XCTestCase {
         XCTAssertEqual(rec("PostToolUse").status, .working)
         XCTAssertEqual(rec("PreCompact").status, .compacting)
         XCTAssertEqual(rec("PermissionRequest").status, .needsPermission)
-        XCTAssertEqual(rec("Stop").status, .waitingForInput)
+        // A finished turn isn't waiting on the user for anything.
+        XCTAssertEqual(rec("Stop").status, .done)
         XCTAssertEqual(rec("StopFailure").status, .error)
         XCTAssertEqual(rec("SomethingNew").status, .working)
     }
@@ -28,13 +29,26 @@ final class RunningSessionsTests: XCTestCase {
     func testNotificationKinds() {
         XCTAssertEqual(rec("Notification", payload: #","notification_type":"permission_prompt","message":"x""#).status,
                        .needsPermission)
+        // Claude's 60 s "still here" reminder after a finished turn.
         XCTAssertEqual(rec("Notification", payload: #","notification_type":"idle_prompt","message":"x""#).status,
+                       .done)
+        // An MCP server asking the user for input.
+        XCTAssertEqual(rec("Notification", payload: #","notification_type":"elicitation_dialog","message":"x""#).status,
                        .waitingForInput)
         // Older versions: no type, only the message.
         XCTAssertEqual(rec("Notification", payload: #","message":"Claude needs your permission to use Bash""#).status,
                        .needsPermission)
         XCTAssertEqual(rec("Notification", payload: #","message":"Claude is waiting for your input""#).status,
-                       .waitingForInput)
+                       .done)
+    }
+
+    func testAskingTheUserAQuestionIsWaitingForInput() {
+        XCTAssertEqual(rec("PreToolUse", payload: #","tool_name":"AskUserQuestion""#).status, .waitingForInput)
+        XCTAssertEqual(rec("PreToolUse", payload: #","tool_name":"Bash""#).status, .working)
+        // Answered: the tool completes and the session works on.
+        XCTAssertEqual(rec("PostToolUse", payload: #","tool_name":"AskUserQuestion""#).status, .working)
+        XCTAssertTrue(SessionStatus.waitingForInput.needsAttention)
+        XCTAssertFalse(SessionStatus.done.needsAttention)
     }
 
     func testDecodeToleratesMissingFields() {

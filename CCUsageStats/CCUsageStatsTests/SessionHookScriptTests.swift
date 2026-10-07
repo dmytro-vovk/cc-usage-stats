@@ -90,6 +90,13 @@ final class SessionHookScriptTests: XCTestCase {
         XCTAssertEqual(record.status, .needsPermission)
     }
 
+    func testToolNameIsRecordedForToolEvents() throws {
+        try run(payload("PreToolUse", extra: #","tool_name":"AskUserQuestion","tool_input":{"tool_name":"Bash"}"#))
+        let record = try XCTUnwrap(SessionRecord.decode(Data(contentsOf: sessionsDir.appendingPathComponent("abc-123.json"))))
+        XCTAssertEqual(record.toolName, "AskUserQuestion", "the top-level name, not one inside tool_input")
+        XCTAssertEqual(record.status, .waitingForInput)
+    }
+
     func testBadInputIsIgnoredAndNeverFails() throws {
         XCTAssertEqual(try run(""), 0)
         XCTAssertEqual(try run("not json"), 0)

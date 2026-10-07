@@ -620,7 +620,8 @@ private struct SessionRow: View {
         switch session.status {
         case .needsPermission: return "hand.raised.fill"
         case .error: return "exclamationmark.triangle.fill"
-        case .waitingForInput: return "bubble.left.fill"
+        case .waitingForInput: return "questionmark.bubble.fill"
+        case .done: return "checkmark.circle"
         case .working: return "circle.dotted.circle"
         case .compacting: return "arrow.down.right.and.arrow.up.left"
         case .idle: return "circle"
@@ -631,9 +632,9 @@ private struct SessionRow: View {
         switch session.status {
         case .needsPermission: return .orange
         case .error: return .red
-        case .waitingForInput: return .green
+        case .waitingForInput: return .orange
         case .working, .compacting: return .blue
-        case .idle: return .secondary
+        case .done, .idle: return .secondary
         }
     }
 }

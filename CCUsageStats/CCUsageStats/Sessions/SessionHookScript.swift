@@ -17,11 +17,11 @@ import Foundation
 /// them.
 nonisolated enum SessionHookScript {
     /// Bump when `contents` changes; the installer rewrites outdated copies.
-    static let version = 2
+    static let version = 3
 
     static let contents = #"""
     #!/bin/bash
-    # cc-usage-stats session hook v2
+    # cc-usage-stats session hook v3
     # Managed by the CCUsageStats menu-bar app, which rewrites this file when
     # its version changes and registers it in ~/.claude/settings.json. Local
     # edits are lost. Records each Claude Code session's latest event so the
@@ -47,6 +47,9 @@ nonisolated enum SessionHookScript {
       local v=${2//[^A-Za-z0-9._:\/-]/}; printf -v "$1" '%s' "$v"
     }
     field cwd cwd
+    # Top-level tool_name precedes tool_input, so the leftmost match is ours.
+    tool=
+    case $event in PreToolUse|PostToolUse) field tool_name tool ;; esac
     ntype= message=
     if [ "$event" = Notification ]; then field notification_type ntype; field message message; fi
     clean entry "$CLAUDE_CODE_ENTRYPOINT"
@@ -56,8 +59,8 @@ nonisolated enum SessionHookScript {
 
     mkdir -p "$dir" 2>/dev/null || exit 0
     tmp="$dir/.$sid.$$.tmp"
-    printf '{"v":1,"pid":%d,"session_id":"%s","hook_event":"%s","cwd":"%s","notification_type":"%s","message":"%s","entrypoint":"%s","host_session":"%s","app_bundle":"%s","term_program":"%s"}\n' \
-      "$PPID" "$sid" "$event" "$cwd" "$ntype" "$message" "$entry" "$host" "$bundle" "$term" \
+    printf '{"v":1,"pid":%d,"session_id":"%s","hook_event":"%s","tool_name":"%s","cwd":"%s","notification_type":"%s","message":"%s","entrypoint":"%s","host_session":"%s","app_bundle":"%s","term_program":"%s"}\n' \
+      "$PPID" "$sid" "$event" "$tool" "$cwd" "$ntype" "$message" "$entry" "$host" "$bundle" "$term" \
       > "$tmp" 2>/dev/null && mv -f "$tmp" "$dir/$sid.json" 2>/dev/null
     rm -f "$tmp" 2>/dev/null
     exit 0

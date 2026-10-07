@@ -60,8 +60,15 @@ that predates the install may not report until restarted.
 | UserPromptSubmit, PreToolUse, PostToolUse | Working |
 | PreCompact | Compacting |
 | PermissionRequest, Notification (permission) | Needs permission |
-| Stop, Notification (idle) | Waiting for input |
+| PreToolUse of `AskUserQuestion`, Notification (elicitation) | Waiting for input |
+| Stop, Notification (idle) | Done |
 | StopFailure | Error |
+
+Revised the same day after first use: a finished turn (`Stop`) was first shown
+as "Waiting for input", which read as "this session needs you" for every
+idle session. "Waiting for input" now means Claude actually asked something;
+it sorts to the top with permission prompts and errors. The hook records
+`tool_name` (script v3) to tell `AskUserQuestion` apart.
 
 A permission prompt stays "Needs permission" until the approved tool finishes
 (the next PostToolUse) — no hook fires on approval itself.
@@ -69,7 +76,7 @@ A permission prompt stays "Needs permission" until the approved tool finishes
 **Tracker** — watches the sessions directory (dispatch source) plus a 5 s
 timer for liveness; drops files whose PID is gone or no longer a
 `claude` process. Title: the desktop session title, else the `cwd` folder
-name. Order: needs-attention (permission, error) first, then most recent.
+name. Order: needs-attention (permission, question, error) first, then most recent.
 
 **UI** — a "Sessions" section in the dropdown (status symbol + colour, title,
 status, time since the last event), clickable. Settings → General: "Show

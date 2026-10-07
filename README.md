@@ -124,7 +124,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the source, `session log` or `live`). Reset times are row tooltips, as
   for Claude.
 - A **Sessions** section listing your live Claude Code sessions — title,
-  status (**Working**, **Needs permission**, **Waiting for input**, …) and
+  status (**Working**, **Needs permission**, **Waiting for input**,
+  **Done**, …) and
   time since their last event. Click one to open it. See [Running
   sessions](#running-sessions).
 - The **No token set** / **Token rejected** rows offer the one-click
@@ -196,9 +197,10 @@ with what it's doing right now:
 | Status | Means |
 |---|---|
 | **Needs permission** | Waiting for you to approve a tool (sorted to the top) |
+| **Waiting for input** | Claude asked you a question (`AskUserQuestion`, or an MCP server's input prompt) (sorted to the top) |
 | **Error** | The last turn failed (sorted to the top) |
-| **Waiting for input** | The turn finished; your move |
 | **Working** / **Compacting** | Busy |
+| **Done** | The turn finished; nothing is being asked |
 | **Idle** | Started, no prompt yet |
 
 Click a row to open it: a desktop-app session opens in the Claude app at
