@@ -199,10 +199,10 @@ final class SessionTracker: ObservableObject {
     ///
     /// Live means the PID exists *and* that process started before the
     /// record was written — otherwise the PID has been recycled.
-    /// Dead records are deleted only once they're a minute old and unchanged
+    /// Dead records are deleted only once they're ten minutes old and unchanged
     /// since read: a session resumed under the same id may be renaming a
     /// fresh record over this one right now.
-    nonisolated static let staleAfter: Int64 = 60
+    nonisolated static let staleAfter: Int64 = 600
 
     nonisolated static func scan(
         dir: URL,

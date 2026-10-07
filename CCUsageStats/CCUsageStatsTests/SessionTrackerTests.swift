@@ -51,7 +51,7 @@ final class SessionTrackerTests: XCTestCase {
         let me = ProcessInfo.processInfo.processIdentifier
         try writeRecord("live", pid: me)
         // Old enough to be cleaned up.
-        try writeRecord("dead", pid: 999_999, mtime: Date().addingTimeInterval(-120))
+        try writeRecord("dead", pid: 999_999, mtime: Date().addingTimeInterval(-1200))
         // A recycled PID: alive, but started after the record was written.
         try writeRecord("recycled", pid: me, mtime: Date(timeIntervalSince1970: 1_000))
 
@@ -61,7 +61,7 @@ final class SessionTrackerTests: XCTestCase {
         XCTAssertEqual(list.map(\.id), ["live"])
         let left = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("sessions").path)
         XCTAssertEqual(left, ["live.json"],
-                       "dead files older than a minute are cleaned up — a recycled PID means the session is dead too")
+                       "dead files older than ten minutes are cleaned up — a recycled PID means the session is dead too")
     }
 
     func testFreshDeadRecordIsHiddenButNotDeleted() throws {

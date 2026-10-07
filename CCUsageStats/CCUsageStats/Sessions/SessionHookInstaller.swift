@@ -53,8 +53,15 @@ nonisolated enum SessionHookInstaller {
 
     // MARK: - Pure settings transforms
 
+    /// Exactly our quoted script path — the current one or an older
+    /// app-support location — with nothing else in the command.
     static func isOurs(_ hook: [String: Any]) -> Bool {
-        (hook["command"] as? String)?.contains(ownMarker) == true
+        guard let cmd = hook["command"] as? String, cmd.hasPrefix("'"), cmd.hasSuffix("'"), cmd.count > 2 else {
+            return false
+        }
+        let path = String(cmd.dropFirst().dropLast()).replacingOccurrences(of: #"'\''"#, with: "'")
+        return path.hasPrefix("/") && path.hasSuffix(ownMarker)
+            && command(for: URL(fileURLWithPath: path)) == cmd
     }
 
     /// Every event has our entry, in exactly the shape we write: a group with
@@ -166,8 +173,19 @@ nonisolated enum SessionHookInstaller {
             try validate(settings)
             guard let updated = try transform(settings) else { return }
             if let original { try backUpOnce(original, beside: url) }
-            guard (try read(url)).0 == original else { continue }
-            try write(updated, to: url)
+            // Everything is prepared before the final check, so the only gap
+            // left between "unchanged?" and the swap is one read and a
+            // rename. It can't be closed entirely: Claude Code has no lock
+            // protocol for settings.json.
+            let staged = try stage(updated, beside: url)
+            guard (try? read(url))?.0 == original else {
+                try? FileManager.default.removeItem(at: staged)
+                continue
+            }
+            guard rename(staged.path, url.path) == 0 else {
+                try? FileManager.default.removeItem(at: staged)
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
+            }
             return
         }
         throw InstallError.changedWhileWriting(url.path)
@@ -202,15 +220,18 @@ nonisolated enum SessionHookInstaller {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backup.path)
     }
 
-    private static func write(_ settings: [String: Any], to url: URL) throws {
+    /// Writes the new contents to a temp file next to `url` with the
+    /// original's permissions (often 0600), ready to be renamed over it.
+    private static func stage(_ settings: [String: Any], beside url: URL) throws -> URL {
         try Paths.ensureDirectory(url.deletingLastPathComponent())
         let data = try JSONSerialization.data(
             withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         )
-        // Keep the original permissions (often 0600): an atomic write makes a
-        // new file with default ones.
         let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] ?? 0o600
-        try (data + Data("\n".utf8)).write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: url.path)
+        let staged = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(url.lastPathComponent).cc-usage-stats.\(ProcessInfo.processInfo.processIdentifier).tmp")
+        try (data + Data("\n".utf8)).write(to: staged)
+        try FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: staged.path)
+        return staged
     }
 }

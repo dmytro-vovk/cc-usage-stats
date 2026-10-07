@@ -67,7 +67,7 @@ A permission prompt stays "Needs permission" until the approved tool finishes
 (the next PostToolUse) — no hook fires on approval itself.
 
 **Tracker** — watches the sessions directory (dispatch source) plus a 5 s
-timer for liveness; drops and deletes files whose PID is gone or no longer a
+timer for liveness; drops files whose PID is gone or no longer a
 `claude` process. Title: the desktop session title, else the `cwd` folder
 name. Order: needs-attention (permission, error) first, then most recent.
 

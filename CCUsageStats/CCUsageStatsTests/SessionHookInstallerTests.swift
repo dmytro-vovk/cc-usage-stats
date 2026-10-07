@@ -70,6 +70,17 @@ final class SessionHookInstallerTests: XCTestCase {
         XCTAssertEqual((stop[0]["hooks"] as! [[String: Any]])[0]["command"] as? String, "/opt/acme/session-hook.sh")
     }
 
+    func testOnlyOurExactCommandIsOurs() {
+        XCTAssertTrue(SessionHookInstaller.isOurs(["command": command]))
+        XCTAssertTrue(SessionHookInstaller.isOurs(
+            ["command": "'/Users/old/Library/Application Support/cc-usage-stats/hooks/session-hook.sh'"]))
+        // Mentions our path but isn't our command.
+        XCTAssertFalse(SessionHookInstaller.isOurs(
+            ["command": "echo /x/cc-usage-stats/hooks/session-hook.sh >> /tmp/log"]))
+        XCTAssertFalse(SessionHookInstaller.isOurs(
+            ["command": "'/x/cc-usage-stats/hooks/session-hook.sh' --other"]))
+    }
+
     func testWrongShapeCountsAsNotInstalled() {
         var out = SessionHookInstaller.installing(command: command, into: [:])
         var hooks = out["hooks"] as! [String: Any]
