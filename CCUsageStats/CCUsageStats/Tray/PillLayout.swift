@@ -5,12 +5,15 @@ struct PillSegment: Equatable {
         case fiveHour
         case sevenDay
         case model(String)
+        case codex
     }
 
     let kind: Kind
     /// 0..1, clamped.
     let fraction: Double
     let text: String
+    /// No data behind this band: drawn grey instead of on the usage ramp.
+    var dimmed: Bool = false
 }
 
 /// Decides which windows share the menubar pill.
@@ -86,5 +89,69 @@ enum PillLayout {
     /// clamped. Matches the pre-existing 7d rendering.
     private static func percentText(_ percentage: Double) -> String {
         "\(Int(percentage.rounded()))%"
+    }
+}
+
+/// What the menubar pill shows. Persisted; set on the General settings tab.
+enum PillMode: String, CaseIterable, Identifiable {
+    case claude, codex, both
+
+    static let defaultsKey = "cc-usage-stats.pillMode"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        case .both: return "Both"
+        }
+    }
+
+    static func read(from defaults: UserDefaults = .standard) -> PillMode {
+        defaults.string(forKey: defaultsKey).flatMap(PillMode.init(rawValue:)) ?? .claude
+    }
+}
+
+/// How the label should be drawn: Claude's own rendering, untouched, or an
+/// explicit list of bands.
+enum PillPlan: Equatable {
+    case claude
+    case segments([PillSegment])
+}
+
+/// Combines the Claude pill with Codex according to `PillMode`.
+///
+/// `.claude` hands back to the existing rendering (single pill, warning
+/// triangle, split pill) so the Claude-only pill is byte-for-byte what it was.
+enum PillComposer {
+    static func plan(
+        mode: PillMode,
+        codexTracking: Bool,
+        claudeSegments: [PillSegment],
+        claudeLacksWorkingToken: Bool,
+        codex: CodexSnapshot?,
+        now: Int64
+    ) -> PillPlan {
+        guard codexTracking else { return .claude }
+        switch mode {
+        case .claude:
+            return .claude
+        case .codex:
+            return .segments([codexSegment(codex, now: now)
+                ?? PillSegment(kind: .codex, fraction: 0, text: "—", dimmed: true)])
+        case .both:
+            // A Claude token problem renders as the red triangle; hiding it
+            // behind a healthy Codex band would bury the thing to fix.
+            guard !claudeLacksWorkingToken, let codexSeg = codexSegment(codex, now: now) else {
+                return .claude
+            }
+            return .segments(claudeSegments + [codexSeg])
+        }
+    }
+
+    static func codexSegment(_ codex: CodexSnapshot?, now: Int64) -> PillSegment? {
+        guard let peak = codex?.peakPercent(now: now) else { return nil }
+        return PillSegment(kind: .codex, fraction: max(0, min(1, peak / 100)), text: "\(Int(peak.rounded()))%")
     }
 }

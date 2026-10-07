@@ -41,6 +41,26 @@ struct MenuBarLabel: View {
             authState: vm.authState,
             now: Int64(Date().timeIntervalSince1970)
         )
+        // Codex joins (or replaces) the Claude pill per the General setting.
+        let plan = PillComposer.plan(
+            mode: vm.pillMode,
+            codexTracking: vm.codex.trackingEnabled,
+            claudeSegments: segments,
+            claudeLacksWorkingToken: vm.authState.lacksWorkingToken,
+            codex: vm.codex.snapshot,
+            now: Int64(Date().timeIntervalSince1970)
+        )
+        if case .segments(let bands) = plan {
+            // Claude's staleness says nothing about a Codex-only pill.
+            let alpha: CGFloat = bands.allSatisfy { $0.kind == .codex } ? 1.0 : staleAlpha
+            return MenuBarPillRenderer.renderSplitPill(
+                segments: bands,
+                style: .init(
+                    onColor: (isDark ? NSColor.black : NSColor.white).withAlphaComponent(alpha),
+                    staleAlpha: alpha, outageIcon: outageIcon
+                )
+            )
+        }
         if segments.count >= 2 {
             return MenuBarPillRenderer.renderSplitPill(
                 segments: segments,
@@ -216,6 +236,10 @@ struct MenuBarDropdown: View {
             // beyond "All Systems Operational").
             statusBanner
 
+            if vm.codex.trackingEnabled {
+                Text("Claude").font(.headline)
+            }
+
             // Window rows.
             if let cached = vm.cached {
                 let modelKeys = UsageWindows.orderedModelKeys(cached.snapshot.models)
@@ -287,6 +311,11 @@ struct MenuBarDropdown: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            if vm.codex.trackingEnabled {
+                Divider()
+                CodexSection(snapshot: vm.codex.snapshot, now: now)
+            }
+
             // Auth / connectivity status.
             authStatusRow
             reauthorizeRow
@@ -300,74 +329,13 @@ struct MenuBarDropdown: View {
 
             Divider()
 
-            // Settings.
-            Toggle("Launch at Login", isOn: Binding(
-                get: { vm.launchAtLogin },
-                set: { _ in vm.toggleLaunchAtLogin() }
-            ))
-            .toggleStyle(.checkbox)
-
-            Toggle("Warn at threshold", isOn: Binding(
-                get: { vm.warningEnabled },
-                set: { vm.warningEnabled = $0 }
-            ))
-            .toggleStyle(.checkbox)
-
-            if vm.warningEnabled {
-                HStack(spacing: 8) {
-                    Stepper(value: Binding(
-                        get: { vm.warningThreshold },
-                        set: { vm.warningThreshold = $0 }
-                    ), in: 1...99, step: 1) {
-                        Text("\(vm.warningThreshold)%")
-                            .monospacedDigit()
-                            .frame(width: 40, alignment: .leading)
-                    }
-                    Picker("", selection: Binding(
-                        get: { vm.warningSound },
-                        set: { newValue in
-                            vm.warningSound = newValue
-                            // Preview on change so the user hears their pick.
-                            SoundPlayer.play(named: newValue)
-                        }
-                    )) {
-                        ForEach(SoundPlayer.pickableSounds, id: \.self) { name in
-                            Text(name).tag(name)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                }
-                .padding(.leading, 18)
-                .controlSize(.small)
-            }
-
-            // Per-event sound configuration. "None" mutes that one
-            // event; there is no global mute toggle.
-            Text("Sounds")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
-
-            soundRow(label: "Limit reached", binding: Binding(
-                get: { vm.reachedLimitSound },
-                set: { vm.reachedLimitSound = $0 }
-            ))
-            soundRow(label: "Window reset", binding: Binding(
-                get: { vm.limitResetSound },
-                set: { vm.limitResetSound = $0 }
-            ))
-            soundRow(label: "Outage detected", binding: Binding(
-                get: { vm.outageSound },
-                set: { vm.outageSound = $0 }
-            ))
-
             HStack {
-                if vm.authState.lacksWorkingToken || TokenStore.read() == nil {
-                    Button("Set Token…") { vm.openSettings() }
-                } else {
-                    Button("Change Token…") { vm.changeToken() }
+                Button {
+                    vm.openSettings()
+                } label: {
+                    Label("Settings…", systemImage: "gearshape")
                 }
+                .keyboardShortcut(",")
                 Spacer()
                 // Keeps the tertiary caption styling rather than the default
                 // accent-blue link look — this is a quiet footer label that
@@ -394,33 +362,6 @@ struct MenuBarDropdown: View {
     }
 
     private var now: Int64 { Int64(Date().timeIntervalSince1970) }
-
-    /// Row used by the per-event sound configuration block: a label on
-    /// the left and a sound picker on the right. Picking previews the
-    /// sound so users can audition; "None" silences that one event.
-    @ViewBuilder
-    private func soundRow(label: String, binding: Binding<String>) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.caption)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Picker("", selection: Binding(
-                get: { binding.wrappedValue },
-                set: { newValue in
-                    binding.wrappedValue = newValue
-                    SoundPlayer.play(named: newValue)
-                }
-            )) {
-                ForEach(SoundPlayer.pickableSounds, id: \.self) { name in
-                    Text(name).tag(name)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 120)
-        }
-        .padding(.leading, 18)
-        .controlSize(.small)
-    }
 
     @ViewBuilder
     private var statusBanner: some View {
@@ -547,11 +488,14 @@ struct MenuBarDropdown: View {
                     .foregroundStyle(.red)
                     .font(.caption)
                     .wrapsFully()
-                Text("Reconnect to resume usage updates, or set a token below.")
+                Text("Reconnect to resume usage updates, or set a token in Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .wrapsFully()
-                connectButtons(label: "Reconnect Claude account")
+                HStack(spacing: 6) {
+                    connectButtons(label: "Reconnect Claude account")
+                    setTokenButton
+                }
             }
         case .notSubscriber:
             Label("No Claude.ai subscription rate-limit data.", systemImage: "info.circle")
@@ -590,6 +534,12 @@ struct MenuBarDropdown: View {
         }
     }
 
+    /// Opens Settings on the Accounts tab, where tokens are set and changed.
+    private var setTokenButton: some View {
+        Button("Set a token…") { vm.openSettings(tab: .accounts) }
+            .controlSize(.small)
+    }
+
     /// Connect (or Reconnect) plus, while an attempt is in flight, Cancel:
     /// a browser-side failure never calls back, so without Cancel
     /// "Connecting…" held for the whole timeout.
@@ -618,12 +568,54 @@ struct MenuBarDropdown: View {
                 .foregroundStyle(.red)
                 .font(.caption)
                 .wrapsFully()
-            Button(action) { vm.reimportFromClaudeCodeKeychain() }
-                .controlSize(.small)
+            HStack(spacing: 6) {
+                Button(action) { vm.reimportFromClaudeCodeKeychain() }
+                setTokenButton
+            }
+            .controlSize(.small)
             if let hint = vm.recoveryHint {
                 Text(hint)
                     .foregroundStyle(.red)
                     .font(.caption)
+                    .wrapsFully()
+            }
+        }
+    }
+}
+
+/// Codex windows in the dropdown. Readings come from the Codex CLI's session
+/// logs (or the opt-in live poll), so they're labelled with their age; a
+/// window past its reset shows 0%.
+private struct CodexSection: View {
+    let snapshot: CodexSnapshot?
+    let now: Int64
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Codex").font(.headline)
+                Spacer()
+                if let plan = snapshot?.planType {
+                    Text(plan).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let snapshot {
+                ForEach(snapshot.windows, id: \.windowMinutes) { w in
+                    WindowSection(
+                        title: w.label,
+                        window: WindowSnapshot(usedPercentage: w.effectivePercent(now: now), resetsAt: w.resetsAt),
+                        now: now,
+                        tracksPace: w.windowMinutes == 10080
+                    )
+                }
+                Text("As of \(RelativeTime.format(seconds: now - snapshot.observedAt)) ago · \(snapshot.source.rawValue)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            } else {
+                Text("No Codex usage seen yet in ~/.codex/sessions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .wrapsFully()
             }
         }

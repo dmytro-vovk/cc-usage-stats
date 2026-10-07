@@ -15,6 +15,26 @@ final class MenuViewModel: ObservableObject {
     /// value carries no visible expiry and is assumed durable.
     @Published private(set) var tokenExpiresAt: Date?
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
+    /// What the menubar pill shows. Codex choices only apply while Codex
+    /// tracking is on.
+    @Published var pillMode: PillMode = PillMode.read() {
+        didSet { UserDefaults.standard.set(pillMode.rawValue, forKey: PillMode.defaultsKey) }
+    }
+    /// Where Claude usage currently comes from, for the Accounts tab.
+    @Published private(set) var claudeSource: ClaudeSource = .none
+    enum ClaudeSource: Equatable {
+        /// Scoped OAuth session (every window), with or without a pasted token behind it.
+        case connectedAccount
+        /// Pasted / imported token only (5-hour + weekly).
+        case pastedToken
+        case none
+    }
+
+    /// Codex usage, read from the Codex CLI's session logs (and optionally
+    /// polled live). Owned here so its changes re-render the label.
+    let codex: CodexMonitor
+    /// Forwards `codex`'s changes; outlives `stop()` like `codex` itself.
+    private var codexForwarding: AnyCancellable?
     @Published var lastError: String?
     /// Why the last "Re-import from Claude Code Keychain" click couldn't help.
     ///
@@ -115,11 +135,21 @@ final class MenuViewModel: ObservableObject {
         oauthClientFactory: @escaping @MainActor (OAuthSession) -> AnthropicAPIClient = {
             OAuthUsageClient(provider: OAuthTokenProvider(session: $0))
         },
-        connectFlow: @escaping () async throws -> OAuthSession = { try await OAuthFlow.runInteractive() }
+        connectFlow: @escaping () async throws -> OAuthSession = { try await OAuthFlow.runInteractive() },
+        codex: CodexMonitor? = nil
     ) {
         self.apiFactory = apiFactory
         self.oauthClientFactory = oauthClientFactory
         self.connectFlow = connectFlow
+        // Built here rather than as a default argument: the default would be
+        // evaluated in a nonisolated context, and CodexMonitor is main-actor.
+        self.codex = codex ?? CodexMonitor()
+        codexForwarding = self.codex.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        self.codex.onSnapshotChange = { [weak self] old, new in
+            self?.handleCodexChange(previous: old, current: new)
+        }
     }
 
     func start() {
@@ -173,6 +203,7 @@ final class MenuViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshNow()
+                self?.codex.refreshNow()
                 await self?.statusPoller?.refreshNow()
             }
         }
@@ -188,6 +219,8 @@ final class MenuViewModel: ObservableObject {
             .store(in: &cancellables)
         statusPoller = sp
         sp.start()
+
+        codex.start()
     }
 
     func stop() {
@@ -196,6 +229,7 @@ final class MenuViewModel: ObservableObject {
         statusPoller?.stop(); statusPoller = nil
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
+        codex.stop()
         if let obs = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             wakeObserver = nil
@@ -213,20 +247,15 @@ final class MenuViewModel: ObservableObject {
         Task { @MainActor in await poller?.refreshNow() }
     }
 
-    func openSettings() {
-        let vm = SettingsViewModel { [weak self] _ in
-            self?.restartPolling()
-        }
-        // Through `connectTask`, so the same attempt is cancellable from
-        // either the dropdown or this window.
-        vm.onConnect = { [weak self] in
-            guard let self else { return nil }
-            self.connectAccount()
-            await self.connectTask?.value
-            return self.lastError
-        }
-        vm.onCancelConnect = { [weak self] in self?.cancelConnect() }
-        SettingsWindowController.shared.show(viewModel: vm)
+    /// Opens the Settings window (or brings it forward) on `tab`.
+    func openSettings(tab: SettingsTab = .general) {
+        SettingsWindowController.shared.show(vm: self, tab: tab)
+    }
+
+    /// Model for the paste-a-token sheet on the Accounts tab. The stored token
+    /// is left intact until a new one verifies — cancelling changes nothing.
+    func makeTokenFormModel() -> SettingsViewModel {
+        SettingsViewModel { [weak self] _ in self?.restartPolling() }
     }
 
     /// Runs the browser OAuth flow and rebuilds the poller on success.
@@ -298,14 +327,6 @@ final class MenuViewModel: ObservableObject {
         } catch {
             lastError = "Connect failed: \(error)"
         }
-    }
-
-    /// Opens the settings dialog so the user can paste a new token.
-    /// The existing token is left intact in Keychain until a new one is
-    /// successfully verified — cancelling the dialog leaves everything
-    /// unchanged.
-    func changeToken() {
-        openSettings()
     }
 
     /// Recovery path after the API rejected the stored token: re-read Claude
@@ -425,8 +446,10 @@ final class MenuViewModel: ObservableObject {
         } else {
             authState = .noToken
             needsReauthorization = true
+            claudeSource = .none
             return
         }
+        claudeSource = primaryIsScoped ? .connectedAccount : .pastedToken
 
         // Set synchronously too: the Combine subscriptions below are
         // `receive(on: RunLoop.main)`, which defers even the initial
@@ -467,14 +490,10 @@ final class MenuViewModel: ObservableObject {
 
         // 100 always fires (Bottle). User-configurable warning threshold
         // adds a second crossing event with a user-chosen sound.
-        var thresholds: [Int] = [100]
-        if warningEnabled, warningThreshold >= 1, warningThreshold < 100 {
-            thresholds.insert(warningThreshold, at: 0)
-        }
         let events = UsageEventDetector.detect(
             previous: lastFiveHour,
             current: newFive,
-            thresholds: thresholds
+            thresholds: alertThresholds
         )
         lastFiveHour = newFive
         cached = newCached
@@ -511,6 +530,31 @@ final class MenuViewModel: ObservableObject {
                 SoundPlayer.play(named: limitResetSound)
             }
         }
+    }
+
+    /// Warning / limit-reached sounds for Codex windows, on the same
+    /// thresholds and sound picks as Claude's. No reset sound: a Codex reset
+    /// is only seen when the next session writes a log line, so it would
+    /// play at an arbitrary later time.
+    func handleCodexChange(previous: CodexSnapshot?, current: CodexSnapshot?) {
+        let crossed = CodexSnapshot.crossedThresholds(
+            previous: previous, current: current,
+            thresholds: alertThresholds, now: Int64(Date().timeIntervalSince1970)
+        )
+        if crossed.contains(100) {
+            SoundPlayer.play(named: reachedLimitSound)
+        } else if !crossed.isEmpty {
+            SoundPlayer.play(named: warningSound)
+        }
+    }
+
+    /// 100 always; the user's warning threshold when enabled.
+    var alertThresholds: [Int] {
+        var thresholds: [Int] = [100]
+        if warningEnabled, warningThreshold >= 1, warningThreshold < 100 {
+            thresholds.insert(warningThreshold, at: 0)
+        }
+        return thresholds
     }
 
     private func handleStatusReport(_ new: StatusReport?) {

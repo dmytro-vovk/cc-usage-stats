@@ -47,6 +47,11 @@ here in the menubar, without opening Claude Code.
 - A red `⚠︎` triangle (in place of the gauge) when there is nothing left
   to poll with: no token set, the token rejected, or a connected
   account's session expired with no pasted token behind it.
+- With [Codex tracking](#codex-usage) on, **Settings → General → Menu-bar
+  pill shows** picks **Claude** (the pill above, the default), **Codex**
+  (one band with a `terminal` icon and the highest Codex window %), or
+  **Both** (a Codex band appended to the Claude pill). In **Both**, a
+  Claude token problem still shows as the warning triangle alone.
 
 ### Dropdown
 
@@ -103,12 +108,16 @@ here in the menubar, without opening Claude Code.
   the reconnect *prompt* above is suppressed whenever one of these is
   up, so the panel never offers an optional upgrade and reports a hard
   failure in the same breath.
-- Settings: **Launch at Login**, **Warn at threshold** (stepper
-  1–99% + sound picker), and a **Sounds** section with a per-event
-  picker for **Limit reached**, **Window reset**, and **Outage
-  detected**. Each picker covers all 14 macOS system sounds plus a
-  **None** option that mutes that single event.
-- Footer: **Set Token… / Change Token…** + version label + **Quit**.
+- With [Codex tracking](#codex-usage) on, a **Codex** section: one bar
+  per Codex window (labelled from its length — "5-hour", "Weekly"), its
+  reset time, the plan, and **"As of N ago · session log"** (or
+  `live`).
+- The **No token set** / **Token rejected** rows offer the one-click
+  Keychain import plus **Set a token…**, which opens Settings on the
+  Accounts tab.
+- Footer: **⚙ Settings…** (⌘,) + version label + **Quit**. All settings
+  live in the [Settings window](#settings-window); the dropdown shows
+  data only.
 
 ### Notification sounds
 
@@ -125,6 +134,54 @@ sound, and **None** silences that one event.
 - **Warn at threshold** — your chosen sound at your chosen threshold
   (e.g. Tink at 80%). Default: **Tink**.
 
+With Codex tracking on, **Warn at threshold** and **Limit reached** also
+fire when a Codex window crosses the same thresholds (same sounds).
+**Window reset** stays Claude-only: a Codex reset is only noticed when the
+next Codex session writes a log line, so a sound would arrive at an
+arbitrary later time.
+
+### Settings window
+
+**⚙ Settings…** (⌘,) in the dropdown footer opens one window with three
+toolbar tabs:
+
+- **General** — Launch at login; Menu-bar pill shows Claude / Codex /
+  Both.
+- **Accounts** — *Claude*: connection status, **Connect / Reconnect
+  account** (browser OAuth, see below), **Set / Change token…** (the
+  paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
+  folder, plan, last seen, and the opt-in **Live polling** toggle.
+- **Alerts** — Warn at threshold (1–99% + sound) and the per-event
+  sound pickers (**Limit reached**, **Window reset**, **Outage
+  detected**; 14 system sounds + **None**). Picking previews the sound.
+
+Settings keep the same stored values as before the window existed;
+nothing is migrated.
+
+### Codex usage
+
+Optional, off by default: **Settings → Accounts → Track Codex usage**.
+
+- **Passive (default).** The Codex CLI writes every session to
+  `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, and each turn logs the
+  account's rate limits. The app watches that folder (FSEvents) and shows
+  the newest reading. Local and read-only — no credentials, no network.
+  Only the main `codex` limit is shown; per-model Codex limits are not.
+- **Readings go stale between sessions.** A log line is only true as of
+  when Codex wrote it, hence "as of N ago". Once a window's reset time
+  has passed it shows **0%** instead of the old number. Before that, the
+  number can still be out of date (OpenAI may reset early).
+- **Live polling (opt-in).** Polls `https://chatgpt.com/backend-api/wham/usage`
+  — the endpoint behind the Codex CLI's usage display — every 5 minutes
+  and on wake, using the CLI's ChatGPT sign-in from `~/.codex/auth.json`.
+  The file is only read. The app **never refreshes** that token: Codex
+  refresh tokens are single-use, so refreshing would sign the CLI out.
+  When the access token expires (they last about 10 days) the toggle
+  reports **"Codex sign-in expired — run `codex` once to refresh it."**,
+  and the session logs keep the display going. Whichever source has the
+  newer reading wins. Verification notes:
+  [design spec](docs/superpowers/specs/2026-10-07-settings-window-and-codex-usage-design.md).
+
 ### Set / Change OAuth Token
 
 <picture>
@@ -132,8 +189,9 @@ sound, and **None** silences that one event.
   <img alt="Set OAuth Token window" src="docs/screenshots/settings-light.png">
 </picture>
 
-The dialog opens via **Set Token…** / **Change Token…** in the
-dropdown. The existing Keychain entry is left untouched until a new
+The sheet opens via **Set token… / Change token…** on the Accounts tab
+of the [Settings window](#settings-window) (or **Set a token…** in the
+dropdown's no-token row). The existing Keychain entry is left untouched until a new
 token is successfully verified — cancelling leaves everything as it
 was. A 401/403 from Anthropic surfaces inline; the existing-good token
 is not overwritten by a bad new one.
@@ -141,8 +199,8 @@ is not overwritten by a bad new one.
 ### Connect Claude account
 
 Optional. Click **Connect Claude account** — in the dropdown's connect
-prompt, or in the Settings window next to **Paste from Claude Code
-Keychain** — to unlock the per-model weekly windows (e.g. "Fable
+prompt, or **Connect account** on the Accounts tab of the Settings
+window — to unlock the per-model weekly windows (e.g. "Fable
 weekly") in the dropdown and pill.
 
 This runs a standard PKCE OAuth authorization-code flow in your
@@ -333,7 +391,8 @@ and launches it. Or grab a pre-built `.dmg` / `.zip` from the
 and drop the `.app` into `/Applications/`.
 
 On first launch the menubar shows a red ⚠︎ triangle (no token yet).
-Click it → **Set Token…**. Two ways to provide a token:
+Click it → **Set a token…** (opens Settings → Accounts → **Set
+token…**). Two ways to provide a token:
 
 - **Paste manually — recommended.** In a terminal: `claude setup-token`.
   Copy the resulting `sk-ant-oat01-…` value, paste into the SecureField,
@@ -384,6 +443,9 @@ security delete-identity -c "CCUsageStats Dev"
   on your own machine (see [Connect Claude
   account](#connect-claude-account)) — no third party sees the
   callback.
+- Codex tracking (off by default) reads `~/.codex/sessions` locally.
+  Opt-in live polling adds one request every 5 minutes to `chatgpt.com`
+  with the Codex CLI's existing sign-in; `~/.codex` is never written.
 - On disk under `~/Library/Application Support/cc-usage-stats/`:
   - `state.json` — latest rate-limit numbers + capture timestamp.
   - `history.jsonl` — sample log for the sparkline (current 5h window only).

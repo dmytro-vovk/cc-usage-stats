@@ -3,45 +3,6 @@ import SwiftUI
 import AppKit
 
 @MainActor
-final class SettingsWindowController: NSObject, NSWindowDelegate {
-    static let shared = SettingsWindowController()
-    private var window: NSWindow?
-    private var hostingController: NSHostingController<SettingsView>?
-
-    func show(viewModel: SettingsViewModel) {
-        // Always create a fresh window with the current viewModel — never
-        // re-use a stale window with an obsolete onSaveSuccess closure.
-        window?.close()
-
-        let host = NSHostingController(rootView: SettingsView(vm: viewModel) { [weak self] in
-            self?.window?.performClose(nil)
-        })
-        // Size to the content rather than a fixed 220pt: the error text and the
-        // short-lived-token notice both wrap to a variable number of lines, and
-        // a fixed height clips whichever one happens to be showing.
-        host.sizingOptions = [.preferredContentSize]
-
-        let win = NSWindow(contentViewController: host)
-        win.title = "Set OAuth Token"
-        win.styleMask = [.titled, .closable]
-        win.center()
-        win.isReleasedWhenClosed = false
-        win.delegate = self
-        self.window = win
-        self.hostingController = host
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    nonisolated func windowWillClose(_ notification: Notification) {
-        Task { @MainActor in
-            self.window = nil
-            self.hostingController = nil
-        }
-    }
-}
-
-@MainActor
 final class SettingsViewModel: ObservableObject {
     @Published var token: String = ""
     @Published var error: String?
@@ -55,18 +16,6 @@ final class SettingsViewModel: ObservableObject {
 
     private let onSaveSuccess: (String) -> Void
     init(onSaveSuccess: @escaping (String) -> Void) { self.onSaveSuccess = onSaveSuccess }
-
-    /// Set by the caller that owns the poller. Optional because the settings
-    /// window is constructible without it in previews and tests.
-    ///
-    /// `async` so the button can stay disabled for the duration of the
-    /// browser round-trip. It used to be fire-and-forget, which left a live
-    /// button that silently did nothing on a second click — the connect path
-    /// refuses to run twice concurrently.
-    /// Returns the failure text, if any, so this window can show it — the
-    /// dropdown's error line isn't visible from here.
-    var onConnect: (() async -> String?)?
-    var onCancelConnect: (() -> Void)?
 
     /// Expiry to persist alongside the token, or nil if the field no longer
     /// matches what was imported.
@@ -140,13 +89,12 @@ final class SettingsViewModel: ObservableObject {
     }
 }
 
-struct SettingsView: View {
+/// The paste-a-token form, shown as a sheet from the Accounts settings tab.
+struct TokenFormView: View {
     @ObservedObject var vm: SettingsViewModel
     let onClose: () -> Void
 
     @State private var saving = false
-    @State private var connecting = false
-    @State private var cancelled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -157,28 +105,6 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
             HStack {
                 Button("Paste from Claude Code Keychain") { vm.tryClaudeCodeKeychain() }
-                Button(connecting ? "Connecting…" : "Connect Claude account") {
-                    connecting = true
-                    Task {
-                        let failure = await vm.onConnect?() ?? nil
-                        // A cancel says nothing about any other error on
-                        // screen (e.g. a rejected token), so leave it be.
-                        if let failure {
-                            vm.error = failure
-                        } else if !cancelled {
-                            vm.error = nil
-                        }
-                        cancelled = false
-                        connecting = false
-                    }
-                }
-                .disabled(connecting)
-                if connecting {
-                    Button("Cancel") {
-                        cancelled = true
-                        vm.onCancelConnect?()
-                    }
-                }
                 Spacer()
             }
             if let err = vm.error {

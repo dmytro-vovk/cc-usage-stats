@@ -20,7 +20,7 @@ enum MenuBarPillRenderer {
     /// high-utilization bands converge in the orange-red end of the OKLab
     /// ramp, and a faint hairline lets them read as one blob.
     static func renderSplitPill(segments: [PillSegment], style: Style) -> NSImage {
-        precondition(segments.count >= 2, "use renderSinglePill for one segment")
+        precondition(!segments.isEmpty, "nothing to render")
 
         let dividerAlpha: CGFloat = segments.count >= 3 ? 0.7 : 0.45
 
@@ -34,7 +34,7 @@ enum MenuBarPillRenderer {
         let pieces: [Piece] = segments.map { seg in
             let icon = makeIcon(symbol: symbol(for: seg), color: style.onColor)
             let attr = makeAttr(seg.text, color: style.onColor)
-            let color = UsageColor.nsColor(t: seg.fraction)
+            let color = (seg.dimmed ? NSColor.secondaryLabelColor : UsageColor.nsColor(t: seg.fraction))
                 .withAlphaComponent(style.staleAlpha)
             return Piece(
                 icon: icon, attr: attr, color: color,
@@ -122,6 +122,7 @@ enum MenuBarPillRenderer {
         case .fiveHour: return gauge(for: segment.fraction)
         case .sevenDay: return "calendar"
         case .model:    return "sparkles"
+        case .codex:    return "terminal"
         }
     }
 

@@ -33,17 +33,18 @@ Skip this if you've never had the Phase 1 statusline integration.
 
 - On first launch with no token, the menubar shows a red
   `exclamationmark.triangle.fill` icon.
-- Click it → dropdown shows **Set Token…** at the bottom. Click that.
-- Settings window opens with a `SecureField`, **Paste from Claude Code
-  Keychain** and **Connect Claude account** beside it, and **Cancel** /
-  **Save & Test** at the bottom.
+- Click it → the dropdown's "No token set." row shows **Import from
+  Claude Code Keychain** and **Set a token…**. Click **Set a token…**.
+- Settings opens on the **Accounts** tab. Click **Set token…**: a sheet
+  with a `SecureField`, **Paste from Claude Code Keychain**, and
+  **Cancel** / **Save & Test** at the bottom.
 
 **Path A — auto-fill from Claude Code Keychain:**
 - Click **Paste from Claude Code Keychain**. macOS shows a one-time
   access prompt; allow it.
 - Field auto-populates. Click **Save & Test**.
-- On allow + valid token → window closes; menubar updates within ~5–10s.
-- On deny → field shows an error, window stays open, paste manually.
+- On allow + valid token → sheet closes; menubar updates within ~5–10s.
+- On deny → field shows an error, sheet stays open, paste manually.
 
 **Path B — paste manually:**
 - Run `claude setup-token` in a terminal, copy `sk-ant-oat01-…`, paste
@@ -128,13 +129,14 @@ Skip this if you've never had the Phase 1 statusline integration.
 - Choose a different sound from a picker — it previews on change.
 - Set an event's sound to **None** — that event goes silent; the others
   still fire. (There is no global mute.)
+- All of the above live on Settings → **Alerts**; the values chosen
+  before the Settings window existed are still selected.
 
 ### 8. Auth recovery
 
-- **Invalid token:** click **Reset Token…** → paste obviously broken
-  `sk-ant-oat01-NOTREAL` → Save & Test. Window stays open with the
-  rejection error. Cancel → menubar shows red ⚠︎ icon, dropdown reads
-  "Token rejected. Click Set Token below."
+- **Invalid token:** Settings → Accounts → **Change token…** → paste
+  obviously broken `sk-ant-oat01-NOTREAL` → Save & Test. The sheet stays
+  open with the rejection error and the stored token is untouched.
 - **`.notSubscriber` recovery:** if Anthropic ever returns 200 without
   rate-limit headers, dropdown shows "No Claude.ai subscription
   rate-limit data" but polling continues. State flips back to OK on
@@ -156,7 +158,7 @@ Skip this if you've never had the Phase 1 statusline integration.
 
 ### 11. Launch at Login
 
-- Toggle **Launch at Login** ON. Reboot or log out + back in.
+- Settings → General: toggle **Launch at login** ON. Reboot or log out + back in.
 - App auto-starts; menubar icon appears.
 - Toggle OFF, reboot — no auto-start.
 
@@ -298,3 +300,31 @@ Skip this if you've never had the Phase 1 statusline integration.
       base64url chars, i.e. 32 random bytes, as Claude Code sends it.)
 - [ ] Complete a connect after a failed one: the red "Connect failed: …"
       text clears rather than persisting under a healthy readout.
+
+### 14. Settings window
+
+- Dropdown footer reads **⚙ Settings…** · version · **Quit**; no
+  toggles or pickers remain in the dropdown. ⌘, opens Settings.
+- Toolbar tabs **General / Accounts / Alerts**; each resizes the window
+  to its content. Reopening while open brings the same window forward.
+- **General → Menu-bar pill shows**: Claude / Codex / Both. Codex and
+  Both only change the pill while Codex tracking is on (a hint says so).
+
+### 15. Codex usage
+
+- Accounts → **Track Codex usage** ON. Within a second the dropdown
+  gains a **Codex** section (plan, one bar per window, "As of N ago ·
+  session log"); Accounts shows plan and **Last seen**.
+- Run a `codex` prompt; within ~2–5s of its first turn the reading and
+  "as of" update (FSEvents).
+- With a reading whose `resets_at` is in the past, the bar shows **0%**
+  and "Reset … ago — awaiting fresh data".
+- Pill = **Codex**: one band, `terminal` icon, the Codex %. Pill =
+  **Both**: Claude bands + Codex band; with no Claude token, only the
+  red triangle.
+- **Live polling** ON: within seconds the source flips to `live`
+  (or an error is shown — e.g. "Codex sign-in expired — run `codex`
+  once to refresh it."). `~/.codex/auth.json` mtime is unchanged
+  afterwards (`stat -f %m ~/.codex/auth.json` before and after).
+- Tracking OFF: Codex section and band disappear; pill falls back to
+  Claude.
