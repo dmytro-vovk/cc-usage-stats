@@ -49,8 +49,10 @@ final class CodexMonitor: ObservableObject {
     private var rescanPending = false
     private var polling = false
     /// Bumped whenever a source is torn down, so a scan or poll that was in
-    /// flight at the time can tell its result is no longer wanted.
-    private var generation = 0
+    /// flight at the time can tell its result is no longer wanted. One per
+    /// source: stopping live polling must not discard a passive scan.
+    private var passiveGeneration = 0
+    private var liveGeneration = 0
 
     init(
         sessionsDirectory: URL = CodexSessionReader.defaultDirectory,
@@ -72,7 +74,8 @@ final class CodexMonitor: ObservableObject {
 
     func stop() {
         started = false
-        generation += 1
+        passiveGeneration += 1
+        liveGeneration += 1
         stopPassive()
         stopLive()
     }
@@ -154,7 +157,7 @@ final class CodexMonitor: ObservableObject {
         }
         rescanTimer?.invalidate(); rescanTimer = nil
         passiveSnapshot = nil
-        generation += 1
+        passiveGeneration += 1
     }
 
     /// FSEvents reports directories, with a trailing slash. A sessions folder
@@ -170,7 +173,7 @@ final class CodexMonitor: ObservableObject {
         guard started, trackingEnabled else { return }
         if scanning { rescanPending = true; return }
         scanning = true
-        let gen = generation
+        let gen = passiveGeneration
         let dir = sessionsDirectory
         Task.detached(priority: .utility) {
             let exists = FileManager.default.fileExists(atPath: dir.path)
@@ -179,7 +182,7 @@ final class CodexMonitor: ObservableObject {
                 guard let self else { return }
                 self.scanning = false
                 self.sessionsDirectoryExists = exists
-                if gen == self.generation, self.started, self.trackingEnabled, s != self.passiveSnapshot {
+                if gen == self.passiveGeneration, self.started, self.trackingEnabled, s != self.passiveSnapshot {
                     self.passiveSnapshot = s
                     self.publish()
                 }
@@ -203,21 +206,21 @@ final class CodexMonitor: ObservableObject {
         liveTimer?.invalidate(); liveTimer = nil
         liveSnapshot = nil
         liveError = nil
-        generation += 1
+        liveGeneration += 1
     }
 
     /// One poll at a time, so an older response can't land after a newer one.
     private func pollLive() {
         guard started, !polling else { return }
         polling = true
-        let gen = generation
+        let gen = liveGeneration
         let authURL = authURL
         lastLiveAttempt = Date()
         Task { @MainActor in
             defer { self.polling = false }
             let creds = await Task.detached { CodexLiveClient.readCredentials(at: authURL) }.value
             let result = await CodexLiveClient.fetch(credentials: creds, now: Int64(Date().timeIntervalSince1970))
-            guard gen == self.generation, self.started, self.trackingEnabled, self.livePollingEnabled else { return }
+            guard gen == self.liveGeneration, self.started, self.trackingEnabled, self.livePollingEnabled else { return }
             switch result {
             case .success(let s):
                 self.liveSnapshot = s

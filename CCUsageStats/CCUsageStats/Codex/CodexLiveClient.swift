@@ -120,7 +120,7 @@ nonisolated enum CodexLiveClient {
         else { return nil }
         let windows = ["primary_window", "secondary_window"].compactMap { key -> CodexWindow? in
             guard let w = rl[key] as? [String: Any],
-                  let used = CodexRolloutParser.number(w["used_percent"]), used.isFinite,
+                  let used = CodexRolloutParser.percent(CodexRolloutParser.number(w["used_percent"])),
                   let secs = CodexRolloutParser.int64(CodexRolloutParser.number(w["limit_window_seconds"])),
                   secs >= 60, secs <= 60_000_000,
                   let reset = CodexRolloutParser.int64(CodexRolloutParser.number(w["reset_at"]))

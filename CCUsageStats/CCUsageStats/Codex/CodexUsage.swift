@@ -127,7 +127,7 @@ nonisolated enum CodexRolloutParser {
 
         let windows = ["primary", "secondary"].compactMap { key -> CodexWindow? in
             guard let w = limits[key] as? [String: Any],
-                  let used = number(w["used_percent"]), used.isFinite,
+                  let used = percent(number(w["used_percent"])),
                   let minutes = int64(number(w["window_minutes"])), minutes > 0, minutes <= 1_000_000,
                   let resets = int64(number(w["resets_at"]))
             else { return nil }
@@ -160,6 +160,13 @@ nonisolated enum CodexRolloutParser {
         if let d = f.date(from: s) { return Int64(d.timeIntervalSince1970) }
         f.formatOptions = [.withInternetDateTime]
         return f.date(from: s).map { Int64($0.timeIntervalSince1970) }
+    }
+
+    /// A plausible percentage, or nil. Bounds are loose (over 100 is real
+    /// when a limit is overrun) but keep later `Int(…rounded())` from trapping.
+    static func percent(_ v: Double?) -> Double? {
+        guard let v, v.isFinite, v >= 0, v <= 10_000 else { return nil }
+        return v
     }
 
     /// Non-trapping conversion: a valid JSON number like `1e300` must be
