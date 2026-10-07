@@ -79,16 +79,9 @@ struct MenuBarLabel: View {
         )
     }
 
-    /// Builds the optional outage badge (drawn outside any pill). The
-    /// severity color stays distinct from the gauge gradient so users
-    /// don't confuse "7d is high" with "Anthropic is degraded".
     private func buildOutageIcon(staleAlpha: CGFloat) -> NSImage? {
-        guard let r = vm.statusReport, r.indicator != .none else { return nil }
-        let color = NSColor(outageColor(for: r.indicator))
-        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        return NSImage(systemSymbolName: outageSymbol(for: r.indicator), accessibilityDescription: nil)?
-            .withSymbolConfiguration(cfg)
+        guard let r = vm.statusReport else { return nil }
+        return MenuBarPillRenderer.outageIcon(for: r.indicator, staleAlpha: staleAlpha)
     }
 
     /// Single pill (or bare triangle for invalid token). Matches the
@@ -146,26 +139,6 @@ struct MenuBarLabel: View {
         }
         composite.isTemplate = false
         return composite
-    }
-
-    private func outageSymbol(for ind: StatusReport.Indicator) -> String {
-        switch ind {
-        case .minor:       return "exclamationmark.circle.fill"
-        case .major:       return "exclamationmark.triangle.fill"
-        case .critical:    return "xmark.octagon.fill"
-        case .maintenance: return "wrench.adjustable.fill"
-        case .none:        return "checkmark.circle.fill"
-        }
-    }
-
-    private func outageColor(for ind: StatusReport.Indicator) -> Color {
-        switch ind {
-        case .minor:       return .yellow
-        case .major:       return .orange
-        case .critical:    return .red
-        case .maintenance: return .blue
-        case .none:        return .secondary
-        }
     }
 
     private func glyph() -> String {

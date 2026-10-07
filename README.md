@@ -28,7 +28,7 @@ work between the two quotas. See [Codex usage](#codex-usage).
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-outage-dark.png">
-  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png" width="113">
+  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png" width="115">
 </picture>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>

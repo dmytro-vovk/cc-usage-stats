@@ -149,4 +149,53 @@ enum MenuBarPillRenderer {
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small), weight: .semibold)
         return NSAttributedString(string: s, attributes: [.foregroundColor: color, .font: font])
     }
+
+    // MARK: - Outage badge
+
+    /// The badge drawn right of the pill while status.claude.com reports a
+    /// problem; nil when operational. The severity colour stays distinct
+    /// from the gauge gradient so "7d is high" isn't read as "Anthropic is
+    /// degraded".
+    static func outageIcon(for indicator: StatusReport.Indicator, staleAlpha: CGFloat) -> NSImage? {
+        guard indicator != .none else { return nil }
+        // Two palette colours: the glyph layer ("!", "×") first, then the
+        // shape. With one colour both layers took it and the glyph vanished
+        // into a solid dot.
+        let fill = outageColor(for: indicator).withAlphaComponent(staleAlpha)
+        let glyph = outageGlyphColor(for: indicator).withAlphaComponent(staleAlpha)
+        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [glyph, fill]))
+        return NSImage(systemSymbolName: outageSymbol(for: indicator), accessibilityDescription: nil)?
+            .withSymbolConfiguration(cfg)
+    }
+
+    static func outageSymbol(for indicator: StatusReport.Indicator) -> String {
+        switch indicator {
+        case .minor:       return "exclamationmark.circle.fill"
+        case .major:       return "exclamationmark.triangle.fill"
+        case .critical:    return "xmark.octagon.fill"
+        case .maintenance: return "wrench.adjustable.fill"
+        case .none:        return "checkmark.circle.fill"
+        }
+    }
+
+    /// Dark on the light fills, white on the dark ones. The wrench has no
+    /// separate glyph layer — its body takes this colour — so it stays blue.
+    static func outageGlyphColor(for indicator: StatusReport.Indicator) -> NSColor {
+        switch indicator {
+        case .minor, .major: return .black
+        case .critical, .none: return .white
+        case .maintenance: return outageColor(for: .maintenance)
+        }
+    }
+
+    static func outageColor(for indicator: StatusReport.Indicator) -> NSColor {
+        switch indicator {
+        case .minor:       return .systemYellow
+        case .major:       return .systemOrange
+        case .critical:    return .systemRed
+        case .maintenance: return .systemBlue
+        case .none:        return .secondaryLabelColor
+        }
+    }
 }
