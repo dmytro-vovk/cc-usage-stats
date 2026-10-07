@@ -41,14 +41,4 @@ final class UsageWindowsTests: XCTestCase {
     /// "Resets in …" line; the first of the run keeps it. Resets within a
     /// minute count as together — the API stamps one moment with differing
     /// sub-second fractions, so parsed epochs can differ by a second.
-    func testResetCaptionHiddenWhenItMatchesTheWindowAbove() {
-        XCTAssertEqual(
-            UsageWindows.hidesResetCaption([1_000, 500_000, 500_001, 500_000, 900_000]),
-            [false, false, true, true, false]
-        )
-        // A missing window breaks the run: nothing above to repeat.
-        XCTAssertEqual(UsageWindows.hidesResetCaption([500_000, nil, 500_000]), [false, false, false])
-        XCTAssertEqual(UsageWindows.hidesResetCaption([500_000, 500_061]), [false, false])
-        XCTAssertEqual(UsageWindows.hidesResetCaption([]), [])
-    }
 }

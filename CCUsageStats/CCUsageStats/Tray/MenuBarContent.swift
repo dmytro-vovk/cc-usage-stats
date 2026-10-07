@@ -231,22 +231,32 @@ struct MenuBarDropdown: View {
     @ObservedObject var vm: MenuViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             // Outage banner (only when status.claude.com reports anything
             // beyond "All Systems Operational").
             statusBanner
 
-            if vm.codex.trackingEnabled {
+            // Header: refresh lives here, with the capture age as its tooltip.
+            HStack(alignment: .firstTextBaseline) {
                 Text("Claude").font(.headline)
+                Spacer()
+                if vm.canRefresh {
+                    Button {
+                        vm.refreshNow()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut("r")
+                    .help(vm.cached.map { WindowTooltip.lastUpdated(secondsAgo: now - $0.capturedAt) }
+                          ?? "Refresh now (⌘R)")
+                }
             }
 
             // Window rows.
             if let cached = vm.cached {
                 let modelKeys = UsageWindows.orderedModelKeys(cached.snapshot.models)
-                let hideReset = UsageWindows.hidesResetCaption(
-                    [cached.snapshot.fiveHour?.resetsAt, cached.snapshot.sevenDay?.resetsAt]
-                        + modelKeys.map { cached.snapshot.models[$0]?.resetsAt }
-                )
                 WindowSection(
                     title: "5-hour session",
                     window: cached.snapshot.fiveHour,
@@ -265,45 +275,16 @@ struct MenuBarDropdown: View {
                     window: cached.snapshot.sevenDay,
                     now: now,
                     breakdown: UsageShare.caption(cached.snapshot.breakdown),
-                    showsReset: !hideReset[1],
                     tracksPace: true
                 )
 
-                ForEach(Array(modelKeys.enumerated()), id: \.element) { index, key in
+                ForEach(modelKeys, id: \.self) { key in
                     WindowSection(
                         title: UsageWindows.label(for: key),
                         window: cached.snapshot.models[key],
                         now: now,
-                        showsReset: !hideReset[2 + index],
                         tracksPace: true
                     )
-                }
-
-                Divider()
-
-                HStack(spacing: 4) {
-                    Text("Last updated")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(RelativeTime.format(seconds: now - cached.capturedAt))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    Text("ago")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if vm.canRefresh {
-                        Button {
-                            vm.refreshNow()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.borderless)
-                        .keyboardShortcut("r")
-                        .help("Refresh now (⌘R)")
-                    }
                 }
             } else {
                 Text("No data captured yet.")
@@ -591,12 +572,19 @@ private struct CodexSection: View {
     let now: Int64
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            // Age stays visible: a session-log reading can be days old.
             HStack(alignment: .firstTextBaseline) {
                 Text("Codex").font(.headline)
                 Spacer()
-                if let plan = snapshot?.planType {
-                    Text(plan).font(.caption).foregroundStyle(.secondary)
+                if let snapshot {
+                    Text(([snapshot.planType].compactMap { $0 }
+                          + ["\(RelativeTime.format(seconds: now - snapshot.observedAt)) ago"])
+                        .joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .help("As of \(RelativeTime.format(seconds: now - snapshot.observedAt)) ago · \(snapshot.source.rawValue)")
                 }
             }
             if let snapshot {
@@ -608,10 +596,6 @@ private struct CodexSection: View {
                         tracksPace: w.windowMinutes == 10080
                     )
                 }
-                Text("As of \(RelativeTime.format(seconds: now - snapshot.observedAt)) ago · \(snapshot.source.rawValue)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
             } else {
                 Text("No Codex usage seen yet in ~/.codex/sessions.")
                     .font(.caption)
@@ -636,9 +620,6 @@ private struct WindowSection: View {
     var sparkline: SparklineData? = nil
     /// Where this window's usage came from, e.g. "Claude Code 93% · Chats 7%".
     var breakdown: String? = nil
-    /// False when the window above resets at the same moment, so the
-    /// "Resets in …" line would only repeat it.
-    var showsReset = true
     /// 7-day windows: mark the even-pace point on the bar and, when usage
     /// is ahead of it, when the limit runs out.
     var tracksPace = false
@@ -651,9 +632,9 @@ private struct WindowSection: View {
             let color = UsageColor.gradient(t: fraction, scheme: colorScheme)
             let delta = w.resetsAt - now
             let pace = tracksPace ? WeeklyPace.compute(window: w, now: now) : nil
-            let caption = captionText(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap, pace: pace)
+            let caption = pace?.capacityAt.map { WeeklyPace.capacityCaption(at: $0, now: now) }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(title)
                         .font(.subheadline)
@@ -694,6 +675,8 @@ private struct WindowSection: View {
                         .wrapsFully()
                 }
             }
+            .contentShape(Rectangle())
+            .help(WindowTooltip.text(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
         } else {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -705,29 +688,24 @@ private struct WindowSection: View {
             }
         }
     }
+}
 
-    private func captionText(delta: Int64, forecastSecs: Int64?, pace: WeeklyPace?) -> String? {
-        var parts: [String] = []
-        if showsReset {
-            parts.append(resetCaption(delta: delta, forecastSecs: forecastSecs))
+/// Hover text for a window row and the refresh button — the details the
+/// dropdown no longer spends a line on.
+enum WindowTooltip {
+    static func text(delta: Int64, forecastSecs: Int64?) -> String {
+        guard delta >= 0 else {
+            return "Reset \(RelativeTime.format(seconds: -delta)) ago — awaiting fresh data"
         }
-        if let at = pace?.capacityAt {
-            parts.append(WeeklyPace.capacityCaption(at: at, now: now))
+        let reset = "Resets in \(RelativeTime.format(seconds: delta))"
+        if let f = forecastSecs, f > 0, f < delta {
+            return "\(reset) · forecast 100% in \(RelativeTime.format(seconds: f))"
         }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return reset
     }
 
-    private func resetCaption(delta: Int64, forecastSecs: Int64?) -> String {
-        let resetPart: String
-        if delta >= 0 {
-            resetPart = "Resets in \(RelativeTime.format(seconds: delta))"
-        } else {
-            resetPart = "Reset \(RelativeTime.format(seconds: -delta)) ago — awaiting fresh data"
-        }
-        if let f = forecastSecs, f > 0, f < delta {
-            return "\(resetPart) · forecast 100% in \(RelativeTime.format(seconds: f))"
-        }
-        return resetPart
+    static func lastUpdated(secondsAgo: Int64) -> String {
+        "Last updated \(RelativeTime.format(seconds: secondsAgo)) ago — click to refresh (⌘R)"
     }
 }
 

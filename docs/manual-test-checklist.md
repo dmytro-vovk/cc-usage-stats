@@ -75,7 +75,8 @@ Skip this if you've never had the Phase 1 statusline integration.
 
 ### 5. Refresh Now (⌘R)
 
-- Open the dropdown — small ↻ icon next to "Last updated Xs ago".
+- Open the dropdown — small ↻ icon right of the **Claude** header;
+  hovering it shows "Last updated Xs ago".
 - Click it (or press ⌘R while dropdown is open) — captured timestamp
   resets within a second.
 - Hidden when polling is stopped (e.g. Anthropic 401 → invalid token).
@@ -94,8 +95,8 @@ Skip this if you've never had the Phase 1 statusline integration.
 - Dashed vertical gridlines mark elapsed session hours: four of them, at
   20/40/60/80% of the width, regardless of the clock time the window began.
 - A dashed line from the latest point follows the trend: to 100% if it caps
-  before reset, otherwise to the projected value at reset. The caption
-  appends `· forecast 100% in Nm` when the slope predicts a cap.
+  before reset, otherwise to the projected value at reset. The row's
+  tooltip appends `· forecast 100% in Nm` when the slope predicts a cap.
 - Force-fill the chart for testing:
 
   ```bash
@@ -185,11 +186,11 @@ Skip this if you've never had the Phase 1 statusline integration.
 - [ ] Usage left of the tick: fill keeps its usual colour, tick is muted, no
       capacity caption.
 - [ ] Usage right of the tick (more than 24h into the window): fill past the
-      tick is red and the caption ends `· capacity at <Day HH:mm>`
+      tick is red and a caption reads `capacity at <Day HH:mm>`
       (`capacity today at HH:mm` if it runs out today). In the first 24h of a
       window only the tick shows.
-- [ ] When a model's weekly window resets with the 7-day window, only the
-      7-day row shows "Resets in …"; the model row has no reset line. Check what the API sent with
+- [ ] Hovering any window row shows its "Resets in …" tooltip; no reset
+      lines are drawn in the panel. Check what the API sent with
       `/usr/bin/log show --last 5m --predicate 'subsystem ==
       "dev.dv.ccusagestats" AND category == "usage"'`.
 - [ ] After "Connect Claude account": browser opens, approval returns to the
@@ -239,7 +240,7 @@ Skip this if you've never had the Phase 1 statusline integration.
       connections) and leave the app running.
       Within one poll — at most ~60s, and without relaunching:
       - the per-model **rows and pill segment disappear**, rather than
-        freezing at their last value under a ticking "Last updated Xs ago"
+        freezing at their last value under a ticking "Last updated" tooltip
         that no source can refresh;
       - the 5h/7d numbers **keep updating** from the pasted token;
       - the "Connect your account to see per-model weekly usage" row
@@ -252,7 +253,7 @@ Skip this if you've never had the Phase 1 statusline integration.
       the app still polls (a per-model row is live). Then revoke the app's
       authorization in your Claude account settings and leave it running.
       Within one poll, and without relaunching:
-      - polling stops (the "Last updated" caption stops advancing);
+      - polling stops (the refresh button's "Last updated" tooltip stops advancing);
       - the menubar shows the red ⚠︎ triangle;
       - the dropdown shows **"Claude account connection expired."** with
         "Reconnect to resume usage updates, or set a token below." and a
@@ -313,8 +314,8 @@ Skip this if you've never had the Phase 1 statusline integration.
 ### 15. Codex usage
 
 - Accounts → **Track Codex usage** ON. Within a second the dropdown
-  gains a **Codex** section (plan, one bar per window, "As of N ago ·
-  session log"); Accounts shows plan and **Last seen**.
+  gains a **Codex** section (header `prolite · N ago`, hover → source;
+  one bar per window); Accounts shows plan and **Last seen**.
 - Run a `codex` prompt; within ~2–5s of its first turn the reading and
   "as of" update (FSEvents).
 - With a reading whose `resets_at` is in the past, the bar shows **0%**

@@ -60,14 +60,16 @@ here in the menubar, without opening Claude Code.
   <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png">
 </picture>
 
-- 5-hour and 7-day windows: title + bold gradient-coloured percentage,
-  a tinted progress bar, and a `Resets in …` caption. A window that
-  resets together with the one above it (typically a model's weekly cap
-  under the 7-day window) omits its caption rather than repeating it.
+- A **Claude** header with the ↻ refresh button (⌘R) right-aligned;
+  hovering it shows "Last updated Xs ago".
+- 5-hour and 7-day windows: title + bold gradient-coloured percentage
+  and a tinted progress bar. Hover a row for its reset time (`Resets in
+  …`, plus `· forecast 100% in Nm` for the 5-hour window when the trend
+  caps before reset) — kept out of the panel to keep it compact.
 - On the 7-day bar and each per-model weekly bar, a **pace tick** marks
   how much of the week has elapsed — usage left of it is on track. When
   usage runs ahead of the tick, the part of the bar past it turns red and
-  the caption appends `· capacity at Fri 14:00` (or `capacity today at
+  a caption shows `capacity at Fri 14:00` (or `capacity today at
   18:30`): when the limit runs out at the week's average rate so far.
   The red segment and caption are held back for the first 24 hours of a
   window, when one burst would extrapolate to a false alarm.
@@ -97,10 +99,9 @@ here in the menubar, without opening Claude Code.
   always starts at the window's left edge at 0%: solid when the first
   recorded sample is still 0%, dashed up to the first sample when the app
   joined the window already in use (the path between wasn't observed). The
-  caption appends `· forecast 100% in Nm` when the slope predicts a
+  row's tooltip adds `· forecast 100% in Nm` when the slope predicts a
   cap before reset. Dashed vertical gridlines mark each elapsed hour of
   the session (1h–4h, at 20/40/60/80% of the width).
-- "Last updated Xs ago" with a small ↻ refresh button (⌘R).
 - Auth / connectivity / outage rows when relevant
   (`Token rejected`, `Claude account connection expired` with a
   **Reconnect** button, `Offline`, `No subscription rate-limit data`,
@@ -109,9 +110,10 @@ here in the menubar, without opening Claude Code.
   up, so the panel never offers an optional upgrade and reports a hard
   failure in the same breath.
 - With [Codex tracking](#codex-usage) on, a **Codex** section: one bar
-  per Codex window (labelled from its length — "5-hour", "Weekly"), its
-  reset time, the plan, and **"As of N ago · session log"** (or
-  `live`).
+  per Codex window (labelled from its length — "5-hour", "Weekly"), and
+  the plan and reading age in the header (`prolite · 2m ago`; hover for
+  the source, `session log` or `live`). Reset times are row tooltips, as
+  for Claude.
 - The **No token set** / **Token rejected** rows offer the one-click
   Keychain import plus **Set a token…**, which opens Settings on the
   Accounts tab.
