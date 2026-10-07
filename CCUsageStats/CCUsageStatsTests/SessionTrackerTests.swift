@@ -39,25 +39,51 @@ final class SessionTrackerTests: XCTestCase {
         XCTAssertNil(ProcessProbe.startTime(of: 999_999))
     }
 
+    func testLooksLikeClaude() {
+        XCTAssertTrue(ProcessProbe.looksLikeClaude(path: "/Users/u/Library/Application Support/Claude/claude-code/2.1.289/x/claude.app/Contents/MacOS/claude"))
+        XCTAssertTrue(ProcessProbe.looksLikeClaude(path: "/Users/u/.local/share/claude/versions/2.1.183"))
+        XCTAssertTrue(ProcessProbe.looksLikeClaude(path: "/opt/homebrew/bin/node"))
+        XCTAssertFalse(ProcessProbe.looksLikeClaude(path: "/usr/bin/python3"))
+        XCTAssertFalse(ProcessProbe.looksLikeClaude(path: nil))
+    }
+
     func testScanKeepsLiveDropsAndDeletesDead() throws {
         let me = ProcessInfo.processInfo.processIdentifier
         try writeRecord("live", pid: me)
-        try writeRecord("dead", pid: 999_999)
+        // Old enough to be cleaned up.
+        try writeRecord("dead", pid: 999_999, mtime: Date().addingTimeInterval(-120))
         // A recycled PID: alive, but started after the record was written.
         try writeRecord("recycled", pid: me, mtime: Date(timeIntervalSince1970: 1_000))
 
+        // The test host isn't a claude process; accept it for this test.
         let list = SessionTracker.scan(dir: root.appendingPathComponent("sessions"),
-                                       titles: DesktopSessionTitles(root: root))
+                                       titles: DesktopSessionTitles(root: root), isClaude: { _ in true })
         XCTAssertEqual(list.map(\.id), ["live"])
         let left = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("sessions").path)
-        XCTAssertEqual(left, ["live.json"], "dead sessions' files are cleaned up")
+        XCTAssertEqual(left, ["live.json"],
+                       "dead files older than a minute are cleaned up — a recycled PID means the session is dead too")
+    }
+
+    func testFreshDeadRecordIsHiddenButNotDeleted() throws {
+        // A resumed session may be rewriting this very file; leave it alone.
+        try writeRecord("justdied", pid: 999_999)
+        let dir = root.appendingPathComponent("sessions")
+        XCTAssertEqual(SessionTracker.scan(dir: dir, titles: DesktopSessionTitles(root: root), isClaude: { _ in true }), [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("justdied.json").path))
+    }
+
+    func testNonClaudeProcessIsNotListed() throws {
+        try writeRecord("other", pid: ProcessInfo.processInfo.processIdentifier)
+        let list = SessionTracker.scan(dir: root.appendingPathComponent("sessions"),
+                                       titles: DesktopSessionTitles(root: root), isClaude: { _ in false })
+        XCTAssertEqual(list, [])
     }
 
     func testScanIgnoresTempAndJunkFiles() throws {
         let dir = root.appendingPathComponent("sessions")
         try "garbage".write(to: dir.appendingPathComponent("junk.json"), atomically: true, encoding: .utf8)
         try "{}".write(to: dir.appendingPathComponent(".x.123.tmp"), atomically: true, encoding: .utf8)
-        XCTAssertEqual(SessionTracker.scan(dir: dir, titles: DesktopSessionTitles(root: root)), [])
+        XCTAssertEqual(SessionTracker.scan(dir: dir, titles: DesktopSessionTitles(root: root), isClaude: { _ in true }), [])
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent(".x.123.tmp").path),
                       "an in-flight temp file belongs to the hook, not to us")
     }

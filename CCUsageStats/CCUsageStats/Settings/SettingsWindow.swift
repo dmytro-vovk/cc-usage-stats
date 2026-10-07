@@ -135,12 +135,14 @@ struct GeneralSettingsView: View {
                     get: { vm.sessions.enabled },
                     set: { vm.sessions.enabled = $0 }
                 ))
-                if vm.sessions.enabled {
+                // Shown while off too when removal failed: the hooks are then
+                // still running, and the user needs to know and retry.
+                if vm.sessions.enabled || hookFailed {
                     LabeledContent("Hooks") {
                         HStack(spacing: 8) {
                             Text(hookStatus).foregroundStyle(hookFailed ? Color.red : Color.secondary)
                             if hookFailed {
-                                Button("Repair") { vm.sessions.reinstall() }
+                                Button(vm.sessions.enabled ? "Repair" : "Retry removal") { vm.sessions.reinstall() }
                             }
                         }
                     }

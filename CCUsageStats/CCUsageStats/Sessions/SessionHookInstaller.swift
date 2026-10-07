@@ -14,8 +14,10 @@ nonisolated enum SessionHookInstaller {
         "Notification", "Stop", "StopFailure", "PreCompact", "SessionEnd",
     ]
 
-    /// Recognises our entries, including ones pointing at an old location.
     static let scriptName = "session-hook.sh"
+    /// Recognises our entries — also at an old app-support location — and
+    /// nobody else's: a bare "session-hook.sh" could be another tool's.
+    static let ownMarker = "/cc-usage-stats/hooks/session-hook.sh"
 
     static let timeoutSeconds = 10
 
@@ -28,9 +30,13 @@ nonisolated enum SessionHookInstaller {
 
     enum InstallError: Error, Equatable, CustomStringConvertible {
         case unreadableSettings(String)
+        case unexpectedShape(String)
+        case changedWhileWriting(String)
         var description: String {
             switch self {
-            case .unreadableSettings(let path): return "Couldn't parse \(path); left it untouched."
+            case .unreadableSettings(let path): return "Couldn't read \(path); left it untouched."
+            case .unexpectedShape(let what): return "settings.json has an unexpected \(what); left it untouched."
+            case .changedWhileWriting(let path): return "\(path) kept changing while being updated; try again."
             }
         }
     }
@@ -39,20 +45,49 @@ nonisolated enum SessionHookInstaller {
         Paths.liveAppSupportDir.appendingPathComponent("hooks/\(scriptName)")
     }
 
-    /// The path is quoted: "Application Support" has a space.
-    static func command(for scriptURL: URL) -> String { "'\(scriptURL.path)'" }
+    /// POSIX single-quoted: "Application Support" has a space, and a home
+    /// folder may contain an apostrophe.
+    static func command(for scriptURL: URL) -> String {
+        "'" + scriptURL.path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
 
     // MARK: - Pure settings transforms
 
     static func isOurs(_ hook: [String: Any]) -> Bool {
-        (hook["command"] as? String)?.contains(scriptName) == true
+        (hook["command"] as? String)?.contains(ownMarker) == true
     }
 
+    /// Every event has our entry, in exactly the shape we write: a group with
+    /// no matcher holding one command hook with our timeout. Anything else
+    /// (a narrowing matcher, a changed type) is repaired by reinstalling.
     static func isInstalled(command: String, in settings: [String: Any]) -> Bool {
         let hooks = settings["hooks"] as? [String: Any] ?? [:]
         return events.allSatisfy { event in
             (hooks[event] as? [[String: Any]] ?? []).contains { group in
-                (group["hooks"] as? [[String: Any]] ?? []).contains { $0["command"] as? String == command }
+                guard group["matcher"] == nil,
+                      let entries = group["hooks"] as? [[String: Any]], entries.count == 1
+                else { return false }
+                let e = entries[0]
+                return e["command"] as? String == command && e["type"] as? String == "command"
+                    && (e["timeout"] as? NSNumber)?.intValue == timeoutSeconds
+            }
+        }
+    }
+
+    /// The transforms assume the shapes Claude Code documents. Anything else
+    /// is someone's hand edit we don't understand, so we refuse to write.
+    static func validate(_ settings: [String: Any]) throws {
+        guard let raw = settings["hooks"] else { return }
+        guard let hooks = raw as? [String: Any] else { throw InstallError.unexpectedShape("\"hooks\" value") }
+        for (event, value) in hooks {
+            guard let groups = value as? [Any] else { throw InstallError.unexpectedShape("\"\(event)\" value") }
+            for g in groups {
+                guard let group = g as? [String: Any] else { throw InstallError.unexpectedShape("\"\(event)\" entry") }
+                if let entries = group["hooks"] {
+                    guard let list = entries as? [Any], list.allSatisfy({ $0 is [String: Any] }) else {
+                        throw InstallError.unexpectedShape("\"\(event)\" hook list")
+                    }
+                }
             }
         }
     }
@@ -94,29 +129,48 @@ nonisolated enum SessionHookInstaller {
     @discardableResult
     static func ensureInstalled(settingsURL: URL, scriptURL: URL = defaultScriptURL) throws -> Outcome {
         let scriptChanged = try writeScriptIfNeeded(at: scriptURL)
-        let settings = try readSettings(settingsURL)
         let cmd = command(for: scriptURL)
-        if isInstalled(command: cmd, in: settings) {
-            return scriptChanged ? .updatedScript : .alreadyInstalled
+        var outcome = Outcome.alreadyInstalled
+        try update(settingsURL) { settings in
+            if isInstalled(command: cmd, in: settings) { return nil }
+            outcome = .installed
+            return installing(command: cmd, into: settings)
         }
-        try backUpOnce(settingsURL)
-        try writeSettings(installing(command: cmd, into: settings), to: settingsURL)
-        return .installed
+        if outcome == .alreadyInstalled, scriptChanged { return .updatedScript }
+        return outcome
     }
 
     static func uninstall(settingsURL: URL) throws {
-        let settings = try readSettings(settingsURL)
-        let out = uninstalling(from: settings)
-        guard !NSDictionary(dictionary: out).isEqual(to: settings) else { return }
-        try backUpOnce(settingsURL)
-        try writeSettings(out, to: settingsURL)
+        try update(settingsURL) { settings in
+            let out = uninstalling(from: settings)
+            return NSDictionary(dictionary: out).isEqual(to: settings) ? nil : out
+        }
     }
 
     static func status(settingsURL: URL, scriptURL: URL = defaultScriptURL) -> Bool {
-        guard let settings = try? readSettings(settingsURL),
+        guard let (_, settings) = try? read(settingsURL.resolvingSymlinksInPath()),
               (try? String(contentsOf: scriptURL, encoding: .utf8)) == SessionHookScript.contents
         else { return false }
         return isInstalled(command: command(for: scriptURL), in: settings)
+    }
+
+    /// Read–transform–write with a compare-and-swap: if the file changed
+    /// between our read and our write (Claude Code, a dotfiles sync), start
+    /// over from the new contents rather than overwrite them.
+    /// `transform` returns nil when there is nothing to write.
+    private static func update(_ link: URL, _ transform: ([String: Any]) throws -> [String: Any]?) throws {
+        // Resolved once, so every step sees the same file even if the link moves.
+        let url = link.resolvingSymlinksInPath()
+        for _ in 0..<3 {
+            let (original, settings) = try read(url)
+            try validate(settings)
+            guard let updated = try transform(settings) else { return }
+            if let original { try backUpOnce(original, beside: url) }
+            guard (try read(url)).0 == original else { continue }
+            try write(updated, to: url)
+            return
+        }
+        throw InstallError.changedWhileWriting(url.path)
     }
 
     private static func writeScriptIfNeeded(at url: URL) throws -> Bool {
@@ -127,28 +181,28 @@ nonisolated enum SessionHookInstaller {
         return true
     }
 
-    private static func readSettings(_ url: URL) throws -> [String: Any] {
-        guard let data = try? Data(contentsOf: url) else { return [:] }  // missing: start empty
-        if data.isEmpty { return [:] }
+    /// The raw bytes (nil when the file doesn't exist) and the parsed object.
+    /// Only a missing file counts as empty: unreadable is an error, never "start over".
+    private static func read(_ url: URL) throws -> (Data?, [String: Any]) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, [:]) }
+        guard let data = try? Data(contentsOf: url) else { throw InstallError.unreadableSettings(url.path) }
+        if data.isEmpty { return (data, [:]) }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw InstallError.unreadableSettings(url.path)
         }
-        return obj
+        return (data, obj)
     }
 
-    /// Next to the real file: backing up a symlink would copy the link.
-    private static func backUpOnce(_ link: URL) throws {
-        let url = link.resolvingSymlinksInPath()
+    /// The bytes we actually read — not a later copy — so a concurrent write
+    /// can't become the "original".
+    private static func backUpOnce(_ data: Data, beside url: URL) throws {
         let backup = url.appendingPathExtension("cc-usage-stats.bak")
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path), !fm.fileExists(atPath: backup.path) else { return }
-        try fm.copyItem(at: url, to: backup)
+        guard !FileManager.default.fileExists(atPath: backup.path) else { return }
+        try data.write(to: backup, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backup.path)
     }
 
-    private static func writeSettings(_ settings: [String: Any], to link: URL) throws {
-        // A dotfiles-managed settings.json is often a symlink; an atomic write
-        // would replace the link with a plain file. Write through it instead.
-        let url = link.resolvingSymlinksInPath()
+    private static func write(_ settings: [String: Any], to url: URL) throws {
         try Paths.ensureDirectory(url.deletingLastPathComponent())
         let data = try JSONSerialization.data(
             withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

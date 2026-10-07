@@ -17,16 +17,19 @@ import Foundation
 /// them.
 nonisolated enum SessionHookScript {
     /// Bump when `contents` changes; the installer rewrites outdated copies.
-    static let version = 1
+    static let version = 2
 
     static let contents = #"""
     #!/bin/bash
-    # cc-usage-stats session hook v1
+    # cc-usage-stats session hook v2
     # Managed by the CCUsageStats menu-bar app, which rewrites this file when
     # its version changes and registers it in ~/.claude/settings.json. Local
     # edits are lost. Records each Claude Code session's latest event so the
     # app can list running sessions. Never blocks or fails Claude Code.
-    in=$(cat)
+    # The fields we need come first; tool events can carry megabytes after
+    # them. Keep a bounded prefix and drain the rest so the writer never blocks.
+    in=$(head -c 16384)
+    cat >/dev/null
     [[ $in =~ \"session_id\":\"([A-Za-z0-9_-]+)\" ]] || exit 0
     sid=${BASH_REMATCH[1]}
     [[ $in =~ \"hook_event_name\":\"([A-Za-z]+)\" ]] || exit 0
@@ -38,9 +41,10 @@ nonisolated enum SessionHookScript {
     field() {
       if [[ $in =~ \"$1\":\"(([^\"\\]|\\.)*)\" ]]; then printf -v "$2" '%s' "${BASH_REMATCH[1]}"; else printf -v "$2" ''; fi
     }
-    # An environment value with anything that could break the JSON removed.
+    # An environment value reduced to identifier characters (ids, bundle
+    # ids, names) — nothing that could break the JSON.
     clean() {
-      local v=${2//\\/}; v=${v//\"/}; v=${v//$'\n'/}; printf -v "$1" '%s' "$v"
+      local v=${2//[^A-Za-z0-9._:\/-]/}; printf -v "$1" '%s' "$v"
     }
     field cwd cwd
     ntype= message=

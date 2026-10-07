@@ -546,8 +546,10 @@ struct MenuBarDropdown: View {
 private struct SessionsSection: View {
     @ObservedObject var tracker: SessionTracker
     let now: Int64
-    /// Keeps the panel compact when many sessions are open.
+    /// Keeps the panel compact when many sessions are open; "+N more"
+    /// expands. Attention-needing sessions sort first, so they're never hidden.
     private let maxRows = 8
+    @State private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -570,13 +572,13 @@ private struct SessionsSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            ForEach(tracker.sessions.prefix(maxRows)) { session in
+            ForEach(expanded ? Array(tracker.sessions) : Array(tracker.sessions.prefix(maxRows))) { session in
                 SessionRow(session: session, now: now) { tracker.open(session) }
             }
             if tracker.sessions.count > maxRows {
-                Text("+\(tracker.sessions.count - maxRows) more")
+                Button(expanded ? "Show fewer" : "+\(tracker.sessions.count - maxRows) more") { expanded.toggle() }
+                    .buttonStyle(.borderless)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
             }
         }
     }

@@ -59,7 +59,7 @@ final class SessionHookScriptTests: XCTestCase {
     }
 
     func testEnvValuesCannotBreakTheJSON() throws {
-        try run(payload("SessionStart"), env: ["CLAUDE_CODE_HOST_SESSION_ID": #"loc"al\x"#, "TERM_PROGRAM": "a\"b"])
+        try run(payload("SessionStart"), env: ["CLAUDE_CODE_HOST_SESSION_ID": #"loc"al\x"#, "TERM_PROGRAM": "a\"b\tc\r\u{1}d"])
         let data = try Data(contentsOf: sessionsDir.appendingPathComponent("abc-123.json"))
         XCTAssertNotNil(SessionRecord.decode(data))
     }

@@ -55,10 +55,33 @@ final class SessionHookInstallerTests: XCTestCase {
     }
 
     func testStalePathIsReplacedNotDuplicated() {
-        let old = SessionHookInstaller.installing(command: "'/old/place/session-hook.sh'", into: [:])
+        let old = SessionHookInstaller.installing(command: "'/Users/old/Library/Application Support/cc-usage-stats/hooks/session-hook.sh'", into: [:])
         XCTAssertFalse(SessionHookInstaller.isInstalled(command: command, in: old))
         let out = SessionHookInstaller.installing(command: command, into: old)
         XCTAssertEqual(ourCommands(out, event: "Stop"), [command])
+    }
+
+    func testSomeoneElsesSessionHookIsNotOurs() {
+        let theirs: [String: Any] = ["hooks": [
+            "Stop": [["hooks": [["type": "command", "command": "/opt/acme/session-hook.sh"]]]],
+        ]]
+        let out = SessionHookInstaller.uninstalling(from: SessionHookInstaller.installing(command: command, into: theirs))
+        let stop = (out["hooks"] as! [String: Any])["Stop"] as! [[String: Any]]
+        XCTAssertEqual((stop[0]["hooks"] as! [[String: Any]])[0]["command"] as? String, "/opt/acme/session-hook.sh")
+    }
+
+    func testWrongShapeCountsAsNotInstalled() {
+        var out = SessionHookInstaller.installing(command: command, into: [:])
+        var hooks = out["hooks"] as! [String: Any]
+        hooks["Stop"] = [["matcher": "Bash", "hooks": [["type": "command", "command": command, "timeout": 10]]]]
+        out["hooks"] = hooks
+        XCTAssertFalse(SessionHookInstaller.isInstalled(command: command, in: out),
+                       "a matcher would narrow it; repair it")
+    }
+
+    func testCommandQuotingSurvivesApostrophes() {
+        let cmd = SessionHookInstaller.command(for: URL(fileURLWithPath: "/Users/O'Brien/x/session-hook.sh"))
+        XCTAssertEqual(cmd, #"'/Users/O'\''Brien/x/session-hook.sh'"#)
     }
 
     func testUninstallRemovesOnlyOursAndEmptyEvents() {
@@ -133,6 +156,30 @@ final class SessionHookInstallerTests: XCTestCase {
         let script = dir.appendingPathComponent("hooks/session-hook.sh")
         XCTAssertThrowsError(try SessionHookInstaller.ensureInstalled(settingsURL: settings, scriptURL: script))
         XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), "{ not json", "never clobber a file we can't read")
+    }
+
+    func testUnexpectedShapesAbortWithoutWriting() throws {
+        let script = dir.appendingPathComponent("hooks/session-hook.sh")
+        for body in [#"{"hooks":true}"#, #"{"hooks":{"Stop":{"a":1}}}"#, #"{"hooks":{"Stop":[1]}}"#,
+                     #"{"hooks":{"Stop":[{"hooks":"x"}]}}"#, "[1,2]"] {
+            let settings = dir.appendingPathComponent("s-\(UUID().uuidString).json")
+            try body.write(to: settings, atomically: true, encoding: .utf8)
+            XCTAssertThrowsError(try SessionHookInstaller.ensureInstalled(settingsURL: settings, scriptURL: script), body)
+            XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), body, "untouched: \(body)")
+        }
+    }
+
+    func testUnreadableSettingsAreNeverReplaced() throws {
+        let settings = dir.appendingPathComponent("settings.json")
+        try #"{"keep":1}"#.write(to: settings, atomically: true, encoding: .utf8)
+        // The one-time backup already exists, so nothing else stops a write.
+        try "{}".write(to: settings.appendingPathExtension("cc-usage-stats.bak"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: settings.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settings.path) }
+        XCTAssertThrowsError(try SessionHookInstaller.ensureInstalled(
+            settingsURL: settings, scriptURL: dir.appendingPathComponent("hooks/session-hook.sh")))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settings.path)
+        XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), #"{"keep":1}"#)
     }
 
     func testOutdatedScriptIsRewritten() throws {

@@ -16,6 +16,22 @@ nonisolated enum ProcessProbe {
         else { return nil }
         return Int64(info.kp_proc.p_starttime.tv_sec)
     }
+
+    static func executablePath(of pid: Int32) -> String? {
+        var buf = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return nil }
+        return String(cString: buf)
+    }
+
+    /// The desktop app's `…/MacOS/claude`, the CLI's `…/claude/versions/2.1.x`
+    /// (its process name is the version number), or an npm install's
+    /// node/bun. Anything else has reused the PID.
+    static func looksLikeClaude(path: String?) -> Bool {
+        guard let path, !path.isEmpty else { return false }
+        if path.lowercased().contains("claude") { return true }
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name == "node" || name == "bun"
+    }
 }
 
 /// Lists live Claude Code sessions from the records `SessionHookScript`
@@ -82,8 +98,10 @@ final class SessionTracker: ObservableObject {
         stopWatching()
     }
 
-    /// Re-runs the install check (Settings → "Repair").
-    func reinstall() { installHooks() }
+    /// Settings → "Repair" / "Retry removal": redo whatever the toggle asks for.
+    func reinstall() {
+        if enabled { installHooks() } else { removeHooks() }
+    }
 
     func open(_ session: RunningSession) {
         switch SessionOpener.target(for: session.record) {
@@ -108,12 +126,16 @@ final class SessionTracker: ObservableObject {
         } else {
             stopWatching()
             sessions = []
-            do {
-                try SessionHookInstaller.uninstall(settingsURL: settingsURL)
-                hookState = .removed
-            } catch {
-                hookState = .failed("\(error)")
-            }
+            removeHooks()
+        }
+    }
+
+    private func removeHooks() {
+        do {
+            try SessionHookInstaller.uninstall(settingsURL: settingsURL)
+            hookState = .removed
+        } catch {
+            hookState = .failed("\(error)")
         }
     }
 
@@ -177,22 +199,38 @@ final class SessionTracker: ObservableObject {
     ///
     /// Live means the PID exists *and* that process started before the
     /// record was written — otherwise the PID has been recycled.
-    nonisolated static func scan(dir: URL, titles: DesktopSessionTitles) -> [RunningSession] {
+    /// Dead records are deleted only once they're a minute old and unchanged
+    /// since read: a session resumed under the same id may be renaming a
+    /// fresh record over this one right now.
+    nonisolated static let staleAfter: Int64 = 60
+
+    nonisolated static func scan(
+        dir: URL,
+        titles: DesktopSessionTitles,
+        isClaude: (Int32) -> Bool = { ProcessProbe.looksLikeClaude(path: ProcessProbe.executablePath(of: $0)) },
+        now: Int64 = Int64(Date().timeIntervalSince1970)
+    ) -> [RunningSession] {
         let fm = FileManager.default
         let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         var records: [SessionRecord] = []
         for url in files where url.pathExtension == "json" && !url.lastPathComponent.hasPrefix(".") {
-            let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-                .map { Int64($0.timeIntervalSince1970) } ?? 0
+            // FileManager, not URL.resourceValues: the latter caches per URL,
+            // and the re-check before deleting must see the file as it is now.
+            let modified = modificationDate(url)
+            let mtime = modified.map { Int64($0.timeIntervalSince1970) } ?? 0
             guard let data = try? Data(contentsOf: url),
                   let record = SessionRecord.decode(data, updatedAt: mtime)
             else { continue }
-            let live = ProcessProbe.startTime(of: record.pid).map { $0 <= mtime + 1 } ?? false
+            let live = (ProcessProbe.startTime(of: record.pid).map { $0 <= mtime + 1 } ?? false)
+                && isClaude(record.pid)
             if live {
                 records.append(record)
-            } else {
-                try? fm.removeItem(at: url)
+            } else if now - mtime >= staleAfter {
+                if modified != nil, modificationDate(url) == modified { try? fm.removeItem(at: url) }
             }
+        }
+        func modificationDate(_ url: URL) -> Date? {
+            (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         }
         return RunningSessions.build(records, isAlive: { _ in true }) { r in
             r.hostSessionID.flatMap(titles.title(forHostSession:))
