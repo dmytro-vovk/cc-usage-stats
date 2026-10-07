@@ -23,17 +23,22 @@ work between the two quotas. See [Codex usage](#codex-usage).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-dark.png">
-  <img alt="menubar gauge" src="docs/screenshots/menubar-light.png" width="84">
+  <img alt="menubar gauge" src="docs/screenshots/menubar-light.png" width="93">
 </picture>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-outage-dark.png">
-  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png" width="115">
+  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png" width="124">
 </picture>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-codex-dark.png">
-  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png" width="170">
+  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png" width="179">
+</picture>
+&nbsp;&nbsp;&nbsp;&nbsp;
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-sessions-dark.png">
+  <img alt="menubar pill with a session needing permission" src="docs/screenshots/menubar-sessions-light.png" width="124">
 </picture>
 
 - A gauge icon + percentage rendered on a colour-shifted pill — the
