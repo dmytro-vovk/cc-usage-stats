@@ -209,8 +209,8 @@ windows; the gauge needle always shows the absolute level.
 </picture>
 &nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-alerts-dark.png?v=0.14.2">
-  <img alt="Settings — Alerts tab" src="docs/screenshots/settings-alerts-light.png?v=0.14.2" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-alerts-dark.png?v=0.16.0">
+  <img alt="Settings — Alerts tab" src="docs/screenshots/settings-alerts-light.png?v=0.16.0" width="460">
 </picture>
 
 **⚙ Settings…** (⌘,) in the dropdown footer opens one window with three
