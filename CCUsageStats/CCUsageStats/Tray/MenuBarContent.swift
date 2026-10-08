@@ -227,7 +227,7 @@ struct MenuBarDropdown: View {
             // Active sessions first: the thing most likely to need a click.
             // Shows itself only when there's something to show.
             if vm.sessions.enabled {
-                SessionsSection(tracker: vm.sessions, now: now)
+                SessionsSection(tracker: vm.sessions, now: now, limits: vm.cached?.snapshot)
             }
 
             // Outage banner (only when status.claude.com reports anything
@@ -576,6 +576,8 @@ struct MenuBarDropdown: View {
 private struct SessionsSection: View {
     @ObservedObject var tracker: SessionTracker
     let now: Int64
+    /// The usage windows, for when a usage-limit error lifts.
+    let limits: RateLimitsSnapshot?
     /// Keeps the panel compact when many sessions are open; "+N more"
     /// expands. Attention-needing sessions sort first, so they're never hidden.
     private let maxRows = 8
@@ -594,7 +596,7 @@ private struct SessionsSection: View {
                         .wrapsFully()
                 }
                 ForEach(expanded ? shown : Array(shown.prefix(maxRows))) { session in
-                    SessionRow(session: session, now: now) { tracker.open(session) }
+                    SessionRow(session: session, now: now, limits: limits) { tracker.open(session) }
                 }
                 if shown.count > maxRows {
                     Button(expanded ? "Show fewer" : "+\(shown.count - maxRows) more") { expanded.toggle() }
@@ -620,6 +622,7 @@ private struct SessionsSection: View {
 private struct SessionRow: View {
     let session: RunningSession
     let now: Int64
+    let limits: RateLimitsSnapshot?
     let open: () -> Void
     @State private var hovering = false
 
@@ -647,8 +650,8 @@ private struct SessionRow: View {
         .buttonStyle(.plain)
         .disabled(!canOpen)
         .onHover { hovering = $0 }
-        .help(session.tooltip)
-        .accessibilityLabel("\(session.title), \(session.status.label)")
+        .help(session.tooltip(limits: limits, now: now))
+        .accessibilityLabel("\(session.title), \(session.statusText)")
     }
 }
 

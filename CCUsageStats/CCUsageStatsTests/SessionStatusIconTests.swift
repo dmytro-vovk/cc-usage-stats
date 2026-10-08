@@ -20,7 +20,7 @@ final class SessionStatusIconTests: XCTestCase {
     }
 
     func testEveryStateHasAnIcon() {
-        for status in [SessionStatus.error, .needsPermission, .waitingForInput, .working, .compacting] {
+        for status in [SessionStatus.error, .needsPermission, .waitingForInput, .working, .compacting, .background] {
             XCTAssertNotNil(NSImage(systemSymbolName: SessionStatusIcon.symbol(for: status), accessibilityDescription: nil),
                             "\(status)")
             XCTAssertNotNil(SessionStatusIcon.menuBarImage(for: status))
@@ -32,7 +32,7 @@ final class SessionStatusIconTests: XCTestCase {
     /// Filled-circle icons need a glyph that stands out from the fill (the
     /// outage-badge bug: one palette colour painted both layers).
     func testGlyphContrastsWithFill() throws {
-        for status in [SessionStatus.error, .needsPermission, .waitingForInput, .working] {
+        for status in [SessionStatus.error, .needsPermission, .waitingForInput, .working, .background] {
             let icon = try XCTUnwrap(SessionStatusIcon.menuBarImage(for: status))
             let rep = NSBitmapImageRep(
                 bitmapDataPlanes: nil, pixelsWide: Int(icon.size.width * 4), pixelsHigh: Int(icon.size.height * 4),

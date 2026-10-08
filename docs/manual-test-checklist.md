@@ -370,6 +370,19 @@ by design.
   **Done** and drops off the list (the section hides when nothing is
   active). A question from Claude shows **Waiting for input**. Trigger a permission prompt → **Needs permission**
   (orange, sorted first).
+- Ask Claude to start something in the background and end its reply
+  (e.g. "run `sleep 120` in the background, then stop"): the row shows a
+  blue hourglass, tooltip "In background (1) — ~/path"; when the task
+  finishes and the turn ends, it's **Done** and drops off. Same with
+  `npm run dev` / `tail -f` in the background: **Done** straight away
+  (servers and followers don't count).
+- Ask for a change that ends on "Shall I apply these changes?" (e.g.
+  "propose a rename but ask me before applying it"): **Waiting for
+  input**, orange, and still so after Claude's 60 s idle reminder.
+- A failed turn (usage limit, offline, signed out): **Error**; the tooltip
+  says why — "Usage limit reached, resets in 2h 10m" when a usage window
+  is at 100%, "Can't reach Claude", "Sign-in or account problem" — with
+  Claude Code's message on a second line.
 - The menu-bar icon right of the pill: grey "zzz" with nothing active;
   blue bolt while a session works; orange hand on a permission prompt;
   red × after an error (red wins over everything). Rows show only icon,

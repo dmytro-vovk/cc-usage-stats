@@ -2,7 +2,7 @@ import Foundation
 
 /// What a session is doing, from the last hook event it fired.
 nonisolated enum SessionStatus: String, Equatable, Sendable {
-    case needsPermission, error, waitingForInput, working, compacting, done, idle
+    case needsPermission, error, waitingForInput, working, compacting, background, done, idle
 
     var label: String {
         switch self {
@@ -11,6 +11,7 @@ nonisolated enum SessionStatus: String, Equatable, Sendable {
         case .waitingForInput: return "Waiting for input"
         case .working: return "Working"
         case .compacting: return "Compacting"
+        case .background: return "In background"
         case .done: return "Done"
         case .idle: return "Idle"
         }
@@ -39,6 +40,13 @@ nonisolated struct SessionRecord: Equatable, Sendable {
     let hostSessionID: String?
     let appBundleID: String?
     let termProgram: String?
+    /// `Stop` / `StopFailure`: the ending of Claude's reply — for
+    /// `StopFailure`, the error text.
+    let lastMessage: String?
+    /// `StopFailure`: the error type, e.g. `rate_limit`.
+    let error: String?
+    /// `Stop`: work still running after the reply ended.
+    let backgroundTasks: [BackgroundTask]
     /// Epoch seconds of the event (the file's modification time).
     let updatedAt: Int64
 
@@ -59,17 +67,32 @@ nonisolated struct SessionRecord: Equatable, Sendable {
             hostSessionID: s("host_session"),
             appBundleID: s("app_bundle"),
             termProgram: s("term_program"),
+            lastMessage: s("last_message"),
+            error: s("error"),
+            backgroundTasks: ((o["background_tasks"] as? [[String: Any]]) ?? []).compactMap(BackgroundTask.init(json:)),
             updatedAt: updatedAt
         )
     }
+
+    /// Background tasks that will finish and wake the session again — not
+    /// servers or followers, which never finish on their own.
+    var backgroundTaskCount: Int {
+        backgroundTasks.filter { $0.isInFlight && !$0.isLongLivedService }.count
+    }
+
+    /// Why a `StopFailure` turn failed; nil for any other event.
+    var failure: StopFailureReason? { event == "StopFailure" ? StopFailureReason(error: error) : nil }
 
     var status: SessionStatus {
         switch event {
         case "SessionStart": return .idle
         case "PreCompact": return .compacting
         case "PermissionRequest": return .needsPermission
-        // The turn finished. That's not "waiting for input": nothing was asked.
-        case "Stop": return .done
+        // The turn finished. Done, unless it ended on a question for the
+        // user, or left work running that will wake it again.
+        case "Stop":
+            if ClosingQuestion.asksUser(lastMessage) { return .waitingForInput }
+            return backgroundTaskCount > 0 ? .background : .done
         case "StopFailure": return .error
         // Claude put a question to the user and is blocked on the answer.
         case "PreToolUse" where toolName == "AskUserQuestion": return .waitingForInput
@@ -95,8 +118,158 @@ nonisolated struct RunningSession: Identifiable, Equatable, Sendable {
     let record: SessionRecord
     let title: String
     var status: SessionStatus { record.status }
+
+    /// The status spelled out: background work counted, a failure's reason.
+    var statusText: String {
+        switch status {
+        case .background: return "\(status.label) (\(record.backgroundTaskCount))"
+        case .error: return record.failure?.label ?? status.label
+        default: return status.label
+        }
+    }
+
     /// The row's hover text: what it's doing, and where.
-    var tooltip: String { "\(status.label) — \(record.cwd ?? title)" }
+    var tooltip: String { tooltip(limits: nil, now: 0) }
+
+    /// With a usage limit, when it resets (from the app's own usage data,
+    /// `limits` — Claude Code's message doesn't say); a failure's message
+    /// goes on a second line.
+    func tooltip(limits: RateLimitsSnapshot?, now: Int64) -> String {
+        var head = statusText
+        if record.failure == .usageLimit,
+           let reset = limits?.limitResetsAt(now: now, message: record.lastMessage) {
+            head += ", resets in \(RelativeTime.format(seconds: reset - now))"
+        }
+        var text = "\(head) — \(record.cwd ?? title)"
+        if record.failure != nil, let message = record.lastMessage { text += "\n\(message)" }
+        return text
+    }
+}
+
+/// One entry of the `Stop` event's `background_tasks`: a shell command,
+/// subagent, monitor, workflow… still in flight when the reply ended.
+nonisolated struct BackgroundTask: Equatable, Sendable {
+    let type: String
+    let status: String?
+    let command: String?
+    let description: String?
+
+    init(type: String, status: String?, command: String?, description: String?) {
+        self.type = type
+        self.status = status
+        self.command = command
+        self.description = description
+    }
+
+    init?(json o: [String: Any]) {
+        guard let type = o["type"] as? String else { return nil }
+        self.init(type: type, status: o["status"] as? String, command: o["command"] as? String,
+                  description: o["description"] as? String)
+    }
+
+    /// Entries are in flight by definition; this guards against a list that
+    /// one day includes finished ones too.
+    var isInFlight: Bool {
+        !["completed", "complete", "done", "failed", "error", "killed", "stopped", "cancelled", "canceled"]
+            .contains(status?.lowercased() ?? "")
+    }
+
+    /// A dev server, file watcher or log follower: runs until killed, so it
+    /// isn't work the session is waiting on.
+    /// Judged per command in a `;` / `&&` / `|` chain, so `echo npm run dev`
+    /// doesn't count, and `make && npm run dev` does.
+    var isLongLivedService: Bool {
+        guard let command = command?.lowercased() else { return false }
+        return command.components(separatedBy: CharacterSet(charactersIn: ";&|\n")).contains { part in
+            let part = part.trimmingCharacters(in: .whitespaces)
+            guard !part.hasPrefix("echo ") && !part.hasPrefix("printf ") else { return false }
+            let range = NSRange(part.startIndex..., in: part)
+            return Self.servicePatterns.contains { $0.firstMatch(in: part, range: range) != nil }
+        }
+    }
+
+    /// Matched against the lowercased command line. `(^|[\s;&|(])` = at the
+    /// start of a command, not inside a word or path.
+    private static let servicePatterns: [NSRegularExpression] = [
+        // Package-script dev servers: npm run dev, pnpm dev, yarn start, bun run dev:server…
+        #"(^|[\s;&|(])(npm|pnpm|yarn|bun)(\s+run)?\s+(dev|start|serve|preview|watch)\b"#,
+        // Bare vite is its dev server; `vite build` isn't.
+        #"(^|[\s;&|(/])vite(\s+(dev|serve|preview))?(\s+-|\s*$|\s*[;&|)])"#,
+        #"(^|[\s;&|(/])(next|nuxt|nuxi|astro|remix|gatsby|ng|hugo|jekyll|mkdocs|eleventy|wrangler)\s+(dev|start|serve|server|develop)\b"#,
+        #"(^|[\s;&|(/])(uvicorn|gunicorn|hypercorn|daphne|nodemon|http-server|live-server|browser-sync|webpack-dev-server|ngrok)\b"#,
+        #"\bflask\s+run\b"#, #"\brunserver\b"#, #"\brails\s+(s|server)\b"#, #"\bartisan\s+serve\b"#,
+        #"\bphp\s+-s\b"#, #"\s-m\s+http\.server\b"#, #"\bwebpack\s+serve\b"#,
+        #"\bdocker(-|\s+)compose\s+up\b(?!.*\s(-d|--detach)\b)"#,
+        // Watchers and followers.
+        #"\s--watch(all)?\b"#, #"\btsc\b.*\s-w\b"#, #"(^|[\s;&|(])watch\s"#,
+        #"\btail\b[^;&|]*\s(-[a-z0-9]*f[a-z0-9]*|--follow)\b"#,
+        #"\b(journalctl|(kubectl|docker|podman|compose|stern|heroku|fly|flyctl)\b[^;&|]*\blogs)\b[^;&|]*\s(-[a-z]*f[a-z]*|--follow)\b"#,
+        #"\blog\s+stream\b"#,
+    ].map { try! NSRegularExpression(pattern: $0) }
+}
+
+/// How a turn that failed (`StopFailure`) failed, from its `error` type.
+nonisolated enum StopFailureReason: Equatable, Sendable {
+    case usageLimit, unreachable, auth, other
+
+    init(error: String?) {
+        switch error {
+        case "rate_limit": self = .usageLimit
+        case "overloaded", "server_error": self = .unreachable
+        case "authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error",
+             "cloud_credential_error":
+            self = .auth
+        default: self = .other
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .usageLimit: return "Usage limit reached"
+        case .unreachable: return "Can't reach Claude"
+        case .auth: return "Sign-in or account problem"
+        case .other: return SessionStatus.error.label
+        }
+    }
+}
+
+/// Whether a reply ends by putting a decision to the user ("Shall I apply
+/// these changes?"). Deliberately narrow: the final sentence must be a
+/// question *and* address the user with a phrase like "shall I" or "would
+/// you like" — a rhetorical "Why did it fail?" or a `?` in code is not one.
+nonisolated enum ClosingQuestion {
+    static func asksUser(_ text: String?) -> Bool {
+        guard let text else { return false }
+        let trimmed = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "*_")))
+        guard trimmed.hasSuffix("?"),
+              let lastLine = trimmed.split(whereSeparator: \.isNewline).last
+        else { return false }
+        let sentence = lastSentence(String(lastLine)).lowercased()
+        return phrases.contains { phrase in
+            sentence.range(of: #"(^|[^a-z])"# + phrase + #"([^a-z]|$)"#, options: .regularExpression) != nil
+        }
+    }
+
+    /// From the last ". ", "! " or "? " before the final "?". (A `?` ending
+    /// code is on a fence line or followed by one, so it never gets here.)
+    private static func lastSentence(_ line: String) -> String {
+        let body = line.dropLast()
+        var start = body.startIndex
+        var i = body.startIndex
+        while i < body.endIndex {
+            let next = body.index(after: i)
+            if ".!?".contains(body[i]), next < body.endIndex, body[next] == " " { start = next }
+            i = next
+        }
+        return String(body[start...])
+    }
+
+    private static let phrases = [
+        "shall i", "shall we", "should i", "should we", "do you want", "would you like", "want me to",
+        "would you prefer", "do you prefer", "would you rather", "which would you", "which do you",
+        "ok to", "okay to", "is that ok", "is this ok", "sound good", "does that work", "go ahead",
+        "may i", "can you", "could you",
+    ]
 }
 
 nonisolated enum RunningSessions {
@@ -118,9 +291,11 @@ nonisolated enum RunningSessions {
     }
 
     /// The status the menu-bar icon shows: error, then permission, then a
-    /// question, then busy. nil when nothing is active.
+    /// question, then busy, then background work. nil when nothing is active.
     static func mostSevere(_ sessions: [RunningSession]) -> SessionStatus? {
-        let rank: [SessionStatus: Int] = [.error: 5, .needsPermission: 4, .waitingForInput: 3, .working: 2, .compacting: 1]
+        let rank: [SessionStatus: Int] = [
+            .error: 6, .needsPermission: 5, .waitingForInput: 4, .working: 3, .compacting: 2, .background: 1,
+        ]
         return sessions.map(\.status).filter { rank[$0] != nil }.max { rank[$0]! < rank[$1]! }
     }
 

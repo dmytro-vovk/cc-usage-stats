@@ -243,9 +243,10 @@ left out, and the section disappears when nothing is active:
 | Status | Means |
 |---|---|
 | **Needs permission** | Waiting for you to approve a tool (sorted to the top) |
-| **Waiting for input** | Claude asked you a question (`AskUserQuestion`, or an MCP server's input prompt) (sorted to the top) |
-| **Error** | The last turn failed (sorted to the top) |
+| **Waiting for input** | Claude asked you a question — `AskUserQuestion`, an MCP server's input prompt, or a reply that ends on a decision for you ("Shall I apply these changes?") (sorted to the top) |
+| **Error** | The last turn failed; hover for why — usage limit reached (with when it resets, from the app's own usage data), can't reach Claude, sign-in or account problem — and Claude Code's message (sorted to the top) |
 | **Working** / **Compacting** | Busy |
+| **In background (N)** | The reply ended, but N background tasks (shell commands, subagents, monitors, workflows) are still running and will wake the session. Dev servers, `--watch` runs and `tail -f`-style followers don't count: they never finish on their own |
 | *Done* (hidden) | The turn finished; nothing is being asked |
 | *Idle* (hidden) | Started, no prompt yet |
 
@@ -257,7 +258,7 @@ holds still — rows keep updating in place and timers keep running, a new
 session joins at the bottom, and nothing is removed or reordered until the
 pointer leaves, so the row you're aiming at doesn't move. The menu-bar icon
 next to the pill shows the most severe active status (Error › Needs
-permission › Waiting for input › Working › Compacting), or a grey "zzz"
+permission › Waiting for input › Working › Compacting › In background), or a grey "zzz"
 when nothing is active.
 
 Click a row to open it: a desktop-app session opens in the Claude app at
@@ -275,7 +276,13 @@ script records that session's latest state in
 sessions whose `claude` process is still alive and deletes the rest. The
 script is bash with builtins only, keeps just a few fields (never your
 prompts or tool output) and always exits 0, so it can't block or alter a
-session.
+session. When a turn ends it also keeps the last few hundred characters of
+Claude's reply (to spot a closing question), the list of background tasks
+still running (with their command lines) and, after a failure, the error
+type and message. Claude's "still waiting for your input" reminder a minute
+after a turn is ignored, so it can't turn those states back into Done. A
+reply longer than ~250 KB is past what the script reads; that turn shows
+as Done.
 
 At every launch the app checks the hooks are in place and repairs them if
 not. Your other hooks are kept; a one-time backup
@@ -649,9 +656,11 @@ security delete-identity -c "CCUsageStats Dev"
   account](#connect-claude-account)) — no third party sees the
   callback.
 - Session tracking adds hooks to `~/.claude/settings.json`; they write each
-  session's state (session id, folder, event name, notification text) to
-  `~/Library/Application Support/cc-usage-stats/sessions/` and nowhere
-  else. No prompts, tool input or output are stored.
+  session's state (session id, folder, event name, notification text; at
+  the end of a turn the last few hundred characters of Claude's reply, the
+  running background tasks' descriptions and commands, and any error
+  message) to `~/Library/Application Support/cc-usage-stats/sessions/` and
+  nowhere else. No prompts, tool input or output are stored.
 - Codex tracking (off by default) reads `~/.codex/sessions` locally.
   Opt-in live polling adds one request every 5 minutes to `chatgpt.com`
   with the Codex CLI's existing sign-in; `~/.codex` is never written.
