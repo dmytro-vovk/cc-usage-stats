@@ -22,23 +22,23 @@ work between the two quotas. See [Codex usage](#codex-usage).
 ### Menubar
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-dark.png?v=0.12.3">
-  <img alt="menubar gauge" src="docs/screenshots/menubar-light.png?v=0.12.3" width="93">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-dark.png?v=0.14.2">
+  <img alt="menubar gauge" src="docs/screenshots/menubar-light.png?v=0.14.2" width="93">
 </picture>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-outage-dark.png?v=0.12.3">
-  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png?v=0.12.3" width="124">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-outage-dark.png?v=0.14.2">
+  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png?v=0.14.2" width="124">
 </picture>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-codex-dark.png?v=0.12.3">
-  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png?v=0.12.3" width="179">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-codex-dark.png?v=0.14.2">
+  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png?v=0.14.2" width="179">
 </picture>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-sessions-dark.png?v=0.12.3">
-  <img alt="menubar pill with a session needing permission" src="docs/screenshots/menubar-sessions-light.png?v=0.12.3" width="124">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-sessions-dark.png?v=0.14.2">
+  <img alt="menubar pill with a session needing permission" src="docs/screenshots/menubar-sessions-light.png?v=0.14.2" width="124">
 </picture>
 
 - A gauge icon + percentage rendered on a colour-shifted pill — the
@@ -75,8 +75,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
 ### Dropdown
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.12.3">
-  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.12.3" width="280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.14.2">
+  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.14.2" width="280">
 </picture>
 
 - A **Claude** header with the ↻ refresh button (⌘R) right-aligned;
@@ -168,18 +168,18 @@ arbitrary later time.
 ### Settings window
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.12.3">
-  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.12.3" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.14.2">
+  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.14.2" width="460">
 </picture>
 &nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-accounts-dark.png?v=0.12.3">
-  <img alt="Settings — Accounts tab" src="docs/screenshots/settings-accounts-light.png?v=0.12.3" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-accounts-dark.png?v=0.14.2">
+  <img alt="Settings — Accounts tab" src="docs/screenshots/settings-accounts-light.png?v=0.14.2" width="460">
 </picture>
 &nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-alerts-dark.png?v=0.12.3">
-  <img alt="Settings — Alerts tab" src="docs/screenshots/settings-alerts-light.png?v=0.12.3" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-alerts-dark.png?v=0.14.2">
+  <img alt="Settings — Alerts tab" src="docs/screenshots/settings-alerts-light.png?v=0.14.2" width="460">
 </picture>
 
 **⚙ Settings…** (⌘,) in the dropdown footer opens one window with three
