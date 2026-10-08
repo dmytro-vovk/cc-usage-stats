@@ -433,6 +433,7 @@ by design.
   as title); a command needing approval → **Needs permission**; a reply
   ending "Shall I …?" → **Waiting for input**; a plain reply → drops off.
 - Click the row: the terminal running Codex comes forward.
+- Codex's memories agent (cwd `~/.codex/memories`) never shows a row.
 - Quit `codex` (or kill it): the row disappears within ~5 s.
 - Toggle OFF: our groups leave `hooks.json` and our trust tables leave
   `config.toml` (others untouched); Codex rows disappear; Claude rows stay.

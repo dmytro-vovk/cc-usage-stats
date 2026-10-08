@@ -305,7 +305,8 @@ run as an MCP server by Claude — then join the same list with a small
 show Needs permission, Waiting for input (a reply ending on a question for
 you), Working and Compacting as above; Codex reports no failures or
 background tasks, so a Codex row is never Error or In background. Rows show
-the thread's name when it has one, else the folder. Clicking works as for
+the thread's name when it has one, else the folder. Codex's own background
+work (its memories agent, which runs inside `~/.codex`) isn't listed. Clicking works as for
 Claude: a Codex run inside a Claude desktop session opens that session;
 otherwise the hosting app (Codex app, terminal) comes forward.
 

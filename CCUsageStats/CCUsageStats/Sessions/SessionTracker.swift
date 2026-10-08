@@ -311,8 +311,10 @@ final class SessionTracker: ObservableObject {
         let clients = enabledClients
         let hooksURL = codexHooksURL, configURL = codexConfigURL
         let codexCommand = SessionHookInstaller.command(for: codexScriptURL)
+        let codexHomePath = CodexHookTrust.canonicalPath(codexHome)
         Task.detached(priority: .utility) {
-            let list = SessionTracker.scan(dir: dir, titles: titles, codexTitles: codexTitles, clients: clients)
+            let list = SessionTracker.scan(dir: dir, titles: titles, codexTitles: codexTitles,
+                                           codexHomePath: codexHomePath, clients: clients)
             let trust: CodexHookTrust.State = clients.contains(.codex)
                 ? CodexHookTrust.check(hooksURL: hooksURL, configURL: configURL, command: codexCommand)
                 : .unknown
@@ -337,10 +339,18 @@ final class SessionTracker: ObservableObject {
     /// fresh record over this one right now.
     nonisolated static let staleAfter: Int64 = 600
 
+    /// Codex's own background work (its memories agent) runs with its home
+    /// folder as cwd; it isn't the user's session.
+    nonisolated static func isCodexHousekeeping(_ r: SessionRecord, codexHome: String?) -> Bool {
+        guard r.client == .codex, let home = codexHome, !home.isEmpty, let cwd = r.cwd else { return false }
+        return cwd == home || cwd.hasPrefix(home.hasSuffix("/") ? home : home + "/")
+    }
+
     nonisolated static func scan(
         dir: URL,
         titles: DesktopSessionTitles,
         codexTitles: CodexSessionTitles? = nil,
+        codexHomePath: String? = nil,
         clients: Set<SessionClient> = Set(SessionClient.allCases),
         isClaude: (Int32) -> Bool = { ProcessProbe.looksLikeClaude(path: ProcessProbe.executablePath(of: $0)) },
         isCodex: (Int32) -> Bool = { ProcessProbe.looksLikeCodex(path: ProcessProbe.executablePath(of: $0)) },
@@ -362,7 +372,9 @@ final class SessionTracker: ObservableObject {
             if live {
                 // A switched-off client's sessions aren't listed; its dead
                 // records are still cleaned up.
-                if clients.contains(record.client) { records.append(record) }
+                if clients.contains(record.client), !isCodexHousekeeping(record, codexHome: codexHomePath) {
+                    records.append(record)
+                }
             } else if now - mtime >= staleAfter {
                 if modified != nil, modificationDate(url) == modified { try? fm.removeItem(at: url) }
             }

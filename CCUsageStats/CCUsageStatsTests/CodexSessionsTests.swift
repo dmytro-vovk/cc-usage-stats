@@ -348,6 +348,21 @@ final class CodexSessionTrackingTests: XCTestCase {
         XCTAssertEqual(byID["cy"], "other", "unnamed: the folder")
     }
 
+    /// Codex's own housekeeping (e.g. its memories agent) runs inside its
+    /// home folder; it isn't the user's work.
+    func testCodexHousekeepingInsideCodexHomeIsHidden() throws {
+        try write("mem", client: "codex", cwd: "/Users/u/.codex/memories")
+        try write("home", client: "codex", cwd: "/Users/u/.codex")
+        try write("work", client: "codex", cwd: "/Users/u/.codexer/proj")
+        try write("claude", client: "claude", cwd: "/Users/u/.codex/memories")
+        let list = SessionTracker.scan(dir: root.appendingPathComponent("sessions"), titles: DesktopSessionTitles(root: root),
+                                       codexHomePath: "/Users/u/.codex",
+                                       isClaude: { _ in true }, isCodex: { _ in true })
+        XCTAssertEqual(Set(list.map(\.id)), ["work", "claude"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("sessions/mem.json").path),
+                      "hidden, not deleted: it's alive")
+    }
+
     func testLooksLikeCodex() {
         XCTAssertTrue(ProcessProbe.looksLikeCodex(path: "/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-x64/vendor/x86_64-apple-darwin/bin/codex"))
         XCTAssertTrue(ProcessProbe.looksLikeCodex(path: "/Applications/Codex.app/Contents/Resources/codex"))

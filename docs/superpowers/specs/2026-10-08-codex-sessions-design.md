@@ -107,6 +107,12 @@ unchanged) before the CAS write, under the MCP registration lock.
 Toggle-off removes our records (only tables holding exactly our hash, no
 comments).
 
+## Codex housekeeping hidden
+
+Codex runs its memories agent as a session with `$CODEX_HOME/memories` as
+cwd; it fires the same hooks. Codex sessions whose cwd is `$CODEX_HOME`
+(realpath) or inside it are not listed (still live, so not deleted).
+
 ## Out of scope
 
 Subagent rows, Codex error states (no event exists), deep links into a
