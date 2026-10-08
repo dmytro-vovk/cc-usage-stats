@@ -18,7 +18,7 @@ nonisolated enum UsageMCPInstructions {
         \(CodexMCPConfig.block(command: binary))```
 
         When to use it:
-        - Call `get_usage` before a large fan-out, before choosing subagent models, and before long reviews or refactors. Once per decision is enough; the numbers change at most once a minute.
+        - Call `get_usage` before a large fan-out, before choosing subagent models, and before long reviews or refactors. Once per decision is enough; Claude percentages refresh about once a minute.
         - If Claude weekly (or the per-model weekly window for the model you'd use) is ahead of pace or above 70%, route reviews and mechanical work to Codex. If Codex is the tighter one, keep the work on Claude.
         - If the Claude 5-hour window is above 90% or forecast to cap before the task would finish, use cheaper models, split the work, or wait until `resets_at`.
         - Treat `"stale": true` as approximate, and `"available": false` as unknown — don't guess numbers.

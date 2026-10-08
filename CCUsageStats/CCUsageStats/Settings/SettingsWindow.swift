@@ -177,6 +177,7 @@ struct GeneralSettingsView: View {
 private struct UsageMCPSection: View {
     @StateObject private var mcp = UsageMCPSettings()
     @State private var copied = false
+    @State private var copyGeneration = 0
 
     var body: some View {
         Section {
@@ -205,7 +206,12 @@ private struct UsageMCPSection: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(UsageMCPInstructions.text(binary: mcp.binary), forType: .string)
                     copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+                    copyGeneration += 1
+                    let generation = copyGeneration
+                    // Only the latest click's reset clears the label.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        if copyGeneration == generation { copied = false }
+                    }
                 }
                 .help("Copies a CLAUDE.md / AGENTS.md section telling agents how to connect get_usage and when to call it")
             }
