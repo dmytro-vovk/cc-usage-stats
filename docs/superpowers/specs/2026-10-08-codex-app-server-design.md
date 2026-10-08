@@ -68,9 +68,10 @@ Every poll (5 min, unchanged) spawns `codex app-server`, writes `initialize`,
 `initialized`, `account/rateLimits/read`, reads stdout lines until the
 response with id 2, then closes stdin and waits for exit. The reply must come
 within 20 s; a server that then won't exit is TERMed, then KILLed (the
-`liveRun` pattern), so one read returns within about 24 s. stdout is read with
-`poll`, so the reader stops at the deadline even when a grandchild keeps the
-pipe open. stderr goes to /dev/null. No long-lived server: one ~1 s process every 5
+`liveRun` pattern), so one read returns within about 24 s (up to 5 s more if
+the machine leaves the reader thread unscheduled). stdout is read with `poll`,
+so the reader stops at the deadline even when a grandchild keeps the pipe open,
+and the read waits for its reader before returning. stderr goes to /dev/null. No long-lived server: one ~1 s process every 5
 minutes is cheaper than a resident one, and nothing is left running if the app
 crashes.
 

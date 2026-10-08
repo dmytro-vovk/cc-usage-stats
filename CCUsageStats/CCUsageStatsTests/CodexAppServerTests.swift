@@ -187,9 +187,11 @@ final class CodexAppServerTests: XCTestCase {
 
     /// A holder that left the process group survives the kill, so only the
     /// reader's own cancel can stop it — and read must wait for that.
+    /// The server exits only once the holder has left its group (the pid file
+    /// is written after setpgrp), so the kill can't take the holder too.
     func testReadWaitsForItsReaderEvenWhenStdoutStaysOpen() throws {
         let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("cas-pid-\(UUID().uuidString)").path
-        let cli = try fakeCLI(#"/usr/bin/perl -e 'setpgrp(0,0); open(F,">","\#(pidFile)"); print F $$; close F; exec "sleep","30"' & exit 0"#)
+        let cli = try fakeCLI(#"/usr/bin/perl -e 'setpgrp(0,0); open(F,">","\#(pidFile)"); print F $$; close F; exec "sleep","30"' & while [ ! -s '\#(pidFile)' ]; do sleep 0.05; done; exit 0"#)
         defer {
             if let pid = (try? String(contentsOfFile: pidFile, encoding: .utf8)).flatMap({ pid_t($0) }) { kill(pid, SIGKILL) }
         }
@@ -199,6 +201,20 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 1.1, now: { 0 }, readerFinished: { readerStopped.signal() }),
                        .failure(.timedOut))
         XCTAssertEqual(readerStopped.wait(timeout: .now()), .success, "the stdout reader stopped before read returned")
+        // Otherwise the group kill took the holder and EOF stopped the reader.
+        let pid = try XCTUnwrap(pid_t(String(contentsOfFile: pidFile, encoding: .utf8)))
+        XCTAssertEqual(kill(pid, 0), 0, "the holder outlived the server's group, so stdout stayed open")
+    }
+
+    /// A loaded machine can leave the reader unscheduled for over a second
+    /// after the cancel; read must still not return ahead of it.
+    func testReadWaitsForASlowReader() throws {
+        let cli = try fakeCLI("sleep 30 & exit 0")
+        let readerStopped = DispatchSemaphore(value: 0)
+        XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 0.5, now: { 0 },
+                                           readerFinished: { usleep(1_500_000); readerStopped.signal() }),
+                       .failure(.timedOut))
+        XCTAssertEqual(readerStopped.wait(timeout: .now()), .success, "read returned with its reader still running")
     }
 
     func testAnAnswerThenARefusalToExitStaysBounded() throws {

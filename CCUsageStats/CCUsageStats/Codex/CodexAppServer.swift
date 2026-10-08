@@ -157,8 +157,9 @@ nonisolated enum CodexAppServer {
     /// reply, close stdin (the server then exits by itself). Blocking — call
     /// off the main actor. The reply must come within `timeout`; a server
     /// that then won't exit is TERMed and KILLed, so a call returns within
-    /// about `timeout` + 4 s, and leaves no reader thread behind even when a
-    /// grandchild keeps stdout open.
+    /// about `timeout` + 4 s (up to 5 s more if its reader thread is
+    /// starved), and leaves no reader thread behind even when a grandchild
+    /// keeps stdout open.
     static func read(
         cli: String,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -219,8 +220,10 @@ nonisolated enum CodexAppServer {
         // behind npm's node wrapper, say) goes too.
         child.finish()
         // The reader sees the cancel within one poll interval, or EOF now
-        // that the group is gone: don't return with it still running.
-        _ = readerDone.wait(timeout: .now() + 1)
+        // that the group is gone: don't return with it still running. The
+        // bound is generous because a loaded machine can leave it unscheduled
+        // for a while; it only guards against a reader that never started.
+        _ = readerDone.wait(timeout: .now() + 5)
         guard gotAnswer else { return .failure(.timedOut) }
         return outcome.get() ?? .failure(.noAnswer)
     }
@@ -337,7 +340,6 @@ nonisolated enum CodexAppServer {
 
         deinit { closeStdin() }
     }
-
 
     private final class OutcomeBox: @unchecked Sendable {
         private let lock = NSLock()
