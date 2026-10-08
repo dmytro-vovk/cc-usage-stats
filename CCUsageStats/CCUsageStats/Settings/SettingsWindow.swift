@@ -153,6 +153,7 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            UsageMCPSection()
         }
     }
 
@@ -169,6 +170,49 @@ struct GeneralSettingsView: View {
         case .removed: return "Removed"
         case .failed(let why): return why
         }
+    }
+}
+
+/// Opt-in registration of the read-only usage MCP server.
+private struct UsageMCPSection: View {
+    @StateObject private var mcp = UsageMCPSettings()
+
+    var body: some View {
+        Section {
+            Toggle("Usage MCP server for Claude Code", isOn: Binding(
+                get: { mcp.claudeEnabled },
+                set: { mcp.setClaude($0) }
+            ))
+            .disabled(mcp.busy)
+            if case .elsewhere(let path) = mcp.claude {
+                LabeledContent("Registered") {
+                    HStack(spacing: 8) {
+                        Text("for another copy: \(path)").foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        Button("Repair") { mcp.setClaude(true) }.disabled(mcp.busy)
+                    }
+                }
+            }
+            if mcp.codexAvailable || mcp.codexInstalled {
+                Toggle("Also register with Codex", isOn: Binding(
+                    get: { mcp.codexInstalled },
+                    set: { mcp.setCodex($0) }
+                ))
+                .disabled(mcp.busy)
+            }
+            if mcp.busy {
+                ProgressView().controlSize(.small)
+            }
+            if let error = mcp.error {
+                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } footer: {
+            Text("Lets agents call get_usage to read these limits (read-only, no network). Registers \"cc-usage-stats\" with `claude mcp add-json --scope user`, and in ~/.codex/config.toml (a backup is saved first; nothing else in it changes). Turning a toggle off removes it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear { mcp.refresh() }
     }
 }
 

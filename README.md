@@ -186,7 +186,8 @@ arbitrary later time.
 toolbar tabs:
 
 - **General** — Launch at login; Menu-bar pill shows Claude / Codex /
-  Both; Show active Claude Code sessions (with the hook status).
+  Both; Show active Claude Code sessions (with the hook status); Usage
+  MCP server for Claude Code / Codex (see [Usage MCP server](#usage-mcp-server)).
 - **Accounts** — *Claude*: connection status, **Connect / Reconnect
   account** (browser OAuth, see below), **Set / Change token…** (the
   paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
@@ -274,6 +275,47 @@ Optional, off by default: **Settings → Accounts → Track Codex usage**.
   and the session logs keep the display going. Whichever source has the
   newer reading wins. Verification notes:
   [design spec](docs/superpowers/specs/2026-10-07-settings-window-and-codex-usage-design.md).
+
+### Usage MCP server
+
+Optional, off by default: **Settings → General → Usage MCP server for
+Claude Code** (and **Also register with Codex**). Agents then get one
+read-only tool, `get_usage`, with the same readings the dropdown shows, so
+they can plan around them — route reviews to Codex when Claude's weekly
+window is tight, pick a cheaper subagent model, or wait for a reset before
+a large fan-out.
+
+- **What it returns.** One JSON object: for Claude (5-hour, weekly, each
+  per-model weekly window) and Codex (each window from the session logs):
+  `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace`
+  (on-pace percent, ahead or not, projected time at 100%), the 5-hour
+  `forecast_seconds_to_cap`, plus `as_of`, `age_seconds` and `stale`
+  (older than 15 minutes) per source. A window whose reset has passed
+  reports 0% with `reset_passed: true`. Facts only — no advice.
+- **How it runs.** The agent launches
+  `CCUsageStats.app/Contents/MacOS/CCUsageStats --mcp-server`, a stdio
+  MCP server that reads `state.json`, `history.jsonl` and
+  `~/.codex/sessions`, and exits when the agent does. No port, no network,
+  no Keychain; it works whether or not the menu-bar app is running (stale
+  data is marked as such).
+- **Registration.** Claude Code: `claude mcp add-json --scope user
+  cc-usage-stats …` (user scope, every project); the CLI writes its own
+  `~/.claude.json`. Codex: a `[mcp_servers.cc-usage-stats]` table appended
+  to `~/.codex/config.toml` — nothing else in the file changes, a one-time
+  backup `config.toml.cc-usage-stats.bak` is written first, and turning the
+  toggle off removes exactly that table. If the app moves, the toggle shows
+  **Registered for another copy** with **Repair**.
+- **By hand / one-off:**
+
+  ```bash
+  claude mcp add-json --scope user cc-usage-stats '{"type":"stdio","command":"/Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats","args":["--mcp-server"]}'
+  ```
+
+- **Telling agents when to use it** is up to you — e.g. a line in your
+  `~/.claude/CLAUDE.md`: *"Before a large fan-out or choosing subagent
+  models, call `get_usage` (cc-usage-stats); if Claude weekly is ahead of
+  pace or above 70%, route reviews and mechanical work to Codex."*
+  Design notes: [spec](docs/superpowers/specs/2026-10-08-usage-mcp-server-design.md).
 
 ### Set / Change OAuth Token
 
@@ -515,6 +557,10 @@ security delete-generic-password -s cc-usage-stats -a oauth-session
 # active Claude Code sessions (or delete the entries whose command ends in
 # session-hook.sh from ~/.claude/settings.json)
 
+# Unregister the usage MCP server first: turn off Settings → General →
+# Usage MCP server (or: claude mcp remove --scope user cc-usage-stats, and
+# delete the [mcp_servers.cc-usage-stats] table from ~/.codex/config.toml)
+
 # Remove cache + history + sentinel + session records + hook script
 rm -rf ~/Library/Application\ Support/cc-usage-stats/
 
@@ -542,6 +588,10 @@ security delete-identity -c "CCUsageStats Dev"
 - Codex tracking (off by default) reads `~/.codex/sessions` locally.
   Opt-in live polling adds one request every 5 minutes to `chatgpt.com`
   with the Codex CLI's existing sign-in; `~/.codex` is never written.
+- The usage MCP server (off by default) only reads local files and
+  answers the agent that launched it over stdio; it opens no port and
+  makes no requests. What an agent does with the numbers is up to the
+  agent (they can end up in its transcript).
 - On disk under `~/Library/Application Support/cc-usage-stats/`:
   - `state.json` — latest rate-limit numbers + capture timestamp.
   - `history.jsonl` — sample log for the sparkline (current 5h window only).

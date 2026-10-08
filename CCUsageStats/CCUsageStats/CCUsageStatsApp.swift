@@ -1,6 +1,5 @@
 import SwiftUI
 
-@main
 struct CCUsageStatsApp: App {
     @StateObject private var vm = MenuViewModel()
 

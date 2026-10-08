@@ -361,3 +361,24 @@ Skip this if you've never had the Phase 1 statusline integration.
 - Turn **Show active Claude Code sessions** off: the section disappears
   and our entries are removed from `settings.json` (others untouched).
   Back on: reinstalled.
+
+### 17. Usage MCP server
+
+- Settings → General → **Usage MCP server for Claude Code** ON: a spinner,
+  then on. `claude mcp get cc-usage-stats` shows scope User and the
+  app's `…/Contents/MacOS/CCUsageStats --mcp-server`.
+- In a new `claude` session, ask "call get_usage": the answer quotes the
+  same 5-hour / weekly / per-model percentages as the dropdown, and Codex
+  windows when Codex tracking has readings. `age_seconds` < 120 while the
+  app runs.
+- Quit the app, wait 16 minutes, call again: still answers, with
+  `"stale": true` for Claude.
+- **Also register with Codex** ON: `~/.codex/config.toml` ends with a
+  `[mcp_servers.cc-usage-stats]` table; everything above it is byte-for-byte
+  unchanged (`diff` against `config.toml.cc-usage-stats.bak`). `codex mcp
+  list` shows it. OFF: the table is gone and the file equals the backup.
+- Move the app (e.g. `~/Applications` → `/Applications`) and reopen
+  Settings: **Registered for another copy: …** with **Repair**; Repair
+  points it at the new path.
+- No `claude` CLI on the machine: turning the toggle on shows the
+  `claude mcp add-json …` command to run by hand.
