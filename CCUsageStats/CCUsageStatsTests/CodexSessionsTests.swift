@@ -156,6 +156,54 @@ final class CodexSessionsTests: XCTestCase {
         XCTAssertTrue(SessionHookInstaller.isInstalled(command: codexCommand, in: out, client: .codex))
     }
 
+    func testStrayOrDuplicateEntriesMeanNotInstalled() {
+        let good = SessionHookInstaller.installing(command: codexCommand, into: [:], client: .codex)
+        let ours: [String: Any] = ["hooks": [["type": "command", "command": codexCommand, "timeout": 3]]]
+        var stray = good, dup = good
+        var h = stray["hooks"] as! [String: Any]
+        h["Interrupt"] = [ours]  // written by an earlier build
+        stray["hooks"] = h
+        h = dup["hooks"] as! [String: Any]
+        h["Stop"] = [ours, ours]
+        dup["hooks"] = h
+        XCTAssertTrue(SessionHookInstaller.isInstalled(command: codexCommand, in: good, client: .codex))
+        XCTAssertFalse(SessionHookInstaller.isInstalled(command: codexCommand, in: stray, client: .codex))
+        XCTAssertFalse(SessionHookInstaller.isInstalled(command: codexCommand, in: dup, client: .codex))
+        // Repair: the stray event goes, the duplicate collapses.
+        XCTAssertTrue(SessionHookInstaller.isInstalled(
+            command: codexCommand, in: SessionHookInstaller.installing(command: codexCommand, into: stray, client: .codex), client: .codex))
+        XCTAssertTrue(SessionHookInstaller.isInstalled(
+            command: codexCommand, in: SessionHookInstaller.installing(command: codexCommand, into: dup, client: .codex), client: .codex))
+    }
+
+    /// A repair that would move one of the user's hooks would cost it its
+    /// Codex trust; refuse and leave the file alone instead.
+    func testCodexRepairThatWouldMoveTheirHooksIsRefused() throws {
+        let hooks = dir.appendingPathComponent("codex/hooks.json")
+        let script = dir.appendingPathComponent("cc-usage-stats/hooks/codex-session-hook.sh")
+        let cmd = SessionHookInstaller.command(for: script)
+        let mixed: [String: Any] = ["hooks": ["PreToolUse": [
+            ["hooks": [["type": "command", "command": "/their0.sh"], ["type": "command", "command": cmd, "timeout": 3],
+                       ["type": "command", "command": "/their1.sh"]]],
+            ["hooks": [["type": "command", "command": "/userB.sh"]]],
+        ]]]
+        try FileManager.default.createDirectory(at: hooks.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let original = try JSONSerialization.data(withJSONObject: mixed)
+        try original.write(to: hooks)
+        XCTAssertThrowsError(try SessionHookInstaller.ensureInstalled(settingsURL: hooks, scriptURL: script, client: .codex)) {
+            XCTAssertEqual($0 as? SessionHookInstaller.InstallError, .wouldMoveCodexHooks)
+        }
+        XCTAssertEqual(try Data(contentsOf: hooks), original)
+
+        // Ours as its own trailing group: repaired in place, nothing moves.
+        let trailing: [String: Any] = ["hooks": ["PreToolUse": [
+            ["hooks": [["type": "command", "command": "/their0.sh"]]],
+            ["hooks": [["type": "command", "command": cmd, "timeout": 99]]],
+        ]]]
+        try JSONSerialization.data(withJSONObject: trailing).write(to: hooks)
+        XCTAssertEqual(try SessionHookInstaller.ensureInstalled(settingsURL: hooks, scriptURL: script, client: .codex), .installed)
+    }
+
     func testClientsNeverClaimEachOthersEntries() {
         let both = SessionHookInstaller.installing(
             command: codexCommand,

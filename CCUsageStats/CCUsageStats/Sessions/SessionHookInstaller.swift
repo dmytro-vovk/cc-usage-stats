@@ -58,8 +58,13 @@ nonisolated enum SessionHookInstaller {
         case unreadableSettings(String)
         case unexpectedShape(String)
         case changedWhileWriting(String)
+        /// Fixing our entries would shift one of the user's Codex hooks to
+        /// another position, and Codex keys trust by position.
+        case wouldMoveCodexHooks
         var description: String {
             switch self {
+            case .wouldMoveCodexHooks:
+                return "hooks.json has the cc-usage-stats hook inside or ahead of your own hook groups; repairing it would make Codex ask you to trust your hooks again. Move it into a group of its own at the end of each event, or remove it, then Repair. Left untouched."
             case .unreadableSettings(let path): return "Couldn't read \(path); left it untouched."
             case .unexpectedShape(let what): return "settings.json has an unexpected \(what); left it untouched."
             case .changedWhileWriting(let path): return "\(path) kept changing while being updated; try again."
@@ -97,6 +102,15 @@ nonisolated enum SessionHookInstaller {
     /// (a narrowing matcher, a changed type) is repaired by reinstalling.
     static func isInstalled(command: String, in settings: [String: Any], client: SessionClient = .claude) -> Bool {
         let hooks = settings["hooks"] as? [String: Any] ?? [:]
+        // Exactly one entry of ours per event, and none anywhere else.
+        for (event, value) in hooks {
+            let count = (value as? [[String: Any]] ?? []).reduce(0) { n, group in
+                n + (group["hooks"] as? [[String: Any]] ?? []).filter {
+                    isOurs($0, client: client) || $0["command"] as? String == command
+                }.count
+            }
+            if count != (events(for: client).contains(event) ? 1 : 0) { return false }
+        }
         return events(for: client).allSatisfy { event in
             (hooks[event] as? [[String: Any]] ?? []).contains { group in
                 guard group["matcher"] == nil,
@@ -168,6 +182,22 @@ nonisolated enum SessionHookInstaller {
         return out
     }
 
+    /// Every handler that isn't ours, by Codex's trust key position
+    /// (`event:group:handler`).
+    static func theirPositions(_ settings: [String: Any], client: SessionClient) -> [String: NSDictionary] {
+        var out: [String: NSDictionary] = [:]
+        for (event, value) in settings["hooks"] as? [String: Any] ?? [:] {
+            for (g, group) in (value as? [[String: Any]] ?? []).enumerated() {
+                for (h, handler) in (group["hooks"] as? [[String: Any]] ?? []).enumerated() where !isOurs(handler, client: client) {
+                    var entry = handler
+                    entry["__matcher"] = group["matcher"]
+                    out["\(event):\(g):\(h)"] = NSDictionary(dictionary: entry)
+                }
+            }
+        }
+        return out
+    }
+
     /// Removes our entries from every event; groups and events left empty go too.
     static func uninstalling(from settings: [String: Any], client: SessionClient = .claude) -> [String: Any] {
         var out = settings
@@ -199,7 +229,11 @@ nonisolated enum SessionHookInstaller {
         try update(settingsURL) { settings in
             if isInstalled(command: cmd, in: settings, client: client) { return nil }
             outcome = .installed
-            return installing(command: cmd, into: settings, client: client)
+            let out = installing(command: cmd, into: settings, client: client)
+            if client == .codex, theirPositions(settings, client: client) != theirPositions(out, client: client) {
+                throw InstallError.wouldMoveCodexHooks
+            }
+            return out
         }
         if outcome == .alreadyInstalled, scriptChanged { return .updatedScript }
         return outcome
