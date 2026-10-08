@@ -28,13 +28,13 @@ struct UsageColoring: Equatable {
     static let fiveHourLength: Int64 = 5 * 3600
     static let weekLength: Int64 = 7 * 86_400
 
-    /// How far through its window a reading is, 0...1. Nil when the reset
-    /// lies further out than one window length — not a window of this size.
+    /// How far through its window a reading is, 0..<1. Nil when the reset
+    /// lies further out than one window length — not a window of this size —
+    /// or has passed: a reading of a window that is over has no pace.
     static func elapsedFraction(resetsAt: Int64, now: Int64, windowLength: Int64) -> Double? {
         guard windowLength > 0 else { return nil }
         let (remaining, overflow) = resetsAt.subtractingReportingOverflow(now)
-        guard !overflow, remaining <= windowLength else { return nil }
-        guard remaining > 0 else { return 1 }
+        guard !overflow, remaining > 0, remaining <= windowLength else { return nil }
         return Double(windowLength - remaining) / Double(windowLength)
     }
 

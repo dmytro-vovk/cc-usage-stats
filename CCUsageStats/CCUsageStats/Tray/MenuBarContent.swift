@@ -819,7 +819,9 @@ private struct WindowSection: View {
                     fraction: fraction,
                     color: color,
                     pace: pace,
-                    overshootColor: UsageColor.gradient(t: 1, scheme: colorScheme)
+                    // By pace, the colour already says whether being ahead
+                    // matters; red past the tick would contradict it.
+                    overshootColor: coloring.byPace ? color : UsageColor.gradient(t: 1, scheme: colorScheme)
                 )
                 if let sl = sparkline, sl.samples.count >= 2 {
                     SparklineView(
@@ -879,7 +881,8 @@ enum WindowTooltip {
 }
 
 /// Linear usage bar. With a pace, a tick marks how much of the window has
-/// elapsed; fill past the tick (usage ahead of an even burn) turns red.
+/// elapsed; fill past the tick (usage ahead of an even burn) turns
+/// `overshootColor` — red, unless colouring by pace.
 private struct UsageBar: View {
     let fraction: Double
     let color: Color

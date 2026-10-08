@@ -45,30 +45,49 @@ final class MenuViewModelAlertTests: XCTestCase {
 
     func testEachWindowKindUsesItsOwnThreshold() {
         let vm = viewModel()
-        XCTAssertEqual(vm.alertOutcome(for: snapshot(five: 50, seven: 50, fable: 50)), AlertOutcome())
+        XCTAssertEqual(vm.alertOutcome(now: 1_000_000, for: snapshot(five: 50, seven: 50, fable: 50)), AlertOutcome())
         // 5h 85 < 90, Fable warning off — only the weekly 60 sounds.
-        XCTAssertEqual(vm.alertOutcome(for: snapshot(five: 85, seven: 65, fable: 95)),
+        XCTAssertEqual(vm.alertOutcome(now: 1_000_000, for: snapshot(five: 85, seven: 65, fable: 95)),
                        AlertOutcome(warning: true))
         // Once per window: weekly bouncing back over 60 stays quiet.
-        XCTAssertEqual(vm.alertOutcome(for: snapshot(five: 85, seven: 55, fable: 95)), AlertOutcome())
-        XCTAssertEqual(vm.alertOutcome(for: snapshot(five: 85, seven: 65, fable: 95)), AlertOutcome())
+        XCTAssertEqual(vm.alertOutcome(now: 1_000_000, for: snapshot(five: 85, seven: 55, fable: 95)), AlertOutcome())
+        XCTAssertEqual(vm.alertOutcome(now: 1_000_000, for: snapshot(five: 85, seven: 65, fable: 95)), AlertOutcome())
         // The model window reaching its limit always sounds.
-        XCTAssertEqual(vm.alertOutcome(for: snapshot(five: 85, seven: 65, fable: 100)),
+        XCTAssertEqual(vm.alertOutcome(now: 1_000_000, for: snapshot(five: 85, seven: 65, fable: 100)),
                        AlertOutcome(limitReached: true))
     }
 
     func testResetOfAWindowThatRanLowIsAnnounced() {
         let vm = viewModel()
-        _ = vm.alertOutcome(for: snapshot(five: 10, seven: 50, fable: 10))
-        _ = vm.alertOutcome(for: snapshot(five: 10, seven: 70, fable: 10))
-        let next = vm.alertOutcome(for: snapshot(five: 0, seven: 0, fable: 0, resets: 2_000_000 + 86_400))
+        _ = vm.alertOutcome(now: 1_000_000, for: snapshot(five: 10, seven: 50, fable: 10))
+        _ = vm.alertOutcome(now: 1_000_000, for: snapshot(five: 10, seven: 70, fable: 10))
+        let next = vm.alertOutcome(now: 1_000_000, for: snapshot(five: 0, seven: 0, fable: 0, resets: 2_000_000 + 86_400))
         XCTAssertEqual(next, AlertOutcome(reset: true))
     }
 
     func testQuietResetIsSilentUnderRanLow() {
         let vm = viewModel()
-        _ = vm.alertOutcome(for: snapshot(five: 10, seven: 10, fable: 10))
-        XCTAssertEqual(vm.alertOutcome(for: snapshot(five: 0, seven: 0, fable: 0, resets: 2_000_000 + 86_400)),
+        _ = vm.alertOutcome(now: 1_000_000, for: snapshot(five: 10, seven: 10, fable: 10))
+        XCTAssertEqual(vm.alertOutcome(now: 1_000_000, for: snapshot(five: 0, seven: 0, fable: 0, resets: 2_000_000 + 86_400)),
+                       AlertOutcome())
+    }
+
+    /// A cached window past its reset describes a period that's over; a
+    /// late correction to it must not sound.
+    func testExpiredWindowDoesNotSound() {
+        let vm = viewModel()
+        _ = vm.alertOutcome(now: 1_000_000, for: snapshot(five: 10, seven: 55, fable: 10))
+        XCTAssertEqual(vm.alertOutcome(now: 2_000_100, for: snapshot(five: 10, seven: 65, fable: 10)), AlertOutcome())
+    }
+
+    /// Reconnecting (possibly as another account) starts the latch over.
+    func testRestartingPollingForgetsTheOldWindows() {
+        let vm = viewModel()
+        _ = vm.alertOutcome(now: 1_000_000, for: snapshot(five: 10, seven: 70, fable: 10))
+        vm.restartPollingForTest()
+        // A fresh baseline: the weekly reset below is not "the window that ran low".
+        _ = vm.alertOutcome(now: 1_000_000, for: snapshot(five: 10, seven: 10, fable: 10))
+        XCTAssertEqual(vm.alertOutcome(now: 1_000_000, for: snapshot(five: 0, seven: 0, fable: 0, resets: 2_000_000 + 86_400)),
                        AlertOutcome())
     }
 

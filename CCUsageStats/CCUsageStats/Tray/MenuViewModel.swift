@@ -478,6 +478,8 @@ final class MenuViewModel: ObservableObject {
         // A new token is in play, so any explanation of why the previous one
         // couldn't be recovered is now history.
         recoveryHint = nil
+        // Possibly another account: its windows aren't the ones latched.
+        alertLatch = WindowAlertLatch()
         attachPoller(token: loadStoredToken())
     }
 
@@ -562,7 +564,7 @@ final class MenuViewModel: ObservableObject {
 
     private func reloadCache() {
         let newCached = (try? CacheStore.read(at: Paths.stateFile)) ?? nil
-        let outcome = alertOutcome(for: newCached?.snapshot)
+        let outcome = alertOutcome(now: Int64(Date().timeIntervalSince1970), for: newCached?.snapshot)
         cached = newCached
         recomputeFromCachedOnly()
 
@@ -593,8 +595,9 @@ final class MenuViewModel: ObservableObject {
     }
 
     /// Feeds every Claude window to the latch. 100% always sounds; each
-    /// window kind adds its own warning threshold when enabled.
-    func alertOutcome(for snapshot: RateLimitsSnapshot?) -> AlertOutcome {
+    /// window kind adds its own warning threshold when enabled. A cached
+    /// window past its reset describes a period that's over and is skipped.
+    func alertOutcome(now: Int64, for snapshot: RateLimitsSnapshot?) -> AlertOutcome {
         guard let snapshot else { return AlertOutcome() }
         var windows: [(String, WindowSnapshot?)] = [
             (AlertOutcome.fiveHourID, snapshot.fiveHour),
@@ -603,8 +606,9 @@ final class MenuViewModel: ObservableObject {
         windows += UsageWindows.orderedModelKeys(snapshot.models).map { ($0, snapshot.models[$0]) }
         let events = windows.flatMap { id, window in
             alertLatch.observe(
-                id: id, window: window,
-                thresholds: alertRule(for: AlertWindowKind.forClaude(key: id)).thresholds
+                id: id, window: window.flatMap { $0.resetsAt > now ? $0 : nil },
+                thresholds: alertRule(for: AlertWindowKind.forClaude(key: id)).thresholds,
+                now: now
             )
         }
         return AlertOutcome(events: events, announce: resetAnnouncement)

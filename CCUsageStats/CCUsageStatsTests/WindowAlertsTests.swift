@@ -6,24 +6,27 @@ final class WindowAlertLatchTests: XCTestCase {
     private let r1: Int64 = 100_000
     private let r2: Int64 = 100_000 + 5 * 3600
 
+    /// Readings are taken shortly before r1; a reset seen soon after.
+    private let now: Int64 = 99_000
+
     private func w(_ p: Double, _ r: Int64) -> WindowSnapshot { WindowSnapshot(usedPercentage: p, resetsAt: r) }
 
     func testFirstObservationIsABaselineNotAnAlert() {
         var latch = WindowAlertLatch()
-        XCTAssertEqual(latch.observe(id: "five_hour", window: w(99, r1), thresholds: [80, 100]), [])
+        XCTAssertEqual(latch.observe(id: "five_hour", window: w(99, r1), thresholds: [80, 100], now: now), [])
     }
 
     func testMissingWindowNeitherFiresNorForgets() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "x", window: w(70, r1), thresholds: [80, 100])
-        XCTAssertEqual(latch.observe(id: "x", window: nil, thresholds: [80, 100]), [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(81, r1), thresholds: [80, 100]), [.crossed(id: "x", percent: 80)])
+        _ = latch.observe(id: "x", window: w(70, r1), thresholds: [80, 100], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: nil, thresholds: [80, 100], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(81, r1), thresholds: [80, 100], now: now), [.crossed(id: "x", percent: 80)])
     }
 
     func testCrossesBothThresholdsInOneJump() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "x", window: w(50, r1), thresholds: [80, 100])
-        XCTAssertEqual(latch.observe(id: "x", window: w(100, r1), thresholds: [80, 100]),
+        _ = latch.observe(id: "x", window: w(50, r1), thresholds: [80, 100], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(100, r1), thresholds: [80, 100], now: now),
                        [.crossed(id: "x", percent: 80), .crossed(id: "x", percent: 100)])
     }
 
@@ -31,35 +34,35 @@ final class WindowAlertLatchTests: XCTestCase {
     /// back (a stale source, a correction) does not sound again.
     func testBouncingAroundAThresholdFiresOncePerWindow() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "x", window: w(79, r1), thresholds: [80, 100])
-        XCTAssertEqual(latch.observe(id: "x", window: w(80, r1), thresholds: [80, 100]).count, 1)
-        XCTAssertEqual(latch.observe(id: "x", window: w(79, r1), thresholds: [80, 100]), [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(81, r1), thresholds: [80, 100]), [])
+        _ = latch.observe(id: "x", window: w(79, r1), thresholds: [80, 100], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(80, r1), thresholds: [80, 100], now: now).count, 1)
+        XCTAssertEqual(latch.observe(id: "x", window: w(79, r1), thresholds: [80, 100], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(81, r1), thresholds: [80, 100], now: now), [])
     }
 
     func testWindowsAreLatchedIndependently() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "a", window: w(79, r1), thresholds: [80])
-        _ = latch.observe(id: "b", window: w(79, r1), thresholds: [80])
-        XCTAssertEqual(latch.observe(id: "a", window: w(80, r1), thresholds: [80]), [.crossed(id: "a", percent: 80)])
-        XCTAssertEqual(latch.observe(id: "b", window: w(80, r1), thresholds: [80]), [.crossed(id: "b", percent: 80)])
+        _ = latch.observe(id: "a", window: w(79, r1), thresholds: [80], now: now)
+        _ = latch.observe(id: "b", window: w(79, r1), thresholds: [80], now: now)
+        XCTAssertEqual(latch.observe(id: "a", window: w(80, r1), thresholds: [80], now: now), [.crossed(id: "a", percent: 80)])
+        XCTAssertEqual(latch.observe(id: "b", window: w(80, r1), thresholds: [80], now: now), [.crossed(id: "b", percent: 80)])
     }
 
     func testResetReportsWhetherTheWindowRanLow() {
         var quiet = WindowAlertLatch()
-        _ = quiet.observe(id: "x", window: w(60, r1), thresholds: [80, 100])
-        XCTAssertEqual(quiet.observe(id: "x", window: w(1, r2), thresholds: [80, 100]),
+        _ = quiet.observe(id: "x", window: w(60, r1), thresholds: [80, 100], now: now)
+        XCTAssertEqual(quiet.observe(id: "x", window: w(1, r2), thresholds: [80, 100], now: now),
                        [.reset(id: "x", ranLow: false)])
 
         var low = WindowAlertLatch()
-        _ = low.observe(id: "x", window: w(70, r1), thresholds: [80, 100])
-        _ = low.observe(id: "x", window: w(85, r1), thresholds: [80, 100])
-        XCTAssertEqual(low.observe(id: "x", window: w(1, r2), thresholds: [80, 100]),
+        _ = low.observe(id: "x", window: w(70, r1), thresholds: [80, 100], now: now)
+        _ = low.observe(id: "x", window: w(85, r1), thresholds: [80, 100], now: now)
+        XCTAssertEqual(low.observe(id: "x", window: w(1, r2), thresholds: [80, 100], now: now),
                        [.reset(id: "x", ranLow: true)])
         // The new window starts clean: neither "ran low" nor the latch carries over.
-        XCTAssertEqual(low.observe(id: "x", window: w(80, r2), thresholds: [80, 100]),
+        XCTAssertEqual(low.observe(id: "x", window: w(80, r2), thresholds: [80, 100], now: now),
                        [.crossed(id: "x", percent: 80)])
-        XCTAssertEqual(low.observe(id: "x", window: w(2, r2 + 5 * 3600), thresholds: [80, 100]),
+        XCTAssertEqual(low.observe(id: "x", window: w(2, r2 + 5 * 3600), thresholds: [80, 100], now: now),
                        [.reset(id: "x", ranLow: true)])
     }
 
@@ -67,9 +70,9 @@ final class WindowAlertLatchTests: XCTestCase {
     /// window's level: 85% → reset → 90% is a fresh crossing of 80.
     func testCrossingInTheFirstReadingOfANewWindow() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "x", window: w(85, r1), thresholds: [80, 100])
-        XCTAssertEqual(latch.observe(id: "x", window: w(90, r2), thresholds: [80, 100]),
-                       [.reset(id: "x", ranLow: false), .crossed(id: "x", percent: 80)])
+        _ = latch.observe(id: "x", window: w(85, r1), thresholds: [80, 100], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(90, r2), thresholds: [80, 100], now: now),
+                       [.reset(id: "x", ranLow: true), .crossed(id: "x", percent: 80)])
     }
 
     /// Observed live (2026-09-29): the usage endpoint reports one window's
@@ -77,26 +80,57 @@ final class WindowAlertLatchTests: XCTestCase {
     /// between polls. That is not a new window.
     func testSubMinuteJitterIsNotAWindowReset() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "x", window: w(12, 1_790_674_199), thresholds: [80, 100])
-        XCTAssertEqual(latch.observe(id: "x", window: w(12, 1_790_674_200), thresholds: [80, 100]), [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(12, 1_790_674_199), thresholds: [80, 100]), [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(12, 1_790_674_200), thresholds: [80, 100]), [])
+        _ = latch.observe(id: "x", window: w(12, 1_790_674_199), thresholds: [80, 100], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(12, 1_790_674_200), thresholds: [80, 100], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(12, 1_790_674_199), thresholds: [80, 100], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(12, 1_790_674_200), thresholds: [80, 100], now: now), [])
     }
 
-    /// A reading of an older window (a lagging source) is neither a reset
-    /// nor a baseline the next real reading should be compared to.
-    func testRegressedResetIsIgnored() {
+    /// A reset that moves backwards by more than jitter is a different
+    /// account (or schedule): start over from that reading, silently,
+    /// rather than ignoring the window until the old reset time comes round.
+    func testRegressedResetRebaselines() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "x", window: w(30, r2), thresholds: [80])
-        XCTAssertEqual(latch.observe(id: "x", window: w(95, r1), thresholds: [80]), [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(35, r2), thresholds: [80]), [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(81, r2), thresholds: [80]), [.crossed(id: "x", percent: 80)])
+        _ = latch.observe(id: "x", window: w(30, r2), thresholds: [80], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(70, r1), thresholds: [80], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(81, r1), thresholds: [80], now: now),
+                       [.crossed(id: "x", percent: 80)])
+    }
+
+    /// Launching above a threshold doesn't sound it, but the window still
+    /// counts as having run low — and doesn't sound it later either.
+    func testBaselineAboveAThresholdCountsAsRanLow() {
+        var latch = WindowAlertLatch()
+        _ = latch.observe(id: "x", window: w(100, r1), thresholds: [80, 100], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(100, r1), thresholds: [80, 100], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(0, r2), thresholds: [80, 100], now: r1 + 60),
+                       [.reset(id: "x", ranLow: true)])
+    }
+
+    /// A window not seen for more than a day (a per-model window hidden by
+    /// the header fallback for weeks) resumes without a belated reset.
+    func testLongAbsenceResumesWithoutAReset() {
+        var latch = WindowAlertLatch()
+        _ = latch.observe(id: "x", window: w(70, r1), thresholds: [80], now: now)
+        _ = latch.observe(id: "x", window: w(85, r1), thresholds: [80], now: now)
+        let later = r1 + 30 * 86_400
+        XCTAssertEqual(latch.observe(id: "x", window: w(10, later + 3600), thresholds: [80], now: later), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(81, later + 3600), thresholds: [80], now: later),
+                       [.crossed(id: "x", percent: 80)])
+    }
+
+    /// Overnight sleep across a reset is still announced on wake.
+    func testResetSeenHoursLateIsStillAnnounced() {
+        var latch = WindowAlertLatch()
+        _ = latch.observe(id: "x", window: w(85, r1), thresholds: [80], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(0, r1 + 12 * 3600), thresholds: [80], now: r1 + 8 * 3600),
+                       [.reset(id: "x", ranLow: true)])
     }
 
     func testEmptyThresholdsListSilencesCrossings() {
         var latch = WindowAlertLatch()
-        _ = latch.observe(id: "x", window: w(50, r1), thresholds: [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(100, r1), thresholds: []), [])
+        _ = latch.observe(id: "x", window: w(50, r1), thresholds: [], now: now)
+        XCTAssertEqual(latch.observe(id: "x", window: w(100, r1), thresholds: [], now: now), [])
     }
 }
 

@@ -20,8 +20,8 @@ final class UsageColoringTests: XCTestCase {
     func testElapsedFraction() {
         XCTAssertEqual(UsageColoring.elapsedFraction(resetsAt: 1_000 + 3 * hour, now: 1_000, windowLength: 5 * hour)!,
                        0.4, accuracy: 1e-9)
-        // Past the reset: the whole window has elapsed.
-        XCTAssertEqual(UsageColoring.elapsedFraction(resetsAt: 900, now: 1_000, windowLength: 5 * hour), 1)
+        // Past the reset: a reading of a window that is over has no pace.
+        XCTAssertNil(UsageColoring.elapsedFraction(resetsAt: 900, now: 1_000, windowLength: 5 * hour))
         // A reset further out than one window length is not this window.
         XCTAssertNil(UsageColoring.elapsedFraction(resetsAt: 1_000 + 6 * hour, now: 1_000, windowLength: 5 * hour))
     }
@@ -76,6 +76,12 @@ final class UsageColoringTests: XCTestCase {
         // The same reading 4h40m in is under pace.
         let late = WindowSnapshot(usedPercentage: 70, resetsAt: now + 20 * 60)
         XCTAssertEqual(pace.fraction(for: late, windowLength: UsageColoring.fiveHourLength, now: now), 0.5)
+    }
+
+    func testExpiredWindowKeepsItsAbsoluteColour() {
+        let now: Int64 = 50_000
+        let w = WindowSnapshot(usedPercentage: 80, resetsAt: now - 60)
+        XCTAssertEqual(pace.fraction(for: w, windowLength: UsageColoring.fiveHourLength, now: now), 0.8, accuracy: 1e-9)
     }
 
     func testUnknownElapsedFallsBackToAbsolute() {

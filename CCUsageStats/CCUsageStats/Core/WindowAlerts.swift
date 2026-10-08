@@ -62,7 +62,9 @@ enum ResetAnnouncement: String, CaseIterable, Identifiable {
 /// launch is a baseline, not an alert. A latch per window then keeps a
 /// reading that dips under a threshold and climbs back from sounding twice.
 /// A window is identified by its id plus its reset time; the reset time must
-/// advance by more than `minResetAdvance` to count as a new window.
+/// advance by more than `minResetAdvance` to count as a new window. A reset
+/// time that moves backwards (another account) or a window unseen for more
+/// than `maxResetAnnounceDelay` past its reset starts over silently.
 struct WindowAlertLatch {
     enum Event: Equatable {
         case crossed(id: String, percent: Int)
@@ -76,6 +78,11 @@ struct WindowAlertLatch {
     /// forward by hours; 10 minutes clears any jitter by a wide margin.
     static let minResetAdvance: Int64 = 600
 
+    /// A reset noticed later than this after it happened isn't announced:
+    /// an overnight sleep still is, a per-model window that was out of
+    /// sight for weeks isn't.
+    static let maxResetAnnounceDelay: Int64 = 86_400
+
     private struct Entry {
         var resetsAt: Int64
         var used: Double
@@ -84,14 +91,19 @@ struct WindowAlertLatch {
 
     private var entries: [String: Entry] = [:]
 
-    mutating func observe(id: String, window: WindowSnapshot?, thresholds: [Int]) -> [Event] {
+    mutating func observe(id: String, window: WindowSnapshot?, thresholds: [Int], now: Int64) -> [Event] {
         guard let window else { return [] }
-        guard var entry = entries[id] else {
-            entries[id] = Entry(resetsAt: window.resetsAt, used: window.usedPercentage, fired: [])
+        guard var entry = entries[id],
+              window.resetsAt >= entry.resetsAt - Self.minResetAdvance,
+              !(window.resetsAt - entry.resetsAt > Self.minResetAdvance
+                && now - entry.resetsAt > Self.maxResetAnnounceDelay)
+        else {
+            // Baseline: no sound, but thresholds already passed count as
+            // sounded — the window ran low, and won't sound them again.
+            let passed = thresholds.filter { window.usedPercentage >= Double($0) }
+            entries[id] = Entry(resetsAt: window.resetsAt, used: window.usedPercentage, fired: Set(passed))
             return []
         }
-        // A lagging source reporting an earlier window: not this window's level.
-        guard window.resetsAt >= entry.resetsAt - Self.minResetAdvance else { return [] }
 
         var events: [Event] = []
         var previous = entry.used
