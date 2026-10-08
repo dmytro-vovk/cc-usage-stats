@@ -633,6 +633,13 @@ instances; `TestEnvironment.isRunningTests` redirects the Keychain item to
 directory under `$TMPDIR`, and skips the settings migration. Your stored
 token, `history.jsonl` and `~/.claude/settings.json` are never touched.
 
+Screenshots under `docs/screenshots/` are window captures of the real app
+at 2× (`screencapture -o -l <window id>`), light and dark. To capture the
+other appearance without changing the system setting, launch with
+`open -a CCUsageStats --args -CCUSAppearance light` (or `dark`); without
+the flag the app follows the system. Bump the `?v=` stamp on README image
+URLs whenever a shot changes.
+
 This is a personal-use app shipped to scratch one specific itch (a menubar reminder of Claude.ai usage). Don't expect a roadmap. Bug reports + small targeted PRs are the most likely things to land.
 
 ## License

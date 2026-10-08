@@ -7,6 +7,7 @@ import SwiftUI
 enum AppMain {
     static func main() {
         if MCPServer.isRequested(arguments: CommandLine.arguments) { MCPServer.runStdio() }
+        AppearanceOverride.installIfRequested()
         CCUsageStatsApp.main()
     }
 }
