@@ -45,7 +45,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
   pill background follows an OKLab gradient (flat green ≤50%, blending
   through orange to red at 100%), with the icon+text inverted (white in
   light mode, dark in dark mode) for high contrast against any menubar
-  background.
+  background. With **Colour by pace** on (Settings → Alerts), colour
+  follows [burn rate](#colour-by-pace) instead.
 - The pill can split into up to three colour-coded segments — 5h
   session, 7d window, and (once connected) the busiest per-model
   weekly window — each joining only when it's both **above 80% and ≥
@@ -91,7 +92,9 @@ work between the two quotas. See [Codex usage](#codex-usage).
   a caption shows `capacity at Fri 14:00` (or `capacity today at
   18:30`): when the limit runs out at the week's average rate so far.
   The red segment and caption are held back for the first 24 hours of a
-  window, when one burst would extrapolate to a false alarm.
+  window, when one burst would extrapolate to a false alarm. (With
+  **Colour by pace** on, the bar's own colour carries that verdict and the
+  segment past the tick isn't repainted red.)
 - Under the 7-day bar, once an account is connected, where that week's
   usage came from — e.g. **"Claude Code 93% · Chats 7%"** (surfaces at
   0% are omitted). From the usage endpoint's `seven_day_breakdown`; like
@@ -149,21 +152,49 @@ work between the two quotas. See [Codex usage](#codex-usage).
 Every event has its own picker (defaults shown); selection previews the
 sound, and **None** silences that one event.
 
-- **Limit reached** — fired once when 5-hour utilization first crosses
-  100%. Default: **Bottle**.
-- **Window reset** — fired when the 5-hour window resets (`resets_at`
-  moves forward by more than 10 minutes; smaller moves are the API's
-  sub-second jitter, not a new window). Default: **Hero**.
+- **Warnings** — one rule per window kind: **5-hour session**, **Weekly**
+  (the 7-day window) and **Per-model weekly** (e.g. Fable weekly), each
+  with its own on/off and **Warn at** percentage, sharing the **Warning
+  sound** (default **Tink**). The 5-hour rule keeps any threshold set
+  before per-window rules existed; the other two start off.
+- **Limit reached** — fired when any Claude window first reaches 100%.
+  Default: **Bottle**.
+- **Reset sound** — **Announce resets** picks when it plays: **Every
+  5-hour reset** (the default, and the old behaviour), **Windows that ran
+  low** (any Claude window that sounded a warning or hit its limit —
+  including one already past its threshold when the app launched), or
+  **Both**. A reset is `resets_at` moving forward by more than 10 minutes;
+  smaller moves are the API's sub-second jitter, not a new window. A
+  window unseen for over a day past its reset (say, a per-model window
+  hidden while only a pasted token worked) resumes without a belated
+  reset sound. Default: **Hero**.
 - **Outage detected** — fired once on the operational → outage
   transition reported by status.claude.com. Default: **Sosumi**.
-- **Warn at threshold** — your chosen sound at your chosen threshold
-  (e.g. Tink at 80%). Default: **Tink**.
 
-With Codex tracking on, **Warn at threshold** and **Limit reached** also
-fire when a Codex window crosses the same thresholds (same sounds).
-**Window reset** stays Claude-only: a Codex reset is only noticed when the
-next Codex session writes a log line, so a sound would arrive at an
-arbitrary later time.
+Each threshold sounds **once per window**: a reading that dips under it
+and climbs back stays quiet until the window resets. Thresholds fire on
+the rising edge only, so launching the app above one is silent.
+Reconnecting or changing the token starts over, and readings from before
+the change never count.
+
+With Codex tracking on, warnings and **Limit reached** also fire for Codex
+windows — the 5-hour rule for its 5-hour window, the weekly rule for its
+weekly one (same sounds). Resets stay Claude-only: a Codex reset is only
+noticed when the next Codex session writes a log line, so a sound would
+arrive at an arbitrary later time.
+
+### Colour by pace
+
+Off by default (Settings → Alerts → **Colours**). Instead of the absolute
+percentage, a window between 50% and 90% used is coloured by its **burn
+rate**: used % ÷ elapsed % of the window, where 1× runs out exactly at the
+reset. At or above **Warn above** (1.5× by default, 1.1–3.0×) it turns
+orange; below, green. A fast week warns early (60% two days in is 2.1×),
+and a window that is high only because it is nearly over doesn't (82% with
+half a day left is under 1×). Under 50% stays green, and from 90% — or for
+a reading whose window has already reset — the colour follows usage
+alone. Applies to the dropdown bars, every menubar band, and Codex
+windows; the gauge needle always shows the absolute level.
 
 ### Settings window
 
@@ -192,9 +223,13 @@ toolbar tabs:
   account** (browser OAuth, see below), **Set / Change token…** (the
   paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
   folder, plan, last seen, and the opt-in **Live polling** toggle.
-- **Alerts** — Warn at threshold (1–99% + sound) and the per-event
-  sound pickers (**Limit reached**, **Window reset**, **Outage
-  detected**; 14 system sounds + **None**). Picking previews the sound.
+- **Alerts** — *Warnings*: per-window rules for **5-hour session**,
+  **Weekly** and **Per-model weekly** (on/off + 1–99%) and the warning
+  sound. *Resets*: **Announce resets** and the reset sound. *Colours*:
+  **Colour by pace** and its **Warn above** burn rate. *Sounds*: **Limit
+  reached** and **Outage detected** (14 system sounds + **None** for every
+  picker). Picking previews the sound. See [Notification
+  sounds](#notification-sounds) and [Colour by pace](#colour-by-pace).
 
 Settings keep the same stored values as before the window existed;
 nothing is migrated.

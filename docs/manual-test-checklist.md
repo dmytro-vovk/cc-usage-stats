@@ -119,19 +119,46 @@ Skip this if you've never had the Phase 1 statusline integration.
 
 ### 7. Notification sounds
 
+Write cache states with `captured_at` = now (as in the sparkline recipe
+above); readings captured before a token change or reconnect are ignored
+by design.
+
 - Default per-event sounds, no warning configured:
   - Mock five_hour from 99% → 100% via two sequential cache writes
     (sleep 1 second between). Hear **Bottle**.
-  - Bump `resets_at` by more than 10 minutes. Hear **Hero**. Bumping it
-    by 1 second (the API's jitter) must stay silent.
-- **Warn at threshold ON**, set to e.g. 80%, sound `Tink`:
-  - Cross from 79% → 81% via two writes. Hear **Tink** then nothing
-    on subsequent polls (one-shot per crossing).
+  - Same for seven_day 99% → 100%: **Bottle** (limit reached sounds for
+    every Claude window).
+  - Bump five_hour `resets_at` by more than 10 minutes. Hear **Hero**.
+    Bumping it by 1 second (the API's jitter) must stay silent.
+- **5-hour session** warning ON at 80%, sound `Tink`:
+  - Cross from 79% → 81% via two writes. Hear **Tink**.
+  - Write 79%, then 81% again (same `resets_at`): silent — once per window.
+- **Weekly** warning ON at 60%: seven_day 55% → 65% → **Tink**; five_hour
+  and per-model windows at 65% stay silent unless their own rules say so.
+- **Per-model weekly** ON at 70%: `model_windows.seven_day_fable` 65% → 75%
+  → **Tink**.
+- **Announce resets → Windows that ran low**:
+  - five_hour reset after a quiet window: silent.
+  - seven_day crossed its warning, then `resets_at` +7 days: **Hero**.
+- **Announce resets → Both**: a quiet five_hour reset plays **Hero**, as
+  does a weekly reset after a warning.
 - Choose a different sound from a picker — it previews on change.
 - Set an event's sound to **None** — that event goes silent; the others
   still fire. (There is no global mute.)
-- All of the above live on Settings → **Alerts**; the values chosen
-  before the Settings window existed are still selected.
+- All of the above live on Settings → **Alerts**; a 5-hour threshold set
+  before per-window rules existed is still selected.
+
+### 7a. Colour by pace
+
+- Settings → Alerts → **Colour by pace** ON (1.5×).
+- five_hour 70% with `resets_at` = now + 4h (1h in, 3.5×): 5-hour bar and
+  pill orange. Same 70% with `resets_at` = now + 20m: green.
+- seven_day 85% with `resets_at` = now + 1h: green bar, no red segment past
+  the pace tick; with `resets_at` = now + 5d: orange.
+- Any window at 93%: red, as with the toggle off. 40%: green.
+- Raise **Warn above** to 3.0×: the 1h-in 5-hour reading (3.5×) stays
+  orange; at 2.0× burn (e.g. 80% at 40% elapsed) it turns green.
+- Toggle OFF: colours return to the absolute ramp immediately.
 
 ### 8. Auth recovery
 
