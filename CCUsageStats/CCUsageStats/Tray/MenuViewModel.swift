@@ -47,11 +47,37 @@ final class MenuViewModel: ObservableObject {
     /// a `lastError`, which nothing cleared on recovery, leaving "No usable
     /// token in Claude Code's Keychain" under a perfectly healthy readout.
     @Published private(set) var recoveryHint: String?
+    /// 5-hour warning. Keys predate the per-window rules, so an existing
+    /// setting carries over as the 5-hour one.
     @Published var warningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.warningEnabledKey) {
         didSet { UserDefaults.standard.set(warningEnabled, forKey: Self.warningEnabledKey) }
     }
-    @Published var warningThreshold: Int = MenuViewModel.readWarningThreshold() {
+    @Published var warningThreshold: Int = MenuViewModel.readWarningThreshold(key: warningThresholdKey) {
         didSet { UserDefaults.standard.set(warningThreshold, forKey: Self.warningThresholdKey) }
+    }
+    /// Claude's 7-day window and Codex's weekly window.
+    @Published var weeklyWarningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.weeklyWarningEnabledKey) {
+        didSet { UserDefaults.standard.set(weeklyWarningEnabled, forKey: Self.weeklyWarningEnabledKey) }
+    }
+    @Published var weeklyWarningThreshold: Int = MenuViewModel.readWarningThreshold(key: weeklyWarningThresholdKey) {
+        didSet { UserDefaults.standard.set(weeklyWarningThreshold, forKey: Self.weeklyWarningThresholdKey) }
+    }
+    /// Per-model weekly windows (e.g. Fable weekly).
+    @Published var modelWarningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.modelWarningEnabledKey) {
+        didSet { UserDefaults.standard.set(modelWarningEnabled, forKey: Self.modelWarningEnabledKey) }
+    }
+    @Published var modelWarningThreshold: Int = MenuViewModel.readWarningThreshold(key: modelWarningThresholdKey) {
+        didSet { UserDefaults.standard.set(modelWarningThreshold, forKey: Self.modelWarningThresholdKey) }
+    }
+    @Published var resetAnnouncement: ResetAnnouncement = ResetAnnouncement.read() {
+        didSet { UserDefaults.standard.set(resetAnnouncement.rawValue, forKey: ResetAnnouncement.defaultsKey) }
+    }
+    /// Colour bars and the pill by burn rate instead of absolute percentage.
+    @Published var colorByPace: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.colorByPaceKey) {
+        didSet { UserDefaults.standard.set(colorByPace, forKey: Self.colorByPaceKey) }
+    }
+    @Published var paceThreshold: Double = MenuViewModel.readPaceThreshold() {
+        didSet { UserDefaults.standard.set(paceThreshold, forKey: Self.paceThresholdKey) }
     }
     @Published var warningSound: String = MenuViewModel.readSound(key: warningSoundKey, default: "Tink") {
         didSet { UserDefaults.standard.set(warningSound, forKey: Self.warningSoundKey) }
@@ -71,10 +97,35 @@ final class MenuViewModel: ObservableObject {
     private static let reachedLimitSoundKey = "cc-usage-stats.reachedLimitSound"
     private static let limitResetSoundKey   = "cc-usage-stats.limitResetSound"
     private static let outageSoundKey       = "cc-usage-stats.outageSound"
+    private static let weeklyWarningEnabledKey   = "cc-usage-stats.weeklyWarningEnabled"
+    private static let weeklyWarningThresholdKey = "cc-usage-stats.weeklyWarningThreshold"
+    private static let modelWarningEnabledKey    = "cc-usage-stats.modelWarningEnabled"
+    private static let modelWarningThresholdKey  = "cc-usage-stats.modelWarningThreshold"
+    private static let colorByPaceKey            = "cc-usage-stats.colorByPace"
+    private static let paceThresholdKey          = "cc-usage-stats.paceThreshold"
+    static let paceThresholdRange: ClosedRange<Double> = 1.1...3.0
 
-    private static func readWarningThreshold() -> Int {
-        let v = UserDefaults.standard.integer(forKey: warningThresholdKey)
+    private static func readWarningThreshold(key: String) -> Int {
+        let v = UserDefaults.standard.integer(forKey: key)
         return (v >= 1 && v <= 99) ? v : 80
+    }
+
+    private static func readPaceThreshold() -> Double {
+        let v = UserDefaults.standard.double(forKey: paceThresholdKey)
+        return paceThresholdRange.contains(v) ? v : UsageColoring.defaultBurnRateThreshold
+    }
+
+    func alertRule(for kind: AlertWindowKind) -> AlertRule {
+        switch kind {
+        case .fiveHour: return AlertRule(enabled: warningEnabled, threshold: warningThreshold)
+        case .weekly: return AlertRule(enabled: weeklyWarningEnabled, threshold: weeklyWarningThreshold)
+        case .modelWeekly: return AlertRule(enabled: modelWarningEnabled, threshold: modelWarningThreshold)
+        }
+    }
+
+    /// How bars and the pill are coloured.
+    var coloring: UsageColoring {
+        UsageColoring(byPace: colorByPace, burnRateThreshold: paceThreshold)
     }
 
     private static func readSound(key: String, default fallback: String) -> String {
@@ -100,7 +151,12 @@ final class MenuViewModel: ObservableObject {
     /// `restartPolling()`'s `removeAll()` took the status subscription with
     /// it and the outage banner silently froze until relaunch.
     private var pollerCancellables: Set<AnyCancellable> = []
-    private var lastFiveHour: WindowSnapshot?
+    /// Claude windows' alert state: once per window, resets noticed.
+    private var alertLatch = WindowAlertLatch()
+    /// Set when polling restarts: readings captured up to this second are
+    /// the previous token's and must not seed the fresh latch. (A stopped
+    /// poller's late answers never reach the cache — see `UsagePoller.tick`.)
+    private var alertsHeldUntil: Int64?
     private var wakeObserver: NSObjectProtocol?
     private var history: UsageHistory?
     /// Last `resetsAt` (5h) for which we already kicked an immediate
@@ -426,6 +482,10 @@ final class MenuViewModel: ObservableObject {
         // A new token is in play, so any explanation of why the previous one
         // couldn't be recovered is now history.
         recoveryHint = nil
+        // Possibly another account: its windows aren't the ones latched, and
+        // the cache on disk is still the old account's until a poll lands.
+        alertLatch = WindowAlertLatch()
+        alertsHeldUntil = Int64(Date().timeIntervalSince1970)
         attachPoller(token: loadStoredToken())
     }
 
@@ -510,16 +570,7 @@ final class MenuViewModel: ObservableObject {
 
     private func reloadCache() {
         let newCached = (try? CacheStore.read(at: Paths.stateFile)) ?? nil
-        let newFive = newCached?.snapshot.fiveHour
-
-        // 100 always fires (Bottle). User-configurable warning threshold
-        // adds a second crossing event with a user-chosen sound.
-        let events = UsageEventDetector.detect(
-            previous: lastFiveHour,
-            current: newFive,
-            thresholds: alertThresholds
-        )
-        lastFiveHour = newFive
+        let outcome = alertOutcome(now: Int64(Date().timeIntervalSince1970), for: newCached)
         cached = newCached
         recomputeFromCachedOnly()
 
@@ -544,27 +595,45 @@ final class MenuViewModel: ObservableObject {
 
         // Each event has its own sound preference (with "None" to mute
         // an individual event); there is no global mute toggle.
-        for event in events {
-            switch event {
-            case .crossedThreshold(let p) where p == 100:
-                SoundPlayer.play(named: reachedLimitSound)
-            case .crossedThreshold:
-                SoundPlayer.play(named: warningSound)
-            case .windowReset:
-                SoundPlayer.play(named: limitResetSound)
-            }
-        }
+        if outcome.limitReached { SoundPlayer.play(named: reachedLimitSound) }
+        if outcome.warning { SoundPlayer.play(named: warningSound) }
+        if outcome.reset { SoundPlayer.play(named: limitResetSound) }
     }
 
-    /// Warning / limit-reached sounds for Codex windows, on the same
-    /// thresholds and sound picks as Claude's. No reset sound: a Codex reset
+    /// Feeds every Claude window to the latch. 100% always sounds; each
+    /// window kind adds its own warning threshold when enabled. A cached
+    /// window past its reset describes a period that's over and is skipped.
+    func alertOutcome(now: Int64, for cached: CachedState?) -> AlertOutcome {
+        guard let cached else { return AlertOutcome() }
+        if let held = alertsHeldUntil {
+            guard cached.capturedAt > held else { return AlertOutcome() }
+            alertsHeldUntil = nil
+        }
+        let snapshot = cached.snapshot
+        var windows: [(String, WindowSnapshot?)] = [
+            (AlertOutcome.fiveHourID, snapshot.fiveHour),
+            ("seven_day", snapshot.sevenDay),
+        ]
+        windows += UsageWindows.orderedModelKeys(snapshot.models).map { ($0, snapshot.models[$0]) }
+        let events = windows.flatMap { id, window in
+            alertLatch.observe(
+                id: id, window: window.flatMap { $0.resetsAt > now ? $0 : nil },
+                thresholds: alertRule(for: AlertWindowKind.forClaude(key: id)).thresholds,
+                now: now
+            )
+        }
+        return AlertOutcome(events: events, announce: resetAnnouncement)
+    }
+
+    /// Warning / limit-reached sounds for Codex windows, on the 5-hour and
+    /// weekly rules and Claude's sound picks. No reset sound: a Codex reset
     /// is only seen when the next session writes a log line, so it would
     /// play at an arbitrary later time.
     func handleCodexChange(previous: CodexSnapshot?, current: CodexSnapshot?) {
         let crossed = CodexSnapshot.crossings(
-            previous: previous, current: current,
-            thresholds: alertThresholds, now: Int64(Date().timeIntervalSince1970)
-        ).flatMap { codexAlertLatch.admit($0.thresholds, window: $0.window) }
+            previous: previous, current: current, now: Int64(Date().timeIntervalSince1970)
+        ) { self.alertRule(for: AlertWindowKind.forCodex(windowMinutes: $0.windowMinutes)).thresholds }
+            .flatMap { codexAlertLatch.admit($0.thresholds, window: $0.window) }
         if crossed.contains(100) {
             SoundPlayer.play(named: reachedLimitSound)
         } else if !crossed.isEmpty {
@@ -573,15 +642,6 @@ final class MenuViewModel: ObservableObject {
     }
 
     private var codexAlertLatch = CodexAlertLatch()
-
-    /// 100 always; the user's warning threshold when enabled.
-    var alertThresholds: [Int] {
-        var thresholds: [Int] = [100]
-        if warningEnabled, warningThreshold >= 1, warningThreshold < 100 {
-            thresholds.insert(warningThreshold, at: 0)
-        }
-        return thresholds
-    }
 
     private func handleStatusReport(_ new: StatusReport?) {
         let previous = statusReport

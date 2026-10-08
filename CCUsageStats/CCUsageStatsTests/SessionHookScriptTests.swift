@@ -97,6 +97,77 @@ final class SessionHookScriptTests: XCTestCase {
         XCTAssertEqual(record.status, .waitingForInput)
     }
 
+    private func record() throws -> SessionRecord {
+        let data = try Data(contentsOf: sessionsDir.appendingPathComponent("abc-123.json"))
+        return try XCTUnwrap(SessionRecord.decode(data), String(decoding: data, as: UTF8.self))
+    }
+
+    private let twoTasks = #","background_tasks":[{"id":"t1","type":"shell","status":"running","description":"brace } bracket ] quote \" done","command":"swift test"},{"id":"t2","type":"subagent","status":"running","description":"x","agent_type":"Explore"}],"session_crons":[]"#
+
+    /// A long reply full of escapes, cut at every offset: the record stays
+    /// valid JSON, keeps the reply's ending and the background tasks.
+    func testStopKeepsTheReplyEndingAndBackgroundTasks() throws {
+        // The 20-byte filler unit, shifted by `pad`, puts the 600-byte cut at
+        // every offset inside it: mid-`\"`, mid-`\\`, mid-UTF-8.
+        for pad in 0..<20 {
+            let filler = String(repeating: #"say \"hi\" \\ \n é "#, count: 2_000) + String(repeating: "a", count: pad)
+            try run(payload("Stop", extra: #","stop_hook_active":false,"last_assistant_message":"\#(filler) Shall I apply these changes?""# + twoTasks))
+            let r = try record()
+            XCTAssertEqual(r.backgroundTasks.count, 2, "pad \(pad)")
+            XCTAssertEqual(r.backgroundTasks.first?.description, #"brace } bracket ] quote " done"#)
+            XCTAssertEqual(r.backgroundTasks.first?.command, "swift test")
+            let message = try XCTUnwrap(r.lastMessage, "pad \(pad)")
+            XCTAssertTrue(message.hasSuffix("say \"hi\" \\ \n é \(String(repeating: "a", count: pad)) Shall I apply these changes?"),
+                          "pad \(pad): \(message.suffix(80))")
+            XCTAssertLessThan(message.count, 1_000, "only the ending is kept")
+            XCTAssertEqual(r.status, .waitingForInput)
+        }
+    }
+
+    func testStopWithoutAQuestionButWithTasksIsInBackground() throws {
+        try run(payload("Stop", extra: #","last_assistant_message":"Started the suite; I'll report back.""# + twoTasks))
+        XCTAssertEqual(try record().status, .background)
+    }
+
+    func testAnEndingWithNoSpaceToCutAtIsDropped() throws {
+        try run(payload("Stop", extra: #","last_assistant_message":"\#(String(repeating: #"\""#, count: 2_000))?""#))
+        XCTAssertNil(try record().lastMessage)
+    }
+
+    /// An entry shape we don't expect (a nested object) must not break the
+    /// record: no tasks, a plain Done.
+    func testUnexpectedTaskShapeFallsBackToNone() throws {
+        for tasks in [#"[{"id":"t","type":"shell","meta":{"a":1}}]"#, #"[{"type":"shell"},]"#, #"[{"type":"shell"}{"type":"x"}]"#, "[,]"] {
+            try run(payload("Stop", extra: #","background_tasks":"# + tasks))
+            let r = try record()
+            XCTAssertEqual(r.backgroundTasks, [], tasks)
+            XCTAssertEqual(r.status, .done, tasks)
+        }
+    }
+
+    func testStopFailureKeepsTheReason() throws {
+        try run(payload("StopFailure", extra: #","error":"rate_limit","error_details":"429 {\"type\":\"error\"}","last_assistant_message":"You've reached your Fable limit.""#))
+        let r = try record()
+        XCTAssertEqual(r.status, .error)
+        XCTAssertEqual(r.failure, .usageLimit)
+        XCTAssertEqual(r.lastMessage, "You've reached your Fable limit.")
+    }
+
+    /// Claude's "still waiting" reminder a minute after every turn says
+    /// nothing new; it mustn't turn a question, background work or an error
+    /// back into Done.
+    func testIdleReminderKeepsTheTurnsOutcome() throws {
+        try run(payload("Stop", extra: #","last_assistant_message":"Working on it in the background.""# + twoTasks))
+        try run(payload("Notification", extra: #","message":"Claude is waiting for your input","notification_type":"idle_prompt""#))
+        XCTAssertEqual(try record().event, "Stop")
+        // Older versions: no type, the same text.
+        try run(payload("Notification", extra: #","message":"Claude is waiting for your input""#))
+        XCTAssertEqual(try record().event, "Stop")
+        // Other notifications still land.
+        try run(payload("Notification", extra: #","message":"Claude needs your permission to use Bash","notification_type":"permission_prompt""#))
+        XCTAssertEqual(try record().status, .needsPermission)
+    }
+
     func testBadInputIsIgnoredAndNeverFails() throws {
         XCTAssertEqual(try run(""), 0)
         XCTAssertEqual(try run("not json"), 0)

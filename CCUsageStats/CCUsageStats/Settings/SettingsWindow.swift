@@ -353,27 +353,70 @@ struct AlertsSettingsView: View {
     var body: some View {
         SettingsPane {
             Section {
-                Toggle("Warn at threshold", isOn: $vm.warningEnabled)
-                if vm.warningEnabled {
-                    Stepper(value: $vm.warningThreshold, in: 1...99) {
-                        LabeledContent("Threshold") {
-                            Text("\(vm.warningThreshold)%").monospacedDigit()
+                warningRow("5-hour session", $vm.warningEnabled, $vm.warningThreshold)
+                warningRow("Weekly", $vm.weeklyWarningEnabled, $vm.weeklyWarningThreshold)
+                warningRow("Per-model weekly", $vm.modelWarningEnabled, $vm.modelWarningThreshold)
+                soundPicker("Warning sound", $vm.warningSound)
+            } header: {
+                Text("Warnings")
+            } footer: {
+                Text("Each warning sounds once per window. Codex windows follow the 5-hour and weekly rules.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Section {
+                Picker("Announce resets", selection: $vm.resetAnnouncement) {
+                    ForEach(ResetAnnouncement.allCases) { Text($0.title).tag($0) }
+                }
+                soundPicker("Reset sound", $vm.limitResetSound)
+            } header: {
+                Text("Resets")
+            } footer: {
+                Text("“Windows that ran low” plays when any Claude window that sounded a warning or hit its limit starts over.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Section {
+                Toggle("Colour by pace", isOn: $vm.colorByPace)
+                if vm.colorByPace {
+                    Stepper(value: $vm.paceThreshold, in: MenuViewModel.paceThresholdRange, step: 0.1) {
+                        LabeledContent("Warn above") {
+                            Text(String(format: "%.1f× pace", vm.paceThreshold)).monospacedDigit()
                         }
                     }
-                    soundPicker("Warning sound", $vm.warningSound)
                 }
+            } header: {
+                Text("Colours")
+            } footer: {
+                Text("Bars and the menu bar turn orange when a window past half used is burning faster than this — used % over elapsed %, where 1× runs out exactly at the reset — and stay green when on pace. From 90% the colour follows usage alone.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section {
                 soundPicker("Limit reached", $vm.reachedLimitSound)
-                soundPicker("Window reset", $vm.limitResetSound)
                 soundPicker("Outage detected", $vm.outageSound)
             } header: {
                 Text("Sounds")
             } footer: {
-                Text("“None” mutes that event. Warning and limit-reached sounds also fire for Codex windows while Codex tracking is on; the reset sound is Claude-only.")
+                Text("“None” mutes that event. Limit reached sounds for every Claude window, and for Codex windows while Codex tracking is on.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func warningRow(_ label: String, _ enabled: Binding<Bool>, _ threshold: Binding<Int>) -> some View {
+        Toggle(label, isOn: enabled)
+        if enabled.wrappedValue {
+            Stepper(value: threshold, in: 1...99) {
+                LabeledContent("Warn at") {
+                    Text("\(threshold.wrappedValue)%").monospacedDigit()
+                }
             }
         }
     }

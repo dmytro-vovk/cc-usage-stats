@@ -1,6 +1,6 @@
 import Foundation
 
-struct WindowSnapshot: Codable, Equatable {
+nonisolated struct WindowSnapshot: Codable, Equatable, Sendable {
     let usedPercentage: Double
     let resetsAt: Int64
 
@@ -12,7 +12,7 @@ struct WindowSnapshot: Codable, Equatable {
 
 /// One surface's share of the weekly usage (`seven_day_breakdown.rows`),
 /// e.g. Claude Code 93%. Shares of one window, so they sum to ~100.
-struct UsageShare: Codable, Equatable {
+nonisolated struct UsageShare: Codable, Equatable, Sendable {
     let key: String
     let name: String
     let percent: Double
@@ -43,7 +43,7 @@ struct UsageShare: Codable, Equatable {
 }
 
 /// The rate-limit windows cached for the menubar UI.
-struct RateLimitsSnapshot: Codable, Equatable {
+nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
     let fiveHour: WindowSnapshot?
     let sevenDay: WindowSnapshot?
     /// Per-model weekly windows, keyed by their wire key (e.g.
@@ -91,6 +91,23 @@ struct RateLimitsSnapshot: Codable, Equatable {
         self.models = models
         self.breakdown = breakdown
         self.modelsAreAuthoritative = true
+    }
+
+    /// When a usage limit hit now lifts: the latest reset among the capped
+    /// windows (every one has to reset). A per-model window is its own quota,
+    /// so it counts only when `message` (Claude Code's "You've reached your
+    /// Fable limit…") names that model. nil when nothing matching is capped.
+    func limitResetsAt(now: Int64, message: String?) -> Int64? {
+        let text = message?.lowercased() ?? ""
+        let named = models.filter { key, _ in
+            let model = key.hasPrefix("seven_day_") ? String(key.dropFirst("seven_day_".count)) : key
+            return !model.isEmpty && text.range(of: #"\b"# + NSRegularExpression.escapedPattern(for: model) + #"\b"#,
+                                                options: .regularExpression) != nil
+        }
+        return ([fiveHour, sevenDay].compactMap { $0 } + Array(named.values))
+            .filter { $0.usedPercentage >= 100 && $0.resetsAt > now }
+            .map(\.resetsAt)
+            .max()
     }
 
     enum CodingKeys: String, CodingKey {

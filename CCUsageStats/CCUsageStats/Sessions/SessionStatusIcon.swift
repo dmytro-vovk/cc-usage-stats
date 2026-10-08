@@ -15,6 +15,7 @@ nonisolated enum SessionStatusIcon {
         case .waitingForInput: return "questionmark.circle.fill"
         case .working: return "bolt.circle.fill"
         case .compacting: return "arrow.down.right.and.arrow.up.left.circle.fill"
+        case .background: return "hourglass.circle.fill"
         case .done: return "checkmark.circle.fill"
         case .idle: return idleSymbol
         }
@@ -24,7 +25,7 @@ nonisolated enum SessionStatusIcon {
         switch status {
         case .error: return .systemRed
         case .needsPermission, .waitingForInput: return .systemOrange
-        case .working, .compacting: return .systemBlue
+        case .working, .compacting, .background: return .systemBlue
         case .done, .idle: return .secondaryLabelColor
         }
     }

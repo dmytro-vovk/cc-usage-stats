@@ -102,6 +102,10 @@ final class UsagePoller: ObservableObject {
 
     private func tick() async {
         let result = await api.fetchRateLimits()
+        // Stopped while the request was in flight: the token or account it
+        // was made with has been replaced, and its answer must not reach the
+        // cache the replacement's poller writes to.
+        guard isPolling else { return }
 
         // Two ways the primary can be refused without the app being broken:
         // the token lacks user:profile, or the OAuth grant is dead. In both
@@ -137,7 +141,9 @@ final class UsagePoller: ObservableObject {
 
         if refused {
             if let fallback {
-                handle(await fallback.fetchRateLimits())
+                let fallbackResult = await fallback.fetchRateLimits()
+                guard isPolling else { return }
+                handle(fallbackResult)
             } else if isTerminalGrantFailure(result) {
                 Self.log.warning("oauth grant unusable and no fallback; stopping")
                 authState = .connectionExpired

@@ -64,6 +64,21 @@ that predates the install may not report until restarted.
 | Stop, Notification (idle) | Done |
 | StopFailure | Error |
 
+Revised 2026-10-08 (script v4), after comparing with other menu-bar apps:
+a `Stop` is **Waiting for input** when the reply ends on a decision question
+to the user (`ClosingQuestion`: last sentence ends in "?" and contains a
+phrase like "shall I", "would you like", "OK to"), else **In background (N)**
+when `background_tasks` still holds work that will finish (dev servers,
+watchers and `tail -f`-style followers excluded), else Done. A
+`StopFailure` keeps its `error` type and message: the tooltip says usage
+limit (with the reset from the app's own capped usage window — Claude
+Code's message has none), can't reach Claude, sign-in/account, or other.
+The script reads up to 256 KB (was 16 KB), keeps the last ~600 escaped
+characters of the reply (cut at a space so escapes stay valid) and the
+task array verbatim when it is a list of flat objects, and ignores the
+`idle_prompt` notification, which would otherwise overwrite these states
+with Done a minute later.
+
 Revised the same day after first use: a finished turn (`Stop`) was first shown
 as "Waiting for input", which read as "this session needs you" for every
 idle session. "Waiting for input" now means Claude actually asked something;

@@ -1,6 +1,6 @@
 import Foundation
 
-enum RelativeTime {
+nonisolated enum RelativeTime {
     static func format(seconds raw: Int64) -> String {
         let s = max(0, raw)
         if s < 60 { return "\(s)s" }
