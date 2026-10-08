@@ -153,8 +153,9 @@ final class MenuViewModel: ObservableObject {
     private var pollerCancellables: Set<AnyCancellable> = []
     /// Claude windows' alert state: once per window, resets noticed.
     private var alertLatch = WindowAlertLatch()
-    /// Set when polling restarts: readings captured before this are the
-    /// previous token's and must not seed the fresh latch.
+    /// Set when polling restarts: readings captured up to this second are
+    /// the previous token's and must not seed the fresh latch. (A stopped
+    /// poller's late answers never reach the cache — see `UsagePoller.tick`.)
     private var alertsHeldUntil: Int64?
     private var wakeObserver: NSObjectProtocol?
     private var history: UsageHistory?
@@ -605,7 +606,7 @@ final class MenuViewModel: ObservableObject {
     func alertOutcome(now: Int64, for cached: CachedState?) -> AlertOutcome {
         guard let cached else { return AlertOutcome() }
         if let held = alertsHeldUntil {
-            guard cached.capturedAt >= held else { return AlertOutcome() }
+            guard cached.capturedAt > held else { return AlertOutcome() }
             alertsHeldUntil = nil
         }
         let snapshot = cached.snapshot

@@ -32,6 +32,32 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(cached?.snapshot.fiveHour?.usedPercentage, 42)
     }
 
+    /// Stands in for a request still in flight when the poller is stopped
+    /// (the token or account changed): `whileInFlight` runs before it answers.
+    final class InFlightAPI: AnthropicAPIClient {
+        let result: AnthropicAPI.Result
+        var whileInFlight: () -> Void = {}
+        init(result: AnthropicAPI.Result) { self.result = result }
+        func fetchRateLimits() async -> AnthropicAPI.Result {
+            whileInFlight()
+            return result
+        }
+    }
+
+    /// A stopped poller is the previous token's: an answer arriving after
+    /// `stop()` must not land in the cache the next token's readings use.
+    func testAnswerArrivingAfterStopIsDiscarded() async throws {
+        let api = InFlightAPI(result: .success(.init(
+            fiveHour: WindowSnapshot(usedPercentage: 42, resetsAt: 100), sevenDay: nil)))
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 1000 })
+        api.whileInFlight = { poller.stop() }
+
+        await poller.tickForTest()
+
+        XCTAssertNil(try CacheStore.read(at: tmpStateFile))
+        XCTAssertNotEqual(poller.authState, .ok)
+    }
+
     func testInvalidTokenSetsStateAndStops() async {
         let api = StubAPI(); api.queue = [.invalidToken]
         let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 1 })
