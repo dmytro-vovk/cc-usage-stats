@@ -72,7 +72,10 @@ when `background_tasks` still holds work that will finish (dev servers,
 watchers and `tail -f`-style followers excluded), else Done. A
 `StopFailure` keeps its `error` type and message: the tooltip says usage
 limit (with the reset from the app's own capped usage window — Claude
-Code's message has none), can't reach Claude, sign-in/account, or other.
+Code's message has none), can't reach Claude, sign-in/account, or other. Live check found Claude Code 2.1.183 reports a refused connection as
+`error: "unknown"`, so an `unknown` (or missing) type falls back to the
+message: connection hints ("Unable to connect", "ENOTFOUND", "timeout"…) →
+can't reach Claude.
 The script reads up to 256 KB (was 16 KB), keeps the last ~600 escaped
 characters of the reply (cut at a space so escapes stay valid) and the
 task array verbatim when it is a list of flat objects, and ignores the

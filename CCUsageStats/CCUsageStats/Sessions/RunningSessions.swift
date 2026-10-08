@@ -81,7 +81,9 @@ nonisolated struct SessionRecord: Equatable, Sendable {
     }
 
     /// Why a `StopFailure` turn failed; nil for any other event.
-    var failure: StopFailureReason? { event == "StopFailure" ? StopFailureReason(error: error) : nil }
+    var failure: StopFailureReason? {
+        event == "StopFailure" ? StopFailureReason(error: error, message: lastMessage) : nil
+    }
 
     var status: SessionStatus {
         switch event {
@@ -208,20 +210,31 @@ nonisolated struct BackgroundTask: Equatable, Sendable {
     ].map { try! NSRegularExpression(pattern: $0) }
 }
 
-/// How a turn that failed (`StopFailure`) failed, from its `error` type.
+/// How a turn that failed (`StopFailure`) failed, from its `error` type —
+/// or, when that is `unknown` or missing, from the message: Claude Code
+/// reports a refused connection as `unknown` ("API Error: Unable to connect
+/// to API (ConnectionRefused)").
 nonisolated enum StopFailureReason: Equatable, Sendable {
     case usageLimit, unreachable, auth, other
 
-    init(error: String?) {
+    init(error: String?, message: String? = nil) {
         switch error {
         case "rate_limit": self = .usageLimit
         case "overloaded", "server_error": self = .unreachable
         case "authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error",
              "cloud_credential_error":
             self = .auth
+        case nil, "unknown":
+            let text = message?.lowercased() ?? ""
+            self = Self.connectionHints.contains { text.contains($0) } ? .unreachable : .other
         default: self = .other
         }
     }
+
+    private static let connectionHints = [
+        "unable to connect", "can't reach", "cannot reach", "connection", "timeout", "timed out",
+        "enotfound", "econnrefused", "econnreset", "network",
+    ]
 
     var label: String {
         switch self {

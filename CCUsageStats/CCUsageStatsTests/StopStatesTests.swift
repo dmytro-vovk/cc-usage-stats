@@ -132,6 +132,23 @@ final class StopStatesTests: XCTestCase {
         }
     }
 
+    /// Seen live (Claude Code 2.1.183): a refused connection arrives as
+    /// `unknown`, the reason only in the message.
+    func testConnectionFailuresReportedAsUnknownAreUnreachable() {
+        for m in ["API Error: Unable to connect to API (ConnectionRefused)",
+                  "API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)",
+                  "API Error: Stream idle timeout - no chunks received",
+                  "API Error: Connection closed mid-response. The response above may be incomplete."] {
+            XCTAssertEqual(StopFailureReason(error: "unknown", message: m), .unreachable, m)
+            XCTAssertEqual(StopFailureReason(error: nil, message: m), .unreachable, m)
+        }
+        XCTAssertEqual(StopFailureReason(error: "unknown", message: "API Error: something odd"), .other)
+        // A typed error keeps its type whatever the text says.
+        XCTAssertEqual(StopFailureReason(error: "authentication_failed", message: "Unable to connect"), .auth)
+        XCTAssertEqual(RunningSession(record: rec("StopFailure", #","error":"unknown","last_message":"API Error: Unable to connect to API (ConnectionRefused)""#), title: "x").statusText,
+                       "Can't reach Claude")
+    }
+
     func testUsageLimitTooltipShowsWhenItResets() {
         let r = rec("StopFailure", #","error":"rate_limit","last_message":"You've reached your Fable limit. Run /usage-credits to continue or switch models with /model.""#)
         XCTAssertEqual(r.status, .error)
