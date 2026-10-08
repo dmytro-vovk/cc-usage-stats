@@ -317,11 +317,17 @@ with the same rules as for Claude: your hooks are kept, a one-time
 `hooks.json.cc-usage-stats.bak` is saved first, and turning the toggle off
 removes ours.
 
-**Codex runs a hook only once you trust it.** After turning this on, open
-Codex, run `/hooks` and trust the nine cc-usage-stats session hooks.
-Settings shows **Codex trust: Not trusted yet (k of 9)** until you have,
-then **Trusted** — the app checks Codex's own trust records in
-`config.toml`. Trust covers the hook command, not the script, so app
+**Codex runs a hook only once you trust it.** After turning this on,
+Settings shows **Codex trust: Not trusted yet (k of 9)** and a **Trust in
+Codex** button: one click records Codex's trust for these nine hooks only
+— the same records approving them in Codex's `/hooks` writes to
+`config.toml` (a backup is saved first; nothing else in it changes).
+Codex sessions started afterwards show up. You can also trust them in
+`/hooks` yourself; either way the status turns to **Trusted**, read from
+Codex's own trust records. The button refuses (and says so) when
+`config.toml` writes hook trust in a form it can't edit exactly — inline
+tables, escaped keys, CRLF line endings; use `/hooks` then. Turning the
+toggle off removes our trust records along with the hooks. Trust covers the hook command, not the script, so app
 updates don't need re-trusting. Codex keys trust by a hook's position in
 `hooks.json`: ours always go *after* your groups, and the app refuses (and
 tells you why) to rewrite a file where fixing ours would move one of

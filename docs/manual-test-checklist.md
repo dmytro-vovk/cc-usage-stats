@@ -419,17 +419,23 @@ by design.
   `'…/cc-usage-stats/hooks/codex-session-hook.sh'`, timeout 3, *after*
   your own groups; `hooks.json.cc-usage-stats.bak` holds the original.
   **Codex trust: Not trusted yet (0 of 9)** in orange with the /hooks hint.
-- In `codex`, run `/hooks` and trust the cc-usage-stats hooks: within ~5 s
-  Settings shows **Codex trust: Trusted**; your own hooks are still
-  trusted (`/hooks` lists them unchanged).
+- Click **Trust in Codex**: Settings shows **Codex trust: Trusted** at
+  once; `config.toml` gains nine `[hooks.state."<realpath of
+  hooks.json>:…"]` tables at the end and nothing else changes
+  (`python3 -c 'import tomllib;tomllib.load(open("…/config.toml","rb"))'`
+  parses it); a new `codex` session runs the hooks without
+  `--dangerously-bypass-hook-trust`, and `/hooks` lists them as trusted
+  alongside your own.
+- Alternatively, untrusted again, trust them in `codex` → `/hooks`:
+  within ~5 s Settings shows **Trusted**.
 - Send a prompt in `codex`: a row with the **Codex** badge shows
   **Working** (tooltip "Codex · Working — ~/path", folder or thread name
   as title); a command needing approval → **Needs permission**; a reply
   ending "Shall I …?" → **Waiting for input**; a plain reply → drops off.
 - Click the row: the terminal running Codex comes forward.
 - Quit `codex` (or kill it): the row disappears within ~5 s.
-- Toggle OFF: our groups leave `hooks.json` (others untouched), Codex rows
-  disappear; Claude rows stay.
+- Toggle OFF: our groups leave `hooks.json` and our trust tables leave
+  `config.toml` (others untouched); Codex rows disappear; Claude rows stay.
 
 ### 17. Usage MCP server
 

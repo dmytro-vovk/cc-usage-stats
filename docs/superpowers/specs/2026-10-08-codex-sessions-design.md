@@ -92,6 +92,21 @@ what already exists:
 - **Paths.** `Paths.codexHome` = `$CODEX_HOME` or `~/.codex`; redirected to
   the test scratch dir under tests, like `claudeSettings`.
 
+## One-click trust (follow-up, same day)
+
+Settings shows **Trust in Codex** next to "Not trusted yet". It writes, for
+our handlers only, the `[hooks.state."<key>"] trusted_hash` records `/hooks`
+would write — verified end to end: an untrusted scratch Codex 0.149 ran
+hooks trusted this way without the bypass flag. Keys use the *realpath* of
+hooks.json (Codex canonicalises: `/tmp` → `/private/tmp`). The edit is
+text-level like the MCP block, and conservative: CRLF files, escaped TOML
+keys anywhere, inline/dotted forms of `hooks.state` or of our records,
+and non-plain `trusted_hash`/`enabled` values are refused with a pointer
+to `/hooks`; the result is read back (ours trusted, other records
+unchanged) before the CAS write, under the MCP registration lock.
+Toggle-off removes our records (only tables holding exactly our hash, no
+comments).
+
 ## Out of scope
 
 Subagent rows, Codex error states (no event exists), deep links into a
