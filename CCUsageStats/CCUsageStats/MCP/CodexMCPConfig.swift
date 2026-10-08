@@ -147,22 +147,59 @@ nonisolated enum CodexMCPConfig {
         var table: [String]?
         var inMultiline: String?
         for (i, line) in lines.enumerated() {
-            if let delim = inMultiline {
-                if line.components(separatedBy: delim).count % 2 == 0 { inMultiline = nil }
-                visit(i, table, false)
-                continue
-            }
-            if let name = header(line) {
+            if inMultiline == nil, let name = header(line) {
                 table = name
                 visit(i, table, true)
                 continue
             }
-            for delim in ["\"\"\"", "'''"] where stripComment(line).components(separatedBy: delim).count % 2 == 0 {
-                inMultiline = delim
-                break
-            }
+            inMultiline = openMultiline(after: line, startingIn: inMultiline)
             visit(i, table, false)
         }
+    }
+
+    /// The multi-line string delimiter still open at the end of `line`, given
+    /// the one open at its start. Tokenises the line: one-line strings and
+    /// `#` comments can contain `"""` / `'''` without opening anything.
+    private static func openMultiline(after line: String, startingIn open: String?) -> String? {
+        let chars = Array(line)
+        var i = 0
+        var multi = open
+        func at(_ s: String) -> Bool {
+            let d = Array(s)
+            return i + d.count <= chars.count && Array(chars[i..<i + d.count]) == d
+        }
+        while i < chars.count {
+            if let m = multi {
+                if m == "\"\"\"" && chars[i] == "\\" { i += 2; continue }
+                if at(m) {
+                    // A closing run may carry up to two extra quotes ("""" "").
+                    var end = i + 3
+                    while end < chars.count, end - i < 5, chars[end] == m.first! { end += 1 }
+                    i = end
+                    multi = nil
+                } else {
+                    i += 1
+                }
+                continue
+            }
+            if chars[i] == "#" { return nil }
+            if at("\"\"\"") || at("'''") {
+                multi = String(chars[i..<i + 3])
+                i += 3
+                continue
+            }
+            if chars[i] == "\"" || chars[i] == "'" {
+                let q = chars[i]
+                i += 1
+                while i < chars.count, chars[i] != q {
+                    i += (q == "\"" && chars[i] == "\\") ? 2 : 1
+                }
+                i += 1
+                continue
+            }
+            i += 1
+        }
+        return multi
     }
 
     /// True for every line of our block(s).

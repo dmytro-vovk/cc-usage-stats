@@ -91,6 +91,31 @@ final class CodexMCPConfigTests: XCTestCase {
         XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), "[profiles.fast]\nmodel = \"o4\"\n")
     }
 
+    func testTripleQuoteInsideAOneLineStringDoesNotSwallowLaterTables() {
+        let text = #"""
+        [mcp_servers.cc-usage-stats]
+        note = '"""'
+        other = "'''"
+
+        [profiles.fast]
+        model = "o4"
+
+        """#
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), "[profiles.fast]\nmodel = \"o4\"\n")
+    }
+
+    func testMultilineStringClosedOnTheSameLineIsClosed() {
+        let text = #"""
+        [mcp_servers.cc-usage-stats]
+        d = """one line"""
+
+        [profiles.fast]
+        model = "o4"
+
+        """#
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), "[profiles.fast]\nmodel = \"o4\"\n")
+    }
+
     func testHeaderLookalikeInsideMultilineStringIsNotAHeader() {
         let text = "[a]\ns = \"\"\"\n[mcp_servers.cc-usage-stats]\n\"\"\"\n"
         XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), text)
