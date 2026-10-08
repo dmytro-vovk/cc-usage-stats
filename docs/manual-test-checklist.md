@@ -440,13 +440,11 @@ by design.
 
 ### 18. URL commands
 
-- App running: `open ccusagestats://open` opens the dropdown; again while
-  it's open keeps it open.
 - `open ccusagestats://refresh`: "Last update" resets to "just now".
 - `open "ccusagestats://settings?tab=alerts"` (and `accounts`, `general`,
   no `tab`): Settings opens on that tab, in front, dropdown closed.
 - App not running: `open "ccusagestats://settings?tab=accounts"` launches
   it and opens Accounts once it's up.
-- `open ccusagestats://quit` / `?tab=billing`: nothing happens;
+- `open ccusagestats://open` / `open ccusagestats://quit` / `?tab=billing`: nothing happens;
   `/usr/bin/log show --last 1m --predicate 'category == "url"'` shows
   "ignored unknown URL".

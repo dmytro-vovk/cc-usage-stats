@@ -379,7 +379,6 @@ Shortcuts' *Open URLs*) or scripts:
 
 | URL | Does |
 |---|---|
-| `ccusagestats://open` | Opens the dropdown (brings it forward if it's already open) |
 | `ccusagestats://refresh` | Polls now: Claude usage, Codex, the status page |
 | `ccusagestats://settings?tab=general` | Opens Settings on **General** (also `accounts`, `alerts`; no `tab` = General) |
 
@@ -387,7 +386,9 @@ Shortcuts' *Open URLs*) or scripts:
 open "ccusagestats://settings?tab=alerts"
 ```
 
-The app is launched first if it isn't running. Anything else is ignored
+The app is launched first if it isn't running. There is no "open the
+dropdown" command: a menu-bar extra panel only opens on a real click.
+Anything else is ignored
 and logged (`/usr/bin/log show --predicate 'subsystem == "dev.dv.ccusagestats" && category == "url"'`).
 
 ### Set / Change OAuth Token
@@ -730,7 +731,8 @@ other appearance without changing the system setting, launch with
 `open -a CCUsageStats --args -CCUSAppearance light` (or `dark`); without
 the flag the app follows the system. Open what you're capturing with a
 [URL command](#url-commands) — `open "ccusagestats://settings?tab=accounts"`
-or `open ccusagestats://open` — rather than synthetic clicks. Bump the `?v=` stamp on README image
+— rather than synthetic clicks (the dropdown still needs a real click on
+the menu-bar item). Bump the `?v=` stamp on README image
 URLs whenever a shot changes.
 
 This is a personal-use app shipped to scratch one specific itch (a menubar reminder of Claude.ai usage). Don't expect a roadmap. Bug reports + small targeted PRs are the most likely things to land.
