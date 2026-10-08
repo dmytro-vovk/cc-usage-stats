@@ -207,17 +207,26 @@ nonisolated enum CodexHookTrust {
     static func trust(hooksURL: URL, configURL: URL, command: String) throws {
         let entries = try entries(hooksURL: hooksURL, command: command)
         guard !entries.isEmpty else { throw TrustError.notInstalled }
-        try CodexMCPConfig.update(configURL) { try trusting(entries, in: $0) }
+        try RegistrationLock.withLock(at: lockURL) {
+            try CodexMCPConfig.update(configURL) { try trusting(entries, in: $0) }
+        }
     }
 
     /// Takes our trust records out again (the hooks are being removed).
     static func forget(hooksURL: URL, configURL: URL, command: String) throws {
         let entries = try entries(hooksURL: hooksURL, command: command)
         guard !entries.isEmpty, FileManager.default.fileExists(atPath: configURL.path) else { return }
-        try CodexMCPConfig.update(configURL) { text in
-            let out = forgetting(entries, in: text)
-            return out == text ? nil : out
+        try RegistrationLock.withLock(at: lockURL) {
+            try CodexMCPConfig.update(configURL) { text in
+                let out = forgetting(entries, in: text)
+                return out == text ? nil : out
+            }
         }
+    }
+
+    /// The MCP registration's lock: it edits the same config.toml.
+    private static var lockURL: URL {
+        ClaudeMCPRegistration.lockURL(appSupport: Paths.appSupportDir)
     }
 
     private static func quotedKey(_ key: String) -> String {
@@ -229,6 +238,13 @@ nonisolated enum CodexHookTrust {
     /// tables are appended. Nil when everything is already trusted.
     static func trusting(_ entries: [Entry], in text: String) throws -> String? {
         let keys = Set(entries.map(\.key))
+        // Only layouts this text edit understands exactly: no CRLF, no
+        // control characters in our keys, no escapes in hook keys (an
+        // escaped spelling of our key would be missed and then defined twice).
+        if text.unicodeScalars.contains("\r") { throw TrustError.unsupportedLayout }
+        if keys.contains(where: { $0.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F } }) {
+            throw TrustError.unsupportedLayout
+        }
         var lines = text.components(separatedBy: "\n")
         var unsupported = false
         // header index → key, for the tables that are ours
@@ -237,12 +253,23 @@ nonisolated enum CodexHookTrust {
         CodexMCPConfig.scan(lines) { i, table, isHeader in
             if isHeader {
                 allHeaders.append(i)
+                if table?.first == "hooks", CodexMCPConfig.stripComment(lines[i]).contains("\\") { unsupported = true }
                 if let t = table, t.count == 3, t[0] == "hooks", t[1] == "state", keys.contains(t[2]) { ourTables[t[2]] = i }
                 return
             }
             let line = CodexMCPConfig.stripComment(lines[i])
             guard let eq = assignment(in: line) else { return }
-            let full = (table ?? []) + CodexMCPConfig.keySegments(line[..<eq])
+            let keyPart = CodexMCPConfig.keySegments(line[..<eq])
+            let full = (table ?? []) + keyPart
+            if full.first == "hooks", line[..<eq].contains("\\") { unsupported = true }
+            // Our own records must be the plain shape we rewrite line by line.
+            if let t = table, t.count == 3, t[0] == "hooks", t[1] == "state", keys.contains(t[2]) {
+                let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+                if keyPart == ["trusted_hash"], value.range(of: #"^"[^"\\]*"$"#, options: .regularExpression) == nil {
+                    unsupported = true
+                }
+                if keyPart == ["enabled"], value != "true", value != "false" { unsupported = true }
+            }
             if full == ["hooks"] { unsupported = true }
             if full.count >= 2, full[0] == "hooks", full[1] == "state" {
                 if full.count <= 3 { unsupported = true }
@@ -264,7 +291,11 @@ nonisolated enum CodexHookTrust {
                 let t = CodexMCPConfig.stripComment(line)
                 let k = assignment(in: t).map { CodexMCPConfig.keySegments(t[..<$0]) }
                 if k == ["trusted_hash"] {
-                    if !wroteHash { body.append("trusted_hash = \"\(entry.hash)\""); wroteHash = true }
+                    let comment = line.dropFirst(t.count).trimmingCharacters(in: .whitespaces)
+                    if !wroteHash {
+                        body.append("trusted_hash = \"\(entry.hash)\"" + (comment.isEmpty ? "" : " " + comment))
+                        wroteHash = true
+                    }
                 } else if k == ["enabled"] {
                     continue
                 } else {
@@ -281,7 +312,13 @@ nonisolated enum CodexHookTrust {
             out += "[hooks.state.\(quotedKey(entry.key))]\ntrusted_hash = \"\(entry.hash)\"\n"
             changed = true
         }
-        return changed ? out : nil
+        guard changed else { return nil }
+        // Read it back: every record of ours trusted, everyone else's as before.
+        let before = Self.states(inConfig: text), after = Self.states(inConfig: out)
+        guard check(entries: entries, configText: out) == .trusted,
+              before.filter({ !keys.contains($0.key) }) == after.filter({ !keys.contains($0.key) })
+        else { throw TrustError.unsupportedLayout }
+        return out
     }
 
     /// Removes our tables — only those holding nothing but our current hash
@@ -305,6 +342,8 @@ nonisolated enum CodexHookTrust {
             var foreign = false
             for line in lines[(header + 1)..<end] {
                 let t = CodexMCPConfig.stripComment(line).trimmingCharacters(in: .whitespaces)
+                // A comment is someone's note: leave the table alone.
+                if t.count != line.trimmingCharacters(in: .whitespaces).count { foreign = true; continue }
                 if t.isEmpty { continue }
                 guard let eq = assignment(in: t) else { foreign = true; continue }
                 let k = CodexMCPConfig.keySegments(t[..<eq])

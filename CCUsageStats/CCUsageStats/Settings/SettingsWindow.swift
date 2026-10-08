@@ -206,10 +206,11 @@ private struct CodexSessionsSection: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let error = tracker.codexTrustError {
-                    Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+
+            }
+            if let error = tracker.codexTrustError {
+                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         } footer: {
             Text("Adds hooks to ~/.codex/hooks.json (or $CODEX_HOME; your other hooks are kept; a backup is saved first). Turning this off removes them. Codex rows carry a Codex badge.")

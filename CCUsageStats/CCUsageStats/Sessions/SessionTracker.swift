@@ -244,11 +244,14 @@ final class SessionTracker: ObservableObject {
             return
         }
         if client == .codex {
-            // Our trust records go with the hooks; a failure leaves only
-            // harmless records for hooks that no longer exist.
-            try? CodexHookTrust.forget(hooksURL: codexHooksURL, configURL: codexConfigURL,
-                                       command: SessionHookInstaller.command(for: codexScriptURL))
-            codexTrustError = nil
+            // Our trust records go with the hooks.
+            do {
+                try CodexHookTrust.forget(hooksURL: codexHooksURL, configURL: codexConfigURL,
+                                          command: SessionHookInstaller.command(for: codexScriptURL))
+                codexTrustError = nil
+            } catch {
+                codexTrustError = "Couldn't remove Codex's trust records for these hooks: \(error)"
+            }
         }
         do {
             try SessionHookInstaller.uninstall(settingsURL: url, client: client)

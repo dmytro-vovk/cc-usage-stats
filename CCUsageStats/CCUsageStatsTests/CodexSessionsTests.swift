@@ -498,6 +498,32 @@ final class CodexHookTrustWritingTests: XCTestCase {
         XCTAssertNoThrow(try CodexHookTrust.trusting([a], in: "[hooks.state]\n\"/h/x:stop:0:0\".trusted_hash = \"sha256:z\"\n"))
     }
 
+    /// Inputs where a naive edit yields invalid TOML (duplicate tables or
+    /// broken values): refuse rather than risk Codex's whole config.
+    func testRefusesInputsItCantEditSafely() {
+        for text in [
+            "[hooks.state.\"/h/hooks.json:stop:1:0\"]\r\ntrusted_hash = \"sha256:old\"\r\n",
+            "[hooks.state.\"\\u002Fh\\u002Fhooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:old\"\n",
+            "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"\"\"\nsha256:old\n\"\"\"\n",
+            "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = 'sha256:old'\n",
+        ] {
+            XCTAssertThrowsError(try CodexHookTrust.trusting([a], in: text), text.debugDescription)
+        }
+        let control = CodexHookTrust.Entry(key: "/h\nx/hooks.json:stop:0:0", hash: "sha256:x")
+        XCTAssertThrowsError(try CodexHookTrust.trusting([control], in: ""))
+    }
+
+    func testAStaleHashKeepsItsComment() throws {
+        let text = "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:old\" # mine\n"
+        XCTAssertEqual(try CodexHookTrust.trusting([a], in: text),
+                       "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:aaa\" # mine\n")
+    }
+
+    func testForgettingKeepsTablesWithComments() throws {
+        let text = "[hooks.state.\"/h/hooks.json:stop:1:0\"]\n# trusted by hand\ntrusted_hash = \"sha256:aaa\"\n"
+        XCTAssertEqual(CodexHookTrust.forgetting([a], in: text), text)
+    }
+
     func testForgettingRemovesOnlyOurExactRecords() throws {
         let theirs = "[hooks.state.\"/h/hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:theirs\"\n"
         let withOurs = try XCTUnwrap(CodexHookTrust.trusting([a, b], in: theirs))
