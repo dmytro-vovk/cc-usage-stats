@@ -84,6 +84,27 @@ nonisolated enum ClaudeMCPRegistration {
         guard status == 0 else { throw RegistrationError.cliFailed(output) }
     }
 
+    /// True when the user registered a copy's bundle executable — what this
+    /// app wrote before the helper link — rather than `link`. Hand-made
+    /// entries (another command, other args) are theirs and stay.
+    static func needsMigration(claudeJSON: Data?, link: String) -> Bool {
+        guard let claudeJSON,
+              let root = try? JSONSerialization.jsonObject(with: claudeJSON) as? [String: Any],
+              let entry = (root["mcpServers"] as? [String: Any])?[serverName] as? [String: Any],
+              let command = entry["command"] as? String,
+              entry["args"] as? [String] == [MCPServer.launchFlag]
+        else { return false }
+        return command != link && HelperLink.isBundleExecutable(command)
+    }
+
+    /// Re-registers a bundle-path entry under `link`. Returns whether it ran.
+    @discardableResult
+    static func migrate(cli: String, link: String, claudeJSON: Data?, run: Runner) throws -> Bool {
+        guard needsMigration(claudeJSON: claudeJSON, link: link) else { return false }
+        try install(cli: cli, binary: link, run: run)
+        return true
+    }
+
     static func uninstall(cli: String, run: Runner) throws {
         let (status, output) = try run(cli, removeArguments)
         guard status == 0 || currentStatus(binary: "") == .notInstalled else {

@@ -57,6 +57,41 @@ nonisolated enum CodexMCPConfig {
             == block(command: command).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The `command` of our block, nil when there is none.
+    static func registeredCommand(in text: String) -> String? {
+        let lines = text.components(separatedBy: "\n")
+        var command: String?
+        scan(lines) { i, table, isHeader in
+            guard command == nil, !isHeader, table.map({ $0.count == 2 && isOwnTable($0) }) == true else { return }
+            let t = stripComment(lines[i]).trimmingCharacters(in: .whitespaces)
+            guard let eq = t.firstIndex(of: "="), keySegments(t[..<eq]) == ["command"] else { return }
+            command = basicString(t[t.index(after: eq)...].trimmingCharacters(in: .whitespaces))
+        }
+        return command
+    }
+
+    /// Moves a block naming a copy's bundle executable (what this app wrote
+    /// before the helper link) to `link`. Nil when there's nothing to move:
+    /// no block, already `link`, or a command the user chose.
+    static func migrating(_ text: String, to link: String) throws -> String? {
+        guard let command = registeredCommand(in: text), command != link,
+              HelperLink.isBundleExecutable(command) else { return nil }
+        return try installing(command: link, into: text)
+    }
+
+    /// A one-line TOML basic string's value (`"a\"b"` → `a"b`).
+    private static func basicString(_ s: String) -> String? {
+        guard s.count >= 2, s.hasPrefix("\""), s.hasSuffix("\"") else { return nil }
+        var out = ""
+        var escaped = false
+        for ch in s.dropFirst().dropLast() {
+            if escaped { out.append(ch); escaped = false }
+            else if ch == "\\" { escaped = true }
+            else { out.append(ch) }
+        }
+        return escaped ? nil : out
+    }
+
     // MARK: - Files
 
     static func install(configURL: URL, command: String) throws {
@@ -70,6 +105,18 @@ nonisolated enum CodexMCPConfig {
             let out = uninstalling(from: text)
             return out == text ? nil : out
         }
+    }
+
+    /// File-level `migrating`. Never creates a config; returns whether it wrote.
+    @discardableResult
+    static func migrate(configURL: URL, to link: String) throws -> Bool {
+        var wrote = false
+        try update(configURL) { text in
+            let out = try migrating(text, to: link)
+            wrote = out != nil
+            return out
+        }
+        return wrote
     }
 
     static func status(configURL: URL, command: String) -> Bool {

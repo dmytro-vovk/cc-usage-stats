@@ -293,8 +293,9 @@ a large fan-out.
   (older than 15 minutes) per source. A window whose reset has passed
   reports 0% with `reset_passed: true`. Facts only — no advice.
 - **How it runs.** The agent launches
-  `CCUsageStats.app/Contents/MacOS/CCUsageStats --mcp-server`, a stdio
-  MCP server that reads `state.json`, `history.jsonl` and
+  `~/Library/Application Support/cc-usage-stats/bin/ccusagestats --mcp-server`
+  — a symlink every launch of the app repoints at the running copy's
+  `Contents/MacOS/CCUsageStats` — a stdio MCP server that reads `state.json`, `history.jsonl` and
   `~/.codex/sessions`, and exits when the agent does. No port, no network,
   no Keychain; it works whether or not the menu-bar app is running (stale
   data is marked as such).
@@ -303,22 +304,47 @@ a large fan-out.
   `~/.claude.json`. Codex: a `[mcp_servers.cc-usage-stats]` table appended
   to `~/.codex/config.toml` — nothing else in the file changes, a one-time
   backup `config.toml.cc-usage-stats.bak` is written first, and turning the
-  toggle off removes exactly that table. If the app moves, the toggle shows
+  toggle off removes exactly that table. Both name the link, not the
+  bundle, so moving or reinstalling the app needs nothing: the next launch
+  repoints the link. Registrations from v0.14 and earlier (which named
+  the bundle path) are moved to the link at launch — only if you had
+  registered, with the same CLI / backup rules. A copy Gatekeeper runs
+  from a temporary *App Translocation* path (opened straight from
+  Downloads) doesn't touch the link and registers its own path; move it to
+  Applications. A hand-made entry with another command shows
   **Registered for another copy** with **Repair**.
 - **By hand / one-off:**
 
   ```bash
-  claude mcp add-json --scope user cc-usage-stats '{"type":"stdio","command":"/Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats","args":["--mcp-server"]}'
+  claude mcp add-json --scope user cc-usage-stats '{"type":"stdio","command":"'"$HOME"'/Library/Application Support/cc-usage-stats/bin/ccusagestats","args":["--mcp-server"]}'
   ```
 
 - **Telling agents when to use it** is up to you. **Agent instructions →
   Copy** puts a ready-made section on the clipboard for your
   `~/.claude/CLAUDE.md` or `AGENTS.md`: what `get_usage` returns, how to
   connect it (the `claude mcp add-json` command and the Codex
-  `config.toml` table, with this copy's path), and starter rules — e.g.
+  `config.toml` table, with the link's path), and starter rules — e.g.
   route reviews and mechanical work to Codex when Claude weekly is ahead
   of pace or above 70%. Edit the rules to taste.
   Design notes: [spec](docs/superpowers/specs/2026-10-08-usage-mcp-server-design.md).
+
+### URL commands
+
+`ccusagestats://` URLs drive the app from launchers (Raycast, Alfred,
+Shortcuts' *Open URLs*) or scripts:
+
+| URL | Does |
+|---|---|
+| `ccusagestats://open` | Opens the dropdown (brings it forward if it's already open) |
+| `ccusagestats://refresh` | Polls now: Claude usage, Codex, the status page |
+| `ccusagestats://settings?tab=general` | Opens Settings on **General** (also `accounts`, `alerts`; no `tab` = General) |
+
+```bash
+open "ccusagestats://settings?tab=alerts"
+```
+
+The app is launched first if it isn't running. Anything else is ignored
+and logged (`/usr/bin/log show --predicate 'subsystem == "dev.dv.ccusagestats" && category == "url"'`).
 
 ### Set / Change OAuth Token
 
@@ -564,7 +590,8 @@ security delete-generic-password -s cc-usage-stats -a oauth-session
 # Usage MCP server (or: claude mcp remove --scope user cc-usage-stats, and
 # delete the [mcp_servers.cc-usage-stats] table from ~/.codex/config.toml)
 
-# Remove cache + history + sentinel + session records + hook script
+# Remove cache + history + sentinel + session records + hook script + the
+# bin/ccusagestats helper link
 rm -rf ~/Library/Application\ Support/cc-usage-stats/
 
 # (Optional) remove the dev code-signing identity created by setup-signing.sh
@@ -655,7 +682,9 @@ Screenshots under `docs/screenshots/` are window captures of the real app
 at 2× (`screencapture -o -l <window id>`), light and dark. To capture the
 other appearance without changing the system setting, launch with
 `open -a CCUsageStats --args -CCUSAppearance light` (or `dark`); without
-the flag the app follows the system. Bump the `?v=` stamp on README image
+the flag the app follows the system. Open what you're capturing with a
+[URL command](#url-commands) — `open "ccusagestats://settings?tab=accounts"`
+or `open ccusagestats://open` — rather than synthetic clicks. Bump the `?v=` stamp on README image
 URLs whenever a shot changes.
 
 This is a personal-use app shipped to scratch one specific itch (a menubar reminder of Claude.ai usage). Don't expect a roadmap. Bug reports + small targeted PRs are the most likely things to land.

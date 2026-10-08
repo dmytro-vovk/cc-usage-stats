@@ -102,8 +102,23 @@ block:
 ## Registration (Settings → General → "Usage MCP server")
 
 Command registered everywhere:
-`"/Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats" --mcp-server`
-(the running bundle's actual path), server name `cc-usage-stats`.
+`"~/Library/Application Support/cc-usage-stats/bin/ccusagestats" --mcp-server`
+(absolute), server name `cc-usage-stats`. That path is the **helper link**
+(`HelperLink`, v0.15.0): a symlink every launch of the menu-bar app
+repoints at the running copy's `Contents/MacOS/CCUsageStats` (staged
+symlink + `rename`, so it's never missing mid-swap), so moving or
+reinstalling the app doesn't break registrations. Not created from an App
+Translocation path (`…/AppTranslocation/…` — gone after quit); such a copy,
+or one whose link points at another copy, registers its own executable
+instead. `--mcp-server` launches never touch the link.
+
+**Migration (launch).** v0.13–v0.14 registered the bundle executable. At
+launch, after repointing the link, a registration whose command is any
+`*.app/Contents/MacOS/CCUsageStats` with args `["--mcp-server"]` is moved to
+the link: Claude Code through the same CLI remove+add, Codex through the
+same merge-only `update` (one-time backup, CAS rename) — and only when the
+entry already exists. Never creates a registration, never touches a
+hand-made command. Skipped under test.
 
 **Claude Code (user scope)** — via the CLI, `claude mcp remove --scope user
 cc-usage-stats` then `claude mcp add-json --scope user cc-usage-stats
@@ -112,8 +127,8 @@ live in `~/.claude.json`, which Claude Code itself rewrites constantly and
 without a lock; its own CLI is the only writer that won't fight it. The CLI is
 found at the usual install paths, then through a login shell. Status is read
 (never written) from `~/.claude.json` → `mcpServers.cc-usage-stats`: installed
-when its command is our binary, "points elsewhere" (Repair) when the app
-moved. If the CLI can't be found, the error shows the command to run by hand.
+when its command is the link, "points elsewhere" (Repair) for any other
+command (a hand-made entry, or a translocated copy). If the CLI can't be found, the error shows the command to run by hand.
 
 **Codex (separate opt-in)** — `~/.codex/config.toml`, edited as text so no
 other key or comment is reformatted:

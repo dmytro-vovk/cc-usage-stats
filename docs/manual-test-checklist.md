@@ -365,8 +365,10 @@ Skip this if you've never had the Phase 1 statusline integration.
 ### 17. Usage MCP server
 
 - Settings → General → **Usage MCP server for Claude Code** ON: a spinner,
-  then on. `claude mcp get cc-usage-stats` shows scope User and the
-  app's `…/Contents/MacOS/CCUsageStats --mcp-server`.
+  then on. `claude mcp get cc-usage-stats` shows scope User and
+  `~/Library/Application Support/cc-usage-stats/bin/ccusagestats --mcp-server`;
+  `readlink` of that path is the running copy's `…/Contents/MacOS/CCUsageStats`.
+  `claude mcp list` shows it **Connected**.
 - In a new `claude` session, ask "call get_usage": the answer quotes the
   same 5-hour / weekly / per-model percentages as the dropdown, and Codex
   windows when Codex tracking has readings. `age_seconds` < 120 while the
@@ -377,12 +379,32 @@ Skip this if you've never had the Phase 1 statusline integration.
   `[mcp_servers.cc-usage-stats]` table; everything above it is byte-for-byte
   unchanged (`diff` against `config.toml.cc-usage-stats.bak`). `codex mcp
   list` shows it. OFF: the table is gone and the file equals the backup.
-- Move the app (e.g. `~/Applications` → `/Applications`) and reopen
-  Settings: **Registered for another copy: …** with **Repair**; Repair
-  points it at the new path.
+- Move the app (e.g. `~/Applications` → `/Applications`) and launch it:
+  the link now points into the new location, Settings shows the toggles
+  on with no **Repair** row, and `claude mcp list` is still Connected.
+- Upgrade from v0.14 with both registered (commands = the bundle path):
+  after the first launch both name the link; `config.toml` differs from
+  `config.toml.cc-usage-stats.bak` only in our table's `command`. With
+  nothing registered, neither file changes.
+- Open the app straight from a quarantined download (translocated): the
+  link is untouched; turning the toggle on registers the translocated
+  path, and Settings shows **Repair** once moved to Applications.
 - **Agent instructions → Copy**: the button reads "Copied" for ~2 s; the
   clipboard holds a markdown section naming `get_usage`, the
   `claude mcp add-json …` command and the `[mcp_servers.cc-usage-stats]`
   block, both with this app's path.
 - No `claude` CLI on the machine: turning the toggle on shows the
   `claude mcp add-json …` command to run by hand.
+
+### 18. URL commands
+
+- App running: `open ccusagestats://open` opens the dropdown; again while
+  it's open keeps it open.
+- `open ccusagestats://refresh`: "Last update" resets to "just now".
+- `open "ccusagestats://settings?tab=alerts"` (and `accounts`, `general`,
+  no `tab`): Settings opens on that tab, in front, dropdown closed.
+- App not running: `open "ccusagestats://settings?tab=accounts"` launches
+  it and opens Accounts once it's up.
+- `open ccusagestats://quit` / `?tab=billing`: nothing happens;
+  `/usr/bin/log show --last 1m --predicate 'category == "url"'` shows
+  "ignored unknown URL".

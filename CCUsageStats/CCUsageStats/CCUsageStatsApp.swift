@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CCUsageStatsApp: App {
     @StateObject private var vm = MenuViewModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // Phase 1 cleanup migration. One-shot; sentinel guards re-runs.
@@ -15,6 +16,7 @@ struct CCUsageStatsApp: App {
             configURL: Paths.configFile,
             sentinelURL: Paths.appSupportDir.appendingPathComponent("v2-migrated")
         )
+        UsageMCPMigration.runAtLaunch()
     }
 
     var body: some Scene {
@@ -28,5 +30,12 @@ struct CCUsageStatsApp: App {
         // "Last update Xs ago" caption ticks each second while open. .menu
         // style snapshots the items at open time and never updates.
         .menuBarExtraStyle(.window)
+    }
+}
+
+/// Receives `ccusagestats://` URLs (Info.plist `CFBundleURLTypes`).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, open urls: [URL]) {
+        urls.forEach(AppURLRouter.shared.handle)
     }
 }

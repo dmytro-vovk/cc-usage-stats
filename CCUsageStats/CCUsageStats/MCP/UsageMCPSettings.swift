@@ -10,11 +10,12 @@ final class UsageMCPSettings: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var error: String?
 
-    /// The command agents launch: this very binary, wherever it lives.
+    /// The command agents launch: the helper link to this copy (or, when
+    /// there is none, this very binary).
     let binary: String
     private let codexURL: URL
 
-    init(binary: String = Bundle.main.executablePath ?? "", codexURL: URL = CodexMCPConfig.defaultURL) {
+    init(binary: String = HelperLink.liveRegistrationCommand, codexURL: URL = CodexMCPConfig.defaultURL) {
         self.binary = binary
         self.codexURL = codexURL
         refresh()

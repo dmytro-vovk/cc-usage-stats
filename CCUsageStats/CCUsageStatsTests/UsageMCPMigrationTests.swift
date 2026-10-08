@@ -1,0 +1,96 @@
+import XCTest
+@testable import CCUsageStats
+
+/// Registrations made before the helper link named the bundle executable;
+/// they move to the link once, and only when the user had registered.
+final class UsageMCPMigrationTests: XCTestCase {
+    private let bundle = "/Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats"
+    private let link = "/Users/u/Library/Application Support/cc-usage-stats/bin/ccusagestats"
+
+    private func claudeJSON(command: String, args: [String] = ["--mcp-server"]) -> Data {
+        let entry: [String: Any] = ["type": "stdio", "command": command, "args": args]
+        return try! JSONSerialization.data(withJSONObject: ["mcpServers": ["cc-usage-stats": entry], "other": 1])
+    }
+
+    // MARK: Claude Code
+
+    func testClaudeMigratesABundlePathRegistration() {
+        XCTAssertTrue(ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON(command: bundle), link: link))
+        XCTAssertTrue(ClaudeMCPRegistration.needsMigration(
+            claudeJSON: claudeJSON(command: "/Users/u/Downloads/CCUsageStats.app/Contents/MacOS/CCUsageStats"), link: link),
+            "a copy that has since moved")
+    }
+
+    func testClaudeLeavesEverythingElseAlone() {
+        XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: nil, link: link), "never registered")
+        XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: Data(#"{"mcpServers":{}}"#.utf8), link: link))
+        XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON(command: link), link: link), "already moved")
+        XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON(command: "/opt/custom/wrapper"), link: link),
+                       "a hand-made entry")
+        XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON(command: bundle, args: ["--mcp-server", "-v"]), link: link),
+                       "hand-edited args")
+    }
+
+    func testClaudeMigrationReRegistersThroughTheCLI() throws {
+        var runs: [[String]] = []
+        let migrated = try ClaudeMCPRegistration.migrate(cli: "/c", link: link, claudeJSON: claudeJSON(command: bundle)) { _, args in
+            runs.append(args); return (0, "")
+        }
+        XCTAssertTrue(migrated)
+        XCTAssertEqual(runs, [ClaudeMCPRegistration.removeArguments, ClaudeMCPRegistration.addArguments(binary: link)])
+
+        runs = []
+        XCTAssertFalse(try ClaudeMCPRegistration.migrate(cli: "/c", link: link, claudeJSON: nil) { _, args in
+            runs.append(args); return (0, "")
+        })
+        XCTAssertEqual(runs, [], "no CLI run when nothing to migrate")
+    }
+
+    // MARK: Codex
+
+    private let theirs = "model = \"gpt-5\"\n\n[mcp_servers.other]\ncommand = \"x\"\n"
+
+    func testCodexReadsOurRegisteredCommand() throws {
+        let text = try CodexMCPConfig.installing(command: #"/a "b"\c.app/Contents/MacOS/CCUsageStats"#, into: theirs)
+        XCTAssertEqual(CodexMCPConfig.registeredCommand(in: text), #"/a "b"\c.app/Contents/MacOS/CCUsageStats"#)
+        XCTAssertNil(CodexMCPConfig.registeredCommand(in: theirs))
+    }
+
+    func testCodexMigratesABundlePathBlockOnly() throws {
+        let old = try CodexMCPConfig.installing(command: bundle, into: theirs)
+        let migrated = try XCTUnwrap(try CodexMCPConfig.migrating(old, to: link))
+        XCTAssertEqual(migrated, try CodexMCPConfig.installing(command: link, into: theirs))
+        XCTAssertTrue(migrated.hasPrefix(theirs), "nobody else's lines move")
+
+        XCTAssertNil(try CodexMCPConfig.migrating(theirs, to: link), "never registered")
+        XCTAssertNil(try CodexMCPConfig.migrating(migrated, to: link), "already moved")
+        let custom = try CodexMCPConfig.installing(command: "/opt/custom/wrapper", into: theirs)
+        XCTAssertNil(try CodexMCPConfig.migrating(custom, to: link), "a hand-made entry")
+    }
+
+    func testCodexFileMigrationKeepsTheBackupRule() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("codex-mig-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("config.toml")
+        let old = try CodexMCPConfig.installing(command: bundle, into: theirs)
+        try old.write(to: url, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(try CodexMCPConfig.migrate(configURL: url, to: link))
+        XCTAssertTrue(CodexMCPConfig.status(configURL: url, command: link))
+        XCTAssertEqual(try String(contentsOf: url.appendingPathExtension("cc-usage-stats.bak"), encoding: .utf8), old)
+        XCTAssertFalse(try CodexMCPConfig.migrate(configURL: url, to: link), "second run is a no-op")
+
+        let missing = dir.appendingPathComponent("absent/config.toml")
+        XCTAssertFalse(try CodexMCPConfig.migrate(configURL: missing, to: link))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path), "never creates a config")
+    }
+
+    // MARK: Instructions
+
+    func testInstructionsWorkWithASpaceInTheCommand() {
+        let text = UsageMCPInstructions.text(binary: link)
+        XCTAssertTrue(text.contains(#""command":"\#(link)""#))
+        XCTAssertTrue(text.contains("command = \"\(link)\""))
+    }
+}

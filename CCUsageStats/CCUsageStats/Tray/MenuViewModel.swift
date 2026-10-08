@@ -209,11 +209,7 @@ final class MenuViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshNow()
-                self?.codex.refreshNow()
-                await self?.statusPoller?.refreshNow()
-            }
+            Task { @MainActor in self?.pollNow() }
         }
 
         // status.claude.com poller — coarse 5-minute cadence, surfaces
@@ -231,6 +227,8 @@ final class MenuViewModel: ObservableObject {
         codex.start()
         // Verifies (and if needed installs) the session hooks.
         sessions.start()
+        // `ccusagestats://` URLs that arrived during launch run now.
+        AppURLRouter.shared.attach(self)
     }
 
     /// Loads the sparkline history. Separate from `start()` so a test (or a
@@ -263,6 +261,14 @@ final class MenuViewModel: ObservableObject {
 
     func refreshNow() {
         Task { @MainActor in await poller?.refreshNow() }
+    }
+
+    /// Polls every source now: usage, Codex and the status page. For wake
+    /// from sleep and `ccusagestats://refresh`.
+    func pollNow() {
+        refreshNow()
+        codex.refreshNow()
+        Task { @MainActor in await statusPoller?.refreshNow() }
     }
 
     /// Opens the Settings window (or brings it forward) on `tab`.
