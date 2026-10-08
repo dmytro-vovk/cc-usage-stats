@@ -76,12 +76,20 @@ nonisolated struct CodexSnapshot: Equatable, Sendable {
     static func crossings(
         previous: CodexSnapshot?, current: CodexSnapshot?, thresholds: [Int], now: Int64
     ) -> [(window: CodexWindow, thresholds: [Int])] {
+        crossings(previous: previous, current: current, now: now) { _ in thresholds }
+    }
+
+    /// Crossings with thresholds chosen per window (5-hour vs weekly rules).
+    static func crossings(
+        previous: CodexSnapshot?, current: CodexSnapshot?, now: Int64,
+        thresholds: (CodexWindow) -> [Int]
+    ) -> [(window: CodexWindow, thresholds: [Int])] {
         guard let previous, let current else { return [] }
         return current.windows.compactMap { cur in
             guard !cur.hasReset(now: now), let prev = previous.windows.first(where: {
                 $0.windowMinutes == cur.windowMinutes && $0.resetsAt == cur.resetsAt
             }) else { return nil }
-            let crossed = thresholds.filter { prev.usedPercent < Double($0) && cur.usedPercent >= Double($0) }
+            let crossed = thresholds(cur).filter { prev.usedPercent < Double($0) && cur.usedPercent >= Double($0) }
             return crossed.isEmpty ? nil : (cur, crossed)
         }
     }

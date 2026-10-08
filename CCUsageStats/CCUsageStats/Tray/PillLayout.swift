@@ -14,6 +14,11 @@ struct PillSegment: Equatable {
     let text: String
     /// No data behind this band: drawn grey instead of on the usage ramp.
     var dimmed: Bool = false
+    /// Where on the colour ramp to paint, when that differs from `fraction`
+    /// (colour by pace). `fraction` still drives layout and the gauge.
+    var colorFraction: Double? = nil
+
+    var paintFraction: Double { colorFraction ?? fraction }
 }
 
 /// Decides which windows share the menubar pill.
@@ -30,11 +35,15 @@ enum PillLayout {
         models: [String: WindowSnapshot],
         fiveText: String,
         authState: AuthState,
-        now: Int64
+        now: Int64,
+        coloring: UsageColoring = .absolute
     ) -> [PillSegment] {
         guard let five else { return [] }
         let fiveFraction = clamp(five.usedPercentage / 100.0)
-        var result = [PillSegment(kind: .fiveHour, fraction: fiveFraction, text: fiveText)]
+        var result = [PillSegment(
+            kind: .fiveHour, fraction: fiveFraction, text: fiveText,
+            colorFraction: coloring.paint(five, windowLength: UsageColoring.fiveHourLength, now: now)
+        )]
 
         // No usable token renders a bare triangle; at cap the 5h half shows a
         // countdown that is wide enough on its own. Neither shares the pill.
@@ -50,7 +59,8 @@ enum PillLayout {
             let f = clamp(seven.usedPercentage / 100.0)
             if qualifies(f) {
                 result.append(.init(
-                    kind: .sevenDay, fraction: f, text: percentText(seven.usedPercentage)
+                    kind: .sevenDay, fraction: f, text: percentText(seven.usedPercentage),
+                    colorFraction: coloring.paint(seven, windowLength: UsageColoring.weekLength, now: now)
                 ))
             }
         }
@@ -75,7 +85,8 @@ enum PillLayout {
             let f = clamp(top.1.usedPercentage / 100.0)
             if qualifies(f) {
                 result.append(.init(
-                    kind: .model(top.0), fraction: f, text: percentText(top.1.usedPercentage)
+                    kind: .model(top.0), fraction: f, text: percentText(top.1.usedPercentage),
+                    colorFraction: coloring.paint(top.1, windowLength: UsageColoring.weekLength, now: now)
                 ))
             }
         }
@@ -131,27 +142,37 @@ enum PillComposer {
         claudeSegments: [PillSegment],
         claudeLacksWorkingToken: Bool,
         codex: CodexSnapshot?,
-        now: Int64
+        now: Int64,
+        coloring: UsageColoring = .absolute
     ) -> PillPlan {
         guard codexTracking else { return .claude }
         switch mode {
         case .claude:
             return .claude
         case .codex:
-            return .segments([codexSegment(codex, now: now)
+            return .segments([codexSegment(codex, now: now, coloring: coloring)
                 ?? PillSegment(kind: .codex, fraction: 0, text: "—", dimmed: true)])
         case .both:
             // A Claude token problem renders as the red triangle; hiding it
             // behind a healthy Codex band would bury the thing to fix.
-            guard !claudeLacksWorkingToken, let codexSeg = codexSegment(codex, now: now) else {
+            guard !claudeLacksWorkingToken, let codexSeg = codexSegment(codex, now: now, coloring: coloring) else {
                 return .claude
             }
             return .segments(claudeSegments + [codexSeg])
         }
     }
 
-    static func codexSegment(_ codex: CodexSnapshot?, now: Int64) -> PillSegment? {
-        guard let peak = codex?.peakPercent(now: now) else { return nil }
-        return PillSegment(kind: .codex, fraction: max(0, min(1, peak / 100)), text: "\(Int(peak.rounded()))%")
+    /// Painted at the most worrying window's colour, which under pace
+    /// colouring need not be the fullest one.
+    static func codexSegment(_ codex: CodexSnapshot?, now: Int64, coloring: UsageColoring = .absolute) -> PillSegment? {
+        guard let codex, let peak = codex.peakPercent(now: now) else { return nil }
+        let paint = codex.windows.map {
+            coloring.fraction(
+                usedPercent: $0.effectivePercent(now: now), resetsAt: $0.resetsAt,
+                windowLength: Int64($0.windowMinutes) * 60, now: now
+            )
+        }.max()
+        return PillSegment(kind: .codex, fraction: max(0, min(1, peak / 100)), text: "\(Int(peak.rounded()))%",
+                           colorFraction: coloring.byPace ? paint : nil)
     }
 }

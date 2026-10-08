@@ -46,7 +46,8 @@ struct MenuBarLabel: View {
             models: vm.cached?.snapshot.models ?? [:],
             fiveText: vm.displayState.menuBarText,
             authState: vm.authState,
-            now: Int64(Date().timeIntervalSince1970)
+            now: Int64(Date().timeIntervalSince1970),
+            coloring: vm.coloring
         )
         // Codex joins (or replaces) the Claude pill per the General setting.
         let plan = PillComposer.plan(
@@ -55,7 +56,8 @@ struct MenuBarLabel: View {
             claudeSegments: segments,
             claudeLacksWorkingToken: vm.authState.lacksWorkingToken,
             codex: vm.codex.snapshot,
-            now: Int64(Date().timeIntervalSince1970)
+            now: Int64(Date().timeIntervalSince1970),
+            coloring: vm.coloring
         )
         if case .segments(let bands) = plan {
             // Claude's staleness says nothing about a Codex-only pill.
@@ -170,7 +172,7 @@ struct MenuBarLabel: View {
         case .offline, .ok, .unknown: break
         }
         if vm.displayState.isStale { return .secondary }
-        guard let f = vm.displayState.utilizationFraction else { return .primary }
+        guard let f = paintFraction() else { return .primary }
         return UsageColor.gradient(t: f)
     }
 
@@ -184,8 +186,18 @@ struct MenuBarLabel: View {
         case .offline, .ok, .unknown: break
         }
         if vm.displayState.isStale { return .secondaryLabelColor }
-        guard let f = vm.displayState.utilizationFraction else { return .labelColor }
+        guard let f = paintFraction() else { return .labelColor }
         return UsageColor.nsColor(t: f)
+    }
+
+    /// The 5-hour window's place on the colour ramp: its utilization, or
+    /// its pace when colouring by pace. The gauge needle stays absolute.
+    private func paintFraction() -> Double? {
+        guard let f = vm.displayState.utilizationFraction else { return nil }
+        guard let five = vm.cached?.snapshot.fiveHour else { return f }
+        return vm.coloring.paint(
+            five, windowLength: UsageColoring.fiveHourLength, now: Int64(Date().timeIntervalSince1970)
+        ) ?? f
     }
 }
 
@@ -247,6 +259,8 @@ struct MenuBarDropdown: View {
                     title: "5-hour session",
                     window: cached.snapshot.fiveHour,
                     now: now,
+                    windowLength: UsageColoring.fiveHourLength,
+                    coloring: vm.coloring,
                     sparkline: cached.snapshot.fiveHour.map { five in
                         SparklineData(
                             samples: vm.historySamples,
@@ -260,6 +274,8 @@ struct MenuBarDropdown: View {
                     title: "7-day window",
                     window: cached.snapshot.sevenDay,
                     now: now,
+                    windowLength: UsageColoring.weekLength,
+                    coloring: vm.coloring,
                     breakdown: UsageShare.caption(cached.snapshot.breakdown),
                     tracksPace: true
                 )
@@ -269,6 +285,8 @@ struct MenuBarDropdown: View {
                         title: UsageWindows.label(for: key),
                         window: cached.snapshot.models[key],
                         now: now,
+                        windowLength: UsageColoring.weekLength,
+                        coloring: vm.coloring,
                         tracksPace: true
                     )
                 }
@@ -280,7 +298,7 @@ struct MenuBarDropdown: View {
 
             if vm.codex.trackingEnabled {
                 Divider()
-                CodexSection(snapshot: vm.codex.snapshot, now: now)
+                CodexSection(snapshot: vm.codex.snapshot, now: now, coloring: vm.coloring)
             }
 
 
@@ -713,6 +731,7 @@ struct MarqueeText: View {
 private struct CodexSection: View {
     let snapshot: CodexSnapshot?
     let now: Int64
+    let coloring: UsageColoring
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -736,6 +755,8 @@ private struct CodexSection: View {
                         title: w.label,
                         window: WindowSnapshot(usedPercentage: w.effectivePercent(now: now), resetsAt: w.resetsAt),
                         now: now,
+                        windowLength: Int64(w.windowMinutes) * 60,
+                        coloring: coloring,
                         tracksPace: w.windowMinutes == 10080
                     )
                 }
@@ -760,6 +781,9 @@ private struct WindowSection: View {
     let title: String
     let window: WindowSnapshot?
     let now: Int64
+    /// Full length of the window, for colouring by pace.
+    let windowLength: Int64
+    let coloring: UsageColoring
     var sparkline: SparklineData? = nil
     /// Where this window's usage came from, e.g. "Claude Code 93% · Chats 7%".
     var breakdown: String? = nil
@@ -772,7 +796,9 @@ private struct WindowSection: View {
         if let w = window {
             let pct = Int(w.usedPercentage.rounded())
             let fraction = max(0.0, min(1.0, w.usedPercentage / 100.0))
-            let color = UsageColor.gradient(t: fraction, scheme: colorScheme)
+            let color = UsageColor.gradient(
+                t: coloring.paint(w, windowLength: windowLength, now: now) ?? fraction, scheme: colorScheme
+            )
             let delta = w.resetsAt - now
             let pace = tracksPace ? WeeklyPace.compute(window: w, now: now) : nil
             let caption = pace?.capacityAt.map { WeeklyPace.capacityCaption(at: $0, now: now) }

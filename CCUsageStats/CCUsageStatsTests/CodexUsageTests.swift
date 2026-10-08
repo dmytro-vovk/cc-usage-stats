@@ -141,6 +141,21 @@ final class CodexHardeningTests: XCTestCase {
         XCTAssertEqual(CodexRolloutParser.int64(42.9), 42)
     }
 
+    /// Each window kind gets its own thresholds (5-hour vs weekly rules).
+    func testPerWindowThresholds() {
+        let prev = CodexSnapshot(windows: [CodexWindow(usedPercent: 60, windowMinutes: 300, resetsAt: 5000),
+                                           CodexWindow(usedPercent: 60, windowMinutes: 10080, resetsAt: 9000)],
+                                 planType: nil, observedAt: 1, source: .sessionLog)
+        let cur = CodexSnapshot(windows: [CodexWindow(usedPercent: 75, windowMinutes: 300, resetsAt: 5000),
+                                          CodexWindow(usedPercent: 75, windowMinutes: 10080, resetsAt: 9000)],
+                                planType: nil, observedAt: 2, source: .sessionLog)
+        let crossings = CodexSnapshot.crossings(previous: prev, current: cur, now: 3) {
+            $0.windowMinutes == 300 ? [90, 100] : [70, 100]
+        }
+        XCTAssertEqual(crossings.map(\.window.windowMinutes), [10080])
+        XCTAssertEqual(crossings.map(\.thresholds), [[70]])
+    }
+
     func testCodexAlertLatchFiresOncePerWindow() {
         var latch = CodexAlertLatch()
         let w = CodexWindow(usedPercent: 81, windowMinutes: 10080, resetsAt: 500)

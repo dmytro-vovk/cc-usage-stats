@@ -34,7 +34,7 @@ enum MenuBarPillRenderer {
         let pieces: [Piece] = segments.map { seg in
             let icon = makeIcon(symbol: symbol(for: seg), color: style.onColor)
             let attr = makeAttr(seg.text, color: style.onColor)
-            let color = (seg.dimmed ? NSColor.secondaryLabelColor : UsageColor.nsColor(t: seg.fraction))
+            let color = (seg.dimmed ? NSColor.secondaryLabelColor : UsageColor.nsColor(t: seg.paintFraction))
                 .withAlphaComponent(style.staleAlpha)
             return Piece(
                 icon: icon, attr: attr, color: color,

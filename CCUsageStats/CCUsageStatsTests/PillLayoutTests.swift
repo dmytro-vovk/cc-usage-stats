@@ -104,4 +104,41 @@ final class PillLayoutTests: XCTestCase {
         let s = segments(five: 10, seven: 0, models: ["seven_day_fable": 93], now: 999)
         XCTAssertEqual(s.map(\.kind), [.fiveHour, .model("seven_day_fable")])
     }
+
+    // MARK: - colour by pace
+
+    func testAbsoluteColouringPaintsTheUsageFraction() {
+        let s = segments(five: 70, seven: 88, models: [:])
+        XCTAssertEqual(s.map(\.paintFraction), s.map(\.fraction))
+    }
+
+    /// Pace colouring changes the paint, not which windows earn a band or
+    /// what they say: a fast 5h turns orange, an on-pace weekly turns green.
+    func testPaceColouringRepaintsWithoutChangingLayout() {
+        let now: Int64 = 1_000_000
+        let five = WindowSnapshot(usedPercentage: 60, resetsAt: now + 4 * 3600)          // 1h in: 3×
+        let seven = WindowSnapshot(usedPercentage: 85, resetsAt: now + 3600)              // ~all elapsed
+        let s = PillLayout.segments(
+            five: five, seven: seven, models: [:], fiveText: "60%", authState: .ok, now: now,
+            coloring: UsageColoring(byPace: true, burnRateThreshold: 1.5)
+        )
+        XCTAssertEqual(s.map(\.kind), [.fiveHour, .sevenDay])
+        XCTAssertEqual(s.map(\.text), ["60%", "85%"])
+        XCTAssertEqual(s[0].fraction, 0.6, accuracy: 1e-9)
+        XCTAssertEqual(s[0].paintFraction, UsageColoring.warningFraction)
+        XCTAssertEqual(s[1].paintFraction, 0.5)
+    }
+
+    func testCodexBandPaintsByPaceToo() {
+        let now: Int64 = 1_000_000
+        // 60% of a week half a day in.
+        let codex = CodexSnapshot(
+            windows: [CodexWindow(usedPercent: 60, windowMinutes: 10080, resetsAt: now + 6 * 86_400 + 43_200)],
+            planType: nil, observedAt: now, source: .live
+        )
+        let pace = UsageColoring(byPace: true, burnRateThreshold: 1.5)
+        XCTAssertEqual(PillComposer.codexSegment(codex, now: now, coloring: pace)?.paintFraction,
+                       UsageColoring.warningFraction)
+        XCTAssertEqual(PillComposer.codexSegment(codex, now: now)?.paintFraction ?? 0, 0.6, accuracy: 1e-9)
+    }
 }
