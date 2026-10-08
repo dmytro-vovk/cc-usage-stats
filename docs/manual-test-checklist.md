@@ -380,5 +380,9 @@ Skip this if you've never had the Phase 1 statusline integration.
 - Move the app (e.g. `~/Applications` → `/Applications`) and reopen
   Settings: **Registered for another copy: …** with **Repair**; Repair
   points it at the new path.
+- **Agent instructions → Copy**: the button reads "Copied" for ~2 s; the
+  clipboard holds a markdown section naming `get_usage`, the
+  `claude mcp add-json …` command and the `[mcp_servers.cc-usage-stats]`
+  block, both with this app's path.
 - No `claude` CLI on the machine: turning the toggle on shows the
   `claude mcp add-json …` command to run by hand.

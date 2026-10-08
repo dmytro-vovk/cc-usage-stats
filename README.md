@@ -311,10 +311,13 @@ a large fan-out.
   claude mcp add-json --scope user cc-usage-stats '{"type":"stdio","command":"/Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats","args":["--mcp-server"]}'
   ```
 
-- **Telling agents when to use it** is up to you — e.g. a line in your
-  `~/.claude/CLAUDE.md`: *"Before a large fan-out or choosing subagent
-  models, call `get_usage` (cc-usage-stats); if Claude weekly is ahead of
-  pace or above 70%, route reviews and mechanical work to Codex."*
+- **Telling agents when to use it** is up to you. **Agent instructions →
+  Copy** puts a ready-made section on the clipboard for your
+  `~/.claude/CLAUDE.md` or `AGENTS.md`: what `get_usage` returns, how to
+  connect it (the `claude mcp add-json` command and the Codex
+  `config.toml` table, with this copy's path), and starter rules — e.g.
+  route reviews and mechanical work to Codex when Claude weekly is ahead
+  of pace or above 70%. Edit the rules to taste.
   Design notes: [spec](docs/superpowers/specs/2026-10-08-usage-mcp-server-design.md).
 
 ### Set / Change OAuth Token

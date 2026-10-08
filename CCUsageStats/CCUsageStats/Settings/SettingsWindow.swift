@@ -176,6 +176,7 @@ struct GeneralSettingsView: View {
 /// Opt-in registration of the read-only usage MCP server.
 private struct UsageMCPSection: View {
     @StateObject private var mcp = UsageMCPSettings()
+    @State private var copied = false
 
     var body: some View {
         Section {
@@ -199,6 +200,15 @@ private struct UsageMCPSection: View {
                 ))
                 .disabled(mcp.busy)
             }
+            LabeledContent("Agent instructions") {
+                Button(copied ? "Copied" : "Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(UsageMCPInstructions.text(binary: mcp.binary), forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+                }
+                .help("Copies a CLAUDE.md / AGENTS.md section telling agents how to connect get_usage and when to call it")
+            }
             if mcp.busy {
                 ProgressView().controlSize(.small)
             }
@@ -207,7 +217,7 @@ private struct UsageMCPSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } footer: {
-            Text("Lets agents call get_usage to read these limits (read-only, no network). Registers \"cc-usage-stats\" with `claude mcp add-json --scope user`, and in ~/.codex/config.toml (a backup is saved first; nothing else in it changes). Turning a toggle off removes it.")
+            Text("Lets agents call get_usage to read these limits (read-only, no network). Registers \"cc-usage-stats\" with `claude mcp add-json --scope user`, and in ~/.codex/config.toml (a backup is saved first; nothing else in it changes). Turning a toggle off removes it. Copy pastes a section for your CLAUDE.md or AGENTS.md telling agents how to connect it and when to call it.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

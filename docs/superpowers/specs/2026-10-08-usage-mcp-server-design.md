@@ -151,6 +151,13 @@ can hold other servers' env secrets. CLI calls have a 30 s deadline
   header path can keep an older 5-hour/weekly value under a newer stamp. Same
   limitation as the dropdown's "Last updated".
 
+## Agent instructions (copied, never written by the app)
+
+Settings → General → **Agent instructions → Copy** puts a markdown section
+on the clipboard (`UsageMCPInstructions`): what the tool returns, both
+connect forms with the running binary's path, and starter delegation rules.
+The rules are the user's policy to edit; the tool stays facts-only.
+
 ## Suggested CLAUDE.md rule (for the user, not written by the app)
 
 > Before a large fan-out or choosing subagent models, call
