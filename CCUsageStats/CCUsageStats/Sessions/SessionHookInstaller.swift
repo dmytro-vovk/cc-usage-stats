@@ -16,10 +16,10 @@ nonisolated enum SessionHookInstaller {
     ]
 
     /// Codex's events (2026-10-08 spec). No subagent events: rows are
-    /// sessions. `Interrupt` ends a turn the user stopped.
+    /// sessions. Codex 0.149 has no event for an interrupted turn.
     static let codexEvents = [
         "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
-        "PreCompact", "PostCompact", "Stop", "Interrupt", "SessionEnd",
+        "PreCompact", "PostCompact", "Stop", "SessionEnd",
     ]
 
     static func events(for client: SessionClient) -> [String] {
@@ -41,8 +41,8 @@ nonisolated enum SessionHookInstaller {
 
     static let timeoutSeconds = 10
 
-    /// Codex caps `SessionEnd` and `Interrupt` hooks at 3 s; one value for
-    /// every event keeps the entries alike. The script takes milliseconds.
+    /// Codex caps `SessionEnd` hooks at 3 s; one value for every event
+    /// keeps the entries alike. The script takes milliseconds.
     static func timeoutSeconds(for client: SessionClient) -> Int {
         client == .claude ? timeoutSeconds : 3
     }
@@ -127,17 +127,44 @@ nonisolated enum SessionHookInstaller {
         }
     }
 
-    /// Ours go last in each event: groups before them keep their positions,
-    /// which Codex's trust records are keyed by.
+    /// A missing entry is appended; an existing one is rewritten where it
+    /// is. Either way no other group moves — Codex keys its trust records
+    /// by position.
     static func installing(command: String, into settings: [String: Any], client: SessionClient = .claude) -> [String: Any] {
-        var out = uninstalling(from: settings, client: client)
+        let ours: [String: Any] = ["hooks": [["type": "command", "command": command, "timeout": timeoutSeconds(for: client)]]]
+        var out = settings
         var hooks = out["hooks"] as? [String: Any] ?? [:]
+        for (event, value) in hooks where !events(for: client).contains(event) {
+            hooks[event] = (value as? [[String: Any]]).map { stripping($0, client: client, placing: nil) } ?? value
+        }
         for event in events(for: client) {
-            var groups = hooks[event] as? [[String: Any]] ?? []
-            groups.append(["hooks": [["type": "command", "command": command, "timeout": timeoutSeconds(for: client)]]])
+            var groups = stripping(hooks[event] as? [[String: Any]] ?? [], client: client, placing: ours)
+            if !groups.contains(where: { NSDictionary(dictionary: $0).isEqual(to: ours) }) { groups.append(ours) }
             hooks[event] = groups
         }
+        for (event, value) in hooks where (value as? [[String: Any]])?.isEmpty == true { hooks[event] = nil }
         out["hooks"] = hooks
+        return out
+    }
+
+    /// Our entries taken out of `groups`. With `placing`, the first group
+    /// that held one of ours becomes `placing`, in the same position (any
+    /// other handlers it had stay right after it).
+    private static func stripping(_ groups: [[String: Any]], client: SessionClient,
+                                  placing: [String: Any]?) -> [[String: Any]] {
+        var placed = placing == nil
+        var out: [[String: Any]] = []
+        for group in groups {
+            guard let entries = group["hooks"] as? [[String: Any]], entries.contains(where: { isOurs($0, client: client) })
+            else { out.append(group); continue }
+            if !placed, let placing { out.append(placing); placed = true }
+            let remaining = entries.filter { !isOurs($0, client: client) }
+            if !remaining.isEmpty {
+                var g = group
+                g["hooks"] = remaining
+                out.append(g)
+            }
+        }
         return out
     }
 

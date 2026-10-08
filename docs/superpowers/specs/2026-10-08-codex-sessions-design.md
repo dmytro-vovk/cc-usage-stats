@@ -14,10 +14,12 @@ a **Codex** badge, and the same click-to-open behaviour. Opt-in.
   Claude Code's `settings.json` `hooks` object: event → `[{matcher?, hooks:
   [{type: "command", command, timeout, …}]}]`, plus an optional top-level
   `description`.
-- Events: `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+- Events in 0.149: `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
   `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`,
-  `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`, `SessionEnd`. No
-  `Notification`, no `StopFailure`.
+  `SubagentStart`, `SubagentStop`, `Stop`, `SessionEnd`. No `Notification`,
+  no `StopFailure`. The docs also list `Interrupt`, but the 0.149 binary has
+  no such event (checked in its strings), so an interrupted turn shows as
+  Working until the session's next event.
 - Payload (stdin JSON): `session_id` first, then `turn_id`,
   `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`,
   then the event's own fields (`tool_name`, `tool_input`, `prompt`,
@@ -25,15 +27,14 @@ a **Codex** badge, and the same click-to-open behaviour. Opt-in.
   user- or tool-controlled text, as with Claude.
 - The hook's parent process is the `codex` binary itself (verified with a
   probe hook: `$PPID` → `…/vendor/…/bin/codex`).
-- `SessionEnd` and `Interrupt` timeouts are capped at 3 s.
+- `SessionEnd` timeouts are capped at 3 s.
 - **Trust.** Codex runs a non-managed hook only once the user has trusted it
   (`/hooks` in the TUI). Trust is stored in `$CODEX_HOME/config.toml`:
   `[hooks.state."<hooks.json path>:<event_snake>:<group>:<handler>"]` with
   `trusted_hash = "sha256:…"` (and `enabled = false` when switched off).
   The hash is SHA-256 over sorted-key compact JSON of
   `{event_name, matcher?, hooks: [{type, command, timeout, async, statusMessage?}]}`
-  with the timeout normalised (600 by default; 1–3 for `SessionEnd` /
-  `Interrupt`). It covers the *command string*, not the script's contents,
+  with the timeout normalised (600 by default; 1–3 for `SessionEnd`). It covers the *command string*, not the script's contents,
   so script updates don't need re-trusting. Reproduced against two real
   entries in the user's config.
 
@@ -46,8 +47,8 @@ what already exists:
 |---|---|---|
 | Settings file | `~/.claude/settings.json` | `$CODEX_HOME/hooks.json` |
 | Script | `hooks/session-hook.sh` | `hooks/codex-session-hook.sh` |
-| Events | as before | `SessionStart UserPromptSubmit PreToolUse PermissionRequest PostToolUse PreCompact PostCompact Stop Interrupt SessionEnd` |
-| Timeout | 10 s | 3 s (fits the `SessionEnd`/`Interrupt` cap; one value everywhere) |
+| Events | as before | `SessionStart UserPromptSubmit PreToolUse PermissionRequest PostToolUse PreCompact PostCompact Stop SessionEnd` |
+| Timeout | 10 s | 3 s (fits the `SessionEnd` cap; one value everywhere) |
 | Liveness | process path looks like Claude | path contains `codex` |
 
 - **Script.** The same template (v5), with a `client` field written into
@@ -56,14 +57,14 @@ what already exists:
 - **Installer.** `SessionHookInstaller` takes the client; all rules are
   unchanged (merge-only, our entries recognised by exact quoted path, refuse
   unparseable/unexpected shapes, one-time `.cc-usage-stats.bak`, symlink
-  resolved once, CAS write keeping permissions). Our groups are *appended*,
-  so existing groups keep their indices and therefore their trust keys.
+  resolved once, CAS write keeping permissions). A missing group of ours is
+  *appended* and a broken one is repaired *where it is*, so other groups
+  keep their indices and therefore their trust keys.
   Removing ours on toggle-off can shift the index of a group the user added
   *after* ours — Codex then asks to re-trust that hook. Acceptable; noted in
   the README.
-- **Status mapping** (`SessionRecord.status`) — only one addition:
-  `Interrupt` → done (the user stopped the turn and is at the keyboard).
-  `PostCompact` falls into the default (working). `Stop` keeps the
+- **Status mapping** (`SessionRecord.status`) — unchanged: `PostCompact`
+  falls into the default (working). `Stop` keeps the
   closing-question rule; there are no background tasks or failures in Codex
   payloads, so a Codex session is never `background` or `error`.
 - **Trust check.** `CodexHookTrust.check(hooks:config:)` finds each of our
@@ -87,7 +88,7 @@ what already exists:
   tooltip and accessibility label say "Codex". Settings → General gets
   "Show active Codex sessions" under the Claude toggle, a Hooks status line
   (installed / failed + Repair), and when not trusted: "Not trusted yet —
-  in Codex, run /hooks and trust the cc-usage-stats hooks (k of 10 trusted)".
+  in Codex, run /hooks and trust the cc-usage-stats hooks (k of 9 trusted)".
 - **Paths.** `Paths.codexHome` = `$CODEX_HOME` or `~/.codex`; redirected to
   the test scratch dir under tests, like `claudeSettings`.
 

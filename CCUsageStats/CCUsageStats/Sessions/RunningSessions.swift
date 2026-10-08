@@ -107,8 +107,6 @@ nonisolated struct SessionRecord: Equatable, Sendable {
             if ClosingQuestion.asksUser(lastMessage) { return .waitingForInput }
             return backgroundTaskCount > 0 ? .background : .done
         case "StopFailure": return .error
-        // Codex: the user stopped the turn. They're at the keyboard; nothing pending.
-        case "Interrupt": return .done
         // Claude put a question to the user and is blocked on the answer.
         case "PreToolUse" where toolName == "AskUserQuestion": return .waitingForInput
         case "Notification":

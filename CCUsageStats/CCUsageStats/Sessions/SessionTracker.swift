@@ -216,8 +216,10 @@ final class SessionTracker: ObservableObject {
         // Nothing of ours in it (or no file): nothing to parse, so a file
         // we couldn't read can't report a failure for hooks never installed.
         let url = settingsURL(for: client)
+        // JSON may escape "/" as "\/".
         if let data = try? Data(contentsOf: url.resolvingSymlinksInPath()),
-           !String(decoding: data, as: UTF8.self).contains(SessionHookInstaller.ownMarker(for: client)) {
+           !String(decoding: data, as: UTF8.self).replacingOccurrences(of: "\\/", with: "/")
+               .contains(SessionHookInstaller.ownMarker(for: client)) {
             setHookState(.removed, for: client)
             return
         }
@@ -248,9 +250,8 @@ final class SessionTracker: ObservableObject {
     // MARK: Watching
 
     private func startWatching() {
-        guard source == nil else { return }
         try? Paths.ensureDirectory(sessionsDir)
-        let fd = Darwin.open(sessionsDir.path, O_EVTONLY)
+        let fd = source == nil ? Darwin.open(sessionsDir.path, O_EVTONLY) : -1
         if fd >= 0 {
             // The hook writes via rename, which is a write to the directory.
             let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write], queue: .main)
@@ -262,6 +263,7 @@ final class SessionTracker: ObservableObject {
             source = src
         }
         // Liveness: a killed session never fires SessionEnd.
+        guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: Self.livenessInterval, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in self.rescan() }

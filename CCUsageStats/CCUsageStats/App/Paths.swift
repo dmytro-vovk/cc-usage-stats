@@ -1,6 +1,6 @@
 import Foundation
 
-enum Paths {
+nonisolated enum Paths {
     /// Where the app keeps its own state in a normal run.
     static var liveAppSupportDir: URL {
         FileManager.default

@@ -84,8 +84,6 @@ final class CodexSessionsTests: XCTestCase {
         XCTAssertEqual(rec("PermissionRequest").status, .needsPermission)
         XCTAssertEqual(rec("PreCompact").status, .compacting)
         XCTAssertEqual(rec("PostCompact").status, .working)
-        // The user stopped the turn: they're at the keyboard, nothing pending.
-        XCTAssertEqual(rec("Interrupt").status, .done)
         XCTAssertEqual(rec("Stop").status, .done)
     }
 
@@ -125,8 +123,8 @@ final class CodexSessionsTests: XCTestCase {
         XCTAssertEqual(out["description"] as? String, "mine")
         XCTAssertEqual(SessionHookInstaller.events(for: .codex), [
             "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
-            "PreCompact", "PostCompact", "Stop", "Interrupt", "SessionEnd",
-        ])
+            "PreCompact", "PostCompact", "Stop", "SessionEnd",
+        ], "codex 0.149 has no Interrupt hook event")
         for event in SessionHookInstaller.events(for: .codex) {
             let ours = groups(out, event).last!
             XCTAssertNil(ours["matcher"], event)
@@ -138,6 +136,24 @@ final class CodexSessionsTests: XCTestCase {
         XCTAssertEqual(groups(out, "PreToolUse").first?["matcher"] as? String, "Bash")
         XCTAssertTrue(SessionHookInstaller.isInstalled(command: codexCommand, in: out, client: .codex))
         XCTAssertFalse(SessionHookInstaller.isInstalled(command: codexCommand, in: out, client: .claude))
+    }
+
+    /// Codex keys trust by position: repairing our entry must not move the
+    /// user's groups after it.
+    func testRepairKeepsOurGroupWhereItIs() {
+        let theirA: [String: Any] = ["matcher": "Bash", "hooks": [["type": "command", "command": "/a.sh"]]]
+        let theirB: [String: Any] = ["hooks": [["type": "command", "command": "/b.sh"]]]
+        let broken: [String: Any] = ["hooks": [["type": "command", "command": codexCommand, "timeout": 99]]]
+        let out = SessionHookInstaller.installing(command: codexCommand, into: [
+            "hooks": ["PreToolUse": [theirA, broken, theirB]],
+        ], client: .codex)
+        let pre = groups(out, "PreToolUse")
+        XCTAssertEqual(pre.count, 3)
+        XCTAssertEqual((pre[0]["hooks"] as! [[String: Any]])[0]["command"] as? String, "/a.sh")
+        XCTAssertEqual((pre[1]["hooks"] as! [[String: Any]])[0]["command"] as? String, codexCommand)
+        XCTAssertEqual(((pre[1]["hooks"] as! [[String: Any]])[0]["timeout"] as? NSNumber)?.intValue, 3, "repaired in place")
+        XCTAssertEqual((pre[2]["hooks"] as! [[String: Any]])[0]["command"] as? String, "/b.sh", "still index 2")
+        XCTAssertTrue(SessionHookInstaller.isInstalled(command: codexCommand, in: out, client: .codex))
     }
 
     func testClientsNeverClaimEachOthersEntries() {
@@ -202,7 +218,7 @@ final class CodexSessionsTests: XCTestCase {
 
     func testOurEntriesAreKeyedByTheirPosition() throws {
         let f = try installTrustFixture()
-        XCTAssertEqual(f.entries.count, 10)
+        XCTAssertEqual(f.entries.count, 9)
         XCTAssertTrue(f.entries.contains { $0.key == "\(f.hooks.path):pre_tool_use:1:0" }, "after the user's group")
         XCTAssertTrue(f.entries.contains { $0.key == "\(f.hooks.path):session_start:0:0" })
     }
@@ -214,12 +230,12 @@ final class CodexSessionsTests: XCTestCase {
             else { try? FileManager.default.removeItem(at: f.config) }
             return CodexHookTrust.check(hooksURL: f.hooks, configURL: f.config, command: codexCommand)
         }
-        XCTAssertEqual(try check(nil), .untrusted(trusted: 0, of: 10))
+        XCTAssertEqual(try check(nil), .untrusted(trusted: 0, of: 9))
         XCTAssertEqual(try check(toml(f.entries)), .trusted)
         // A stale hash (the command changed since it was trusted) doesn't count.
         let first = f.entries[0].key
         XCTAssertEqual(try check(toml(f.entries, hash: { $0.key == first ? "sha256:old" : $0.hash })),
-                       .untrusted(trusted: 9, of: 10))
+                       .untrusted(trusted: 8, of: 9))
         XCTAssertEqual(try check(toml(f.entries, extra: "\n[hooks.state.\"\(first)\"]\nenabled = false\n")),
                        .disabled(1))
         // Dotted keys under a parent table are the same thing.
@@ -314,7 +330,7 @@ final class CodexSessionTrackingTests: XCTestCase {
         let command = SessionHookInstaller.command(for: t.codexScriptURL)
         XCTAssertTrue(SessionHookInstaller.status(settingsURL: t.codexHooksURL, scriptURL: t.codexScriptURL, client: .codex))
         XCTAssertEqual(CodexHookTrust.check(hooksURL: t.codexHooksURL, configURL: t.codexConfigURL, command: command),
-                       .untrusted(trusted: 0, of: 10))
+                       .untrusted(trusted: 0, of: 9))
         XCTAssertFalse(FileManager.default.fileExists(atPath: t.settingsURL.path), "Claude's settings untouched while it's off")
 
         t.codexEnabled = false
@@ -332,6 +348,20 @@ final class CodexSessionTrackingTests: XCTestCase {
         defer { t.stop() }
         XCTAssertEqual(t.codexHookState, .removed)
         XCTAssertEqual(try String(contentsOf: t.codexHooksURL, encoding: .utf8), "{ not json")
+    }
+
+    func testToggleOffRemovesHooksWrittenWithEscapedSlashes() throws {
+        let defaults = UserDefaults(suiteName: "CodexSessionTrackingTests-\(UUID().uuidString)")!
+        defaults.set(false, forKey: SessionTracker.enabledKey)
+        defaults.set(true, forKey: SessionTracker.codexEnabledKey)
+        let t = makeTracker(defaults)
+        t.start()
+        defer { t.stop() }
+        // A JSON formatter that escapes "/" — still valid, still ours.
+        let text = try String(contentsOf: t.codexHooksURL, encoding: .utf8).replacingOccurrences(of: "/", with: "\\/")
+        try text.write(to: t.codexHooksURL, atomically: true, encoding: .utf8)
+        t.codexEnabled = false
+        XCTAssertFalse(try String(contentsOf: t.codexHooksURL, encoding: .utf8).contains("codex-session-hook"))
     }
 
     func testCodexTrackingIsOffByDefaultAndPersisted() {
