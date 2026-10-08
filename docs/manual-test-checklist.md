@@ -410,6 +410,27 @@ by design.
   and our entries are removed from `settings.json` (others untouched).
   Back on: reinstalled.
 
+### 16a. Codex sessions
+
+- Settings → General → **Show active Codex sessions** ON: Hooks
+  "Installed just now"; `~/.codex/hooks.json` gains one group per event
+  (SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest,
+  PostToolUse, PreCompact, PostCompact, Stop, SessionEnd) whose command is
+  `'…/cc-usage-stats/hooks/codex-session-hook.sh'`, timeout 3, *after*
+  your own groups; `hooks.json.cc-usage-stats.bak` holds the original.
+  **Codex trust: Not trusted yet (0 of 9)** in orange with the /hooks hint.
+- In `codex`, run `/hooks` and trust the cc-usage-stats hooks: within ~5 s
+  Settings shows **Codex trust: Trusted**; your own hooks are still
+  trusted (`/hooks` lists them unchanged).
+- Send a prompt in `codex`: a row with the **Codex** badge shows
+  **Working** (tooltip "Codex · Working — ~/path", folder or thread name
+  as title); a command needing approval → **Needs permission**; a reply
+  ending "Shall I …?" → **Waiting for input**; a plain reply → drops off.
+- Click the row: the terminal running Codex comes forward.
+- Quit `codex` (or kill it): the row disappears within ~5 s.
+- Toggle OFF: our groups leave `hooks.json` (others untouched), Codex rows
+  disappear; Claude rows stay.
+
 ### 17. Usage MCP server
 
 - Settings → General → **Usage MCP server for Claude Code** ON: a spinner,

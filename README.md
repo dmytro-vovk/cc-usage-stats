@@ -137,7 +137,7 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the source: `session log`, `app-server`, or `live` for the endpoint
   fallback). Reset times are row tooltips, as
   for Claude.
-- At the very top, your *active* Claude Code sessions — a status icon, the
+- At the very top, your *active* Claude Code (and, opt-in, Codex) sessions — a status icon, the
   title and the time since their last event (hover for the status in
   words and the folder). Click one to open it. Hidden when nothing is
   active. See [Running sessions](#running-sessions).
@@ -218,7 +218,8 @@ windows; the gauge needle always shows the absolute level.
 toolbar tabs:
 
 - **General** — Launch at login; Menu-bar pill shows Claude / Codex /
-  Both; Show active Claude Code sessions (with the hook status); Usage
+  Both; Show active Claude Code sessions (with the hook status); Show
+  active Codex sessions (hook status and whether Codex trusts them); Usage
   MCP server for Claude Code / Codex (see [Usage MCP server](#usage-mcp-server)).
 - **Accounts** — *Claude*: connection status, **Connect / Reconnect
   account** (browser OAuth, see below), **Set / Change token…** (the
@@ -294,6 +295,41 @@ removes the hooks. Sessions that were already running when the hooks were
 added may not show up until they're restarted. A permission prompt shows
 **Needs permission** until the approved tool finishes — no hook fires on
 the approval itself.
+
+#### Codex sessions
+
+Optional, off by default: **Settings → General → Show active Codex
+sessions**. Codex sessions — the CLI, the desktop app, `codex exec`, Codex
+run as an MCP server by Claude — then join the same list with a small
+**Codex** badge after the title (the tooltip starts with "Codex ·"). They
+show Needs permission, Waiting for input (a reply ending on a question for
+you), Working and Compacting as above; Codex reports no failures or
+background tasks, so a Codex row is never Error or In background. Rows show
+the thread's name when it has one, else the folder. Clicking works as for
+Claude: a Codex run inside a Claude desktop session opens that session;
+otherwise the hosting app (Codex app, terminal) comes forward.
+
+The app registers a copy of the hook script
+(`…/cc-usage-stats/hooks/codex-session-hook.sh`) in `~/.codex/hooks.json`
+(`$CODEX_HOME/hooks.json` if set) for SessionStart, UserPromptSubmit,
+Pre/PostToolUse, PermissionRequest, Pre/PostCompact, Stop and SessionEnd,
+with the same rules as for Claude: your hooks are kept, a one-time
+`hooks.json.cc-usage-stats.bak` is saved first, and turning the toggle off
+removes ours.
+
+**Codex runs a hook only once you trust it.** After turning this on, open
+Codex, run `/hooks` and trust the nine cc-usage-stats session hooks.
+Settings shows **Codex trust: Not trusted yet (k of 9)** until you have,
+then **Trusted** — the app checks Codex's own trust records in
+`config.toml`. Trust covers the hook command, not the script, so app
+updates don't need re-trusting. Codex keys trust by a hook's position in
+`hooks.json`: ours always go *after* your groups, and the app refuses (and
+tells you why) to rewrite a file where fixing ours would move one of
+yours. Turning the toggle off can shift your groups that came after ours;
+Codex then asks you to trust those again.
+
+Codex 0.149 fires no hook when you interrupt a turn (Esc), so an
+interrupted session shows Working until its next event.
 
 ### Codex usage
 

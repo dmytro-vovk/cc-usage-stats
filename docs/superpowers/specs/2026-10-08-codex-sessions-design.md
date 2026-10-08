@@ -99,7 +99,7 @@ specific Codex desktop thread (no documented scheme).
 
 ## Tests
 
-Script (client field, Interrupt/PostCompact records), installer on a
+Script (client field, PostCompact records), installer on a
 hooks.json fixture (merge, idempotent, uninstall, append-only indices,
 timeout 3), trust hash against the two real fixtures, trust states from a
 config.toml fixture, status mapping, scan liveness by client, titles from
