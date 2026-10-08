@@ -10,10 +10,9 @@ final class AppearanceOverrideTests: XCTestCase {
         XCTAssertNil(AppearanceOverride.name(for: "sepia"), "unknown values follow the system")
     }
 
-    func testFlagIsReadFromLaunchArguments() {
-        let d = UserDefaults(suiteName: "appearance-override-\(UUID().uuidString)")!
-        XCTAssertNil(AppearanceOverride.requested(in: d))
-        d.set("light", forKey: AppearanceOverride.key)
-        XCTAssertEqual(AppearanceOverride.requested(in: d), .aqua)
+    func testFlagIsReadOnlyFromLaunchArguments() {
+        XCTAssertNil(AppearanceOverride.requested(arguments: ["/x/CCUsageStats"]))
+        XCTAssertEqual(AppearanceOverride.requested(arguments: ["/x/CCUsageStats", "-CCUSAppearance", "light"]), .aqua)
+        XCTAssertNil(AppearanceOverride.requested(arguments: ["/x/CCUsageStats", "-CCUSAppearance"]), "missing value")
     }
 }

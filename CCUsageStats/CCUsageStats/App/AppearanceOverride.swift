@@ -16,9 +16,11 @@ enum AppearanceOverride {
         }
     }
 
-    /// Launch arguments land in `UserDefaults`' argument domain.
-    static func requested(in defaults: UserDefaults = .standard) -> NSAppearance.Name? {
-        name(for: defaults.string(forKey: key))
+    /// Launch arguments only — not `UserDefaults`, whose persistent domain
+    /// would let a stray `defaults write` override every normal launch.
+    static func requested(arguments: [String] = CommandLine.arguments) -> NSAppearance.Name? {
+        guard let i = arguments.firstIndex(of: "-\(key)"), i + 1 < arguments.count else { return nil }
+        return name(for: arguments[i + 1])
     }
 
     /// Applies the override once the application object exists.
