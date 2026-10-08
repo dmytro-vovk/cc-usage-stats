@@ -73,6 +73,9 @@ block:
 }
 ```
 
+- **Forecast:** the dropdown's 5-hour regression, anchored to the reading's
+  `captured_at` over samples up to it; reported only when the projected cap
+  is still ahead and before the reset.
 - **Reset passed:** a window whose `resets_at` is in the past reports
   `used_percent: 0`, `reset_passed: true`, `seconds_to_reset: 0` and keeps the
   old reading as `last_observed_percent` — the same rule the dropdown applies.
@@ -128,6 +131,25 @@ other key or comment is reformatted:
   compare-and-swap rename, retried 3× if the file changed meanwhile.
 
 Turning the toggles off unregisters. Nothing is registered automatically.
+
+The TOML scan is quote-aware (`[mcp_servers."cc-usage-stats.x"]` is not
+ours), ignores `#` comments and lines inside multi-line strings. Backup and
+staged files are created with their final mode (`O_EXCL`), since the config
+can hold other servers' env secrets. CLI calls have a 30 s deadline
+(TERM → KILL) and never wait on a grandchild holding the output pipe.
+
+### Accepted residual risks (from the Codex review)
+
+- **config.toml CAS window.** Between the final "unchanged?" read and the
+  rename, a concurrent Codex write would be lost. Same one-read-plus-rename
+  window the session-hook installer accepts; Codex writes its config only on
+  explicit config commands, and the backup exists.
+- **Repair is remove-then-add.** `claude mcp add-json` refuses an existing
+  name, so a failed add after the remove leaves Claude Code unregistered; the
+  error is shown and the toggle reads off, so the user sees it and can retry.
+- **One freshness per Claude section.** `captured_at` is snapshot-wide; the
+  header path can keep an older 5-hour/weekly value under a newer stamp. Same
+  limitation as the dropdown's "Last updated".
 
 ## Suggested CLAUDE.md rule (for the user, not written by the app)
 

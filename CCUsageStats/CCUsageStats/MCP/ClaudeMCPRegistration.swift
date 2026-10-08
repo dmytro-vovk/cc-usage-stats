@@ -101,7 +101,11 @@ nonisolated enum ClaudeMCPRegistration {
         )
     }
 
-    static func liveRun(_ cli: String, _ args: [String]) throws -> (status: Int32, output: String) {
+    /// Runs `cli` with a hard deadline. Output is drained on its own thread
+    /// so a chatty child can't block on a full pipe, and on timeout the
+    /// child is killed (TERM, then KILL) and we stop waiting for EOF — a
+    /// grandchild holding the pipe open must not hang Settings.
+    static func liveRun(_ cli: String, _ args: [String], timeout: TimeInterval = 30) throws -> (status: Int32, output: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: cli)
         p.arguments = args
@@ -109,11 +113,33 @@ nonisolated enum ClaudeMCPRegistration {
         p.standardOutput = pipe
         p.standardError = pipe
         p.standardInput = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in exited.signal() }
         try p.run()
-        let deadline = DispatchTime.now() + 30
-        DispatchQueue.global().asyncAfter(deadline: deadline) { if p.isRunning { p.terminate() } }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: data, as: UTF8.self))
+
+        let output = OutputBox()
+        let drained = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            output.set(pipe.fileHandleForReading.readDataToEndOfFile())
+            drained.signal()
+        }
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
+            p.terminate()
+            if exited.wait(timeout: .now() + 2) == .timedOut {
+                kill(p.processIdentifier, SIGKILL)
+                _ = exited.wait(timeout: .now() + 2)
+            }
+            _ = drained.wait(timeout: .now() + 1)
+            return (-1, "timed out after \(Int(timeout))s: \(String(decoding: output.get(), as: UTF8.self))")
+        }
+        _ = drained.wait(timeout: .now() + 2)
+        return (p.terminationStatus, String(decoding: output.get(), as: UTF8.self))
+    }
+
+    private final class OutputBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+        func set(_ d: Data) { lock.lock(); data = d; lock.unlock() }
+        func get() -> Data { lock.lock(); defer { lock.unlock() }; return data }
     }
 }

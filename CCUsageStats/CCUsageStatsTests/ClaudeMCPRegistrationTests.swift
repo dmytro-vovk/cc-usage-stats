@@ -55,4 +55,16 @@ final class ClaudeMCPRegistrationTests: XCTestCase {
             (args[1] == "add-json" ? 1 : 0, "boom")
         })
     }
+
+    func testLiveRunTimesOutAndDoesNotWaitOnAGrandchildHoldingThePipe() throws {
+        let t0 = Date()
+        let slow = try ClaudeMCPRegistration.liveRun("/bin/sleep", ["20"], timeout: 0.5)
+        XCTAssertEqual(slow.status, -1)
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 5)
+
+        let t1 = Date()
+        let forked = try ClaudeMCPRegistration.liveRun("/bin/sh", ["-c", "sleep 20 & echo hi"], timeout: 10)
+        XCTAssertEqual(forked.status, 0)
+        XCTAssertLessThan(Date().timeIntervalSince(t1), 5)
+    }
 }

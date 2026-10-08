@@ -40,14 +40,18 @@ enum UsageReport {
         if let five = snap.fiveHour {
             var w = window(id: "five_hour", label: UsageWindows.label(for: "five_hour"),
                            used: five.usedPercentage, resetsAt: five.resetsAt, now: now)
-            if now < five.resetsAt {
-                let windowStart = five.resetsAt - 5 * 3_600
-                let samples = history.filter { $0.t >= windowStart && $0.t < five.resetsAt }
-                if let secs = UsageForecast.secondsToCap(
-                    currentPercent: five.usedPercentage, slope: UsageForecast.slope(samples: samples)
-                ) {
-                    w["forecast_seconds_to_cap"] = secs
-                    w["forecast_cap_at"] = now + secs
+            // Same regression the dropdown runs, anchored to when the reading
+            // was taken (not to now), over samples up to that reading. A cap
+            // that already passed, or lands after the reset, isn't a forecast.
+            let windowStart = five.resetsAt - 5 * 3_600
+            let samples = history.filter { $0.t >= windowStart && $0.t <= state.capturedAt }
+            if let secs = UsageForecast.secondsToCap(
+                currentPercent: five.usedPercentage, slope: UsageForecast.slope(samples: samples)
+            ) {
+                let capAt = state.capturedAt + secs
+                if capAt > now, capAt < five.resetsAt {
+                    w["forecast_seconds_to_cap"] = capAt - now
+                    w["forecast_cap_at"] = capAt
                 }
             }
             windows.append(w)
@@ -126,7 +130,7 @@ enum UsageReport {
 
     private static func weekly(id: String, label: String, _ snap: WindowSnapshot, now: Int64) -> [String: Any] {
         var w = window(id: id, label: label, used: snap.usedPercentage, resetsAt: snap.resetsAt, now: now)
-        if let pace = WeeklyPace.compute(window: snap, now: now) {
+        if now < snap.resetsAt, let pace = WeeklyPace.compute(window: snap, now: now) {
             var p: [String: Any] = [
                 "elapsed_fraction": (pace.elapsedFraction * 10_000).rounded() / 10_000,
                 "on_pace_percent": (pace.elapsedFraction * 1_000).rounded() / 10,

@@ -60,7 +60,11 @@ struct MCPServer {
             return Self.encode(error: -32600, message: "Invalid Request", id: NSNull())
         }
         // No method: a response to something we never sent. No id: a notification.
-        guard let method = msg["method"] as? String, let id = msg["id"], !(id is NSNull) else { return nil }
+        guard let method = msg["method"] as? String, let id = msg["id"] else { return nil }
+        // MCP request ids are strings or numbers, never null.
+        guard id is String || (id is NSNumber && CFGetTypeID(id as CFTypeRef) != CFBooleanGetTypeID()) else {
+            return Self.encode(error: -32600, message: "Invalid Request: id must be a string or number", id: NSNull())
+        }
         let params = msg["params"] as? [String: Any] ?? [:]
 
         switch method {

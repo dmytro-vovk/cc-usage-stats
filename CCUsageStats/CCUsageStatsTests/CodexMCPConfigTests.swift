@@ -81,6 +81,21 @@ final class CodexMCPConfigTests: XCTestCase {
         XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), text)
     }
 
+    func testQuotedDottedNameIsNotOurs() {
+        let text = "[mcp_servers.\"cc-usage-stats.archive\"]\ncommand = \"/x\"\n"
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), text)
+    }
+
+    func testTripleQuoteInACommentDoesNotSwallowLaterTables() throws {
+        let text = "[mcp_servers.cc-usage-stats]\ncommand = \"/x\" # see \"\"\"docs\nargs = []\n\n[profiles.fast]\nmodel = \"o4\"\n"
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), "[profiles.fast]\nmodel = \"o4\"\n")
+    }
+
+    func testHeaderLookalikeInsideMultilineStringIsNotAHeader() {
+        let text = "[a]\ns = \"\"\"\n[mcp_servers.cc-usage-stats]\n\"\"\"\n"
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: text), text)
+    }
+
     func testRefusesInlineMcpServers() {
         XCTAssertThrowsError(try CodexMCPConfig.installing(command: bin, into: "mcp_servers = { a = { command = \"x\" } }\n"))
         XCTAssertThrowsError(try CodexMCPConfig.installing(command: bin, into: "mcp_servers.foo.command = \"x\"\n"))

@@ -9,7 +9,6 @@ import Foundation
 /// ours. Same file-safety rules as `SessionHookInstaller`.
 nonisolated enum CodexMCPConfig {
     static let serverName = "cc-usage-stats"
-    private static let tableName = "mcp_servers.\(serverName)"
 
     static var defaultURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/config.toml")
@@ -32,7 +31,7 @@ nonisolated enum CodexMCPConfig {
 
     static func block(command: String) -> String {
         let quoted = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        return "[\(tableName)]\ncommand = \"\(quoted)\"\nargs = [\"\(MCPServer.launchFlag)\"]\n"
+        return "[mcp_servers.\(serverName)]\ncommand = \"\(quoted)\"\nargs = [\"\(MCPServer.launchFlag)\"]\n"
     }
 
     static func installing(command: String, into text: String) throws -> String {
@@ -80,32 +79,72 @@ nonisolated enum CodexMCPConfig {
 
     // MARK: - TOML scanning
 
-    /// Normalised table name of a header line (`[a."b"]` → `a.b`), nil for
-    /// any other line.
-    private static func header(_ line: String) -> String? {
-        let t = line.trimmingCharacters(in: .whitespaces)
+    /// Key segments of a header line (`[a."b.c"]` → `["a", "b.c"]`), nil
+    /// for any other line.
+    private static func header(_ line: String) -> [String]? {
+        let t = stripComment(line).trimmingCharacters(in: .whitespaces)
         guard t.hasPrefix("[") else { return nil }
         let open = t.hasPrefix("[[") ? 2 : 1
-        guard let close = t.range(of: open == 2 ? "]]" : "]") else { return nil }
-        let inner = t[t.index(t.startIndex, offsetBy: open)..<close.lowerBound]
-        return normalise(inner)
+        let close = open == 2 ? "]]" : "]"
+        guard t.hasSuffix(close), t.count >= open + close.count else { return nil }
+        return keySegments(t.dropFirst(open).dropLast(close.count))
     }
 
-    private static func normalise<S: StringProtocol>(_ key: S) -> String {
-        key.split(separator: ".", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
-            .joined(separator: ".")
+    /// Dotted key → segments, honouring quotes: a dot inside `"…"` / `'…'`
+    /// is part of the name, not a separator.
+    private static func keySegments<S: StringProtocol>(_ key: S) -> [String] {
+        var segments: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaped = false
+        for ch in key {
+            if let q = quote {
+                if escaped { current.append(ch); escaped = false }
+                else if q == "\"" && ch == "\\" { escaped = true }
+                else if ch == q { quote = nil }
+                else { current.append(ch) }
+                continue
+            }
+            switch ch {
+            case "\"", "'": quote = ch
+            case ".": segments.append(current.trimmingCharacters(in: .whitespaces)); current = ""
+            default: current.append(ch)
+            }
+        }
+        segments.append(current.trimmingCharacters(in: .whitespaces))
+        return segments
     }
 
-    private static func isOwnTable(_ name: String) -> Bool {
-        name == tableName || name.hasPrefix(tableName + ".")
+    /// The line without its `#` comment; a `#` inside a one-line string is
+    /// not a comment.
+    private static func stripComment(_ line: String) -> String {
+        var quote: Character?
+        var escaped = false
+        var out = ""
+        for ch in line {
+            if let q = quote {
+                if escaped { escaped = false }
+                else if q == "\"" && ch == "\\" { escaped = true }
+                else if ch == q { quote = nil }
+            } else if ch == "#" {
+                break
+            } else if ch == "\"" || ch == "'" {
+                quote = ch
+            }
+            out.append(ch)
+        }
+        return out
+    }
+
+    private static func isOwnTable(_ segments: [String]) -> Bool {
+        segments.count >= 2 && segments[0] == "mcp_servers" && segments[1] == serverName
     }
 
     /// Walks the lines tracking the current table and multi-line strings
     /// (whose lines may look like headers but aren't). `visit` gets each
     /// line with the table it belongs to and whether it is a header.
-    private static func scan(_ lines: [String], _ visit: (Int, String?, Bool) -> Void) {
-        var table: String?
+    private static func scan(_ lines: [String], _ visit: (Int, [String]?, Bool) -> Void) {
+        var table: [String]?
         var inMultiline: String?
         for (i, line) in lines.enumerated() {
             if let delim = inMultiline {
@@ -118,7 +157,7 @@ nonisolated enum CodexMCPConfig {
                 visit(i, table, true)
                 continue
             }
-            for delim in ["\"\"\"", "'''"] where line.components(separatedBy: delim).count % 2 == 0 {
+            for delim in ["\"\"\"", "'''"] where stripComment(line).components(separatedBy: delim).count % 2 == 0 {
                 inMultiline = delim
                 break
             }
@@ -142,9 +181,9 @@ nonisolated enum CodexMCPConfig {
             guard !isHeader else { return }
             let t = lines[i].trimmingCharacters(in: .whitespaces)
             guard !t.hasPrefix("#"), let eq = t.firstIndex(of: "=") else { return }
-            let key = normalise(t[..<eq])
-            if table == nil, key == "mcp_servers" || key.hasPrefix("mcp_servers.") { bad = true }
-            if table == "mcp_servers", key == serverName || key.hasPrefix(serverName + ".") { bad = true }
+            let key = keySegments(t[..<eq])
+            if table == nil, key.first == "mcp_servers" { bad = true }
+            if table == ["mcp_servers"], key.first == serverName { bad = true }
         }
         if bad { throw ConfigError.inlineServers }
     }
@@ -183,8 +222,7 @@ nonisolated enum CodexMCPConfig {
     private static func backUpOnce(_ data: Data, beside url: URL) throws {
         let backup = url.appendingPathExtension("cc-usage-stats.bak")
         guard !FileManager.default.fileExists(atPath: backup.path) else { return }
-        try data.write(to: backup, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backup.path)
+        try createExclusive(backup, data, mode: 0o600)
     }
 
     private static func stage(_ text: String, beside url: URL) throws -> URL {
@@ -193,8 +231,20 @@ nonisolated enum CodexMCPConfig {
         let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] ?? 0o600
         let staged = dir.appendingPathComponent(
             ".\(url.lastPathComponent).cc-usage-stats.\(ProcessInfo.processInfo.processIdentifier).tmp")
-        try Data(text.utf8).write(to: staged)
-        try FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: staged.path)
+        try? FileManager.default.removeItem(at: staged)  // a leftover from a crashed run
+        try createExclusive(staged, Data(text.utf8), mode: mode_t((perms as? NSNumber)?.uint16Value ?? 0o600))
         return staged
+    }
+
+    /// Creates `url` with `mode` from the first byte: the config can hold
+    /// MCP servers' env secrets, so it must never sit world-readable under
+    /// the umask while being written.
+    private static func createExclusive(_ url: URL, _ data: Data, mode: mode_t) throws {
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode)
+        guard fd >= 0 else { throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path]) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        try handle.write(contentsOf: data)
+        try handle.close()
+        _ = chmod(url.path, mode)  // open() applies the umask; restore the exact mode
     }
 }

@@ -67,10 +67,34 @@ final class UsageReportTests: XCTestCase {
         let rising = (0..<6).map { UsageSample(t: now - 600 + Int64($0) * 100, p: 30 + Double($0) * 2) }
         let r = UsageReport.build(state: state(), history: old + rising, codex: nil, now: now)
         let secs = try XCTUnwrap(window(r, "claude", "five_hour")?["forecast_seconds_to_cap"] as? Int64)
-        // slope 0.02 %/s from 40% → 3000 s.
-        XCTAssertEqual(Double(secs), 3_000, accuracy: 5)
+        // slope 0.02 %/s from 40% → 3000 s after the reading, taken 60 s ago.
+        XCTAssertEqual(Double(secs), 2_940, accuracy: 5)
         let flat = UsageReport.build(state: state(), history: old, codex: nil, now: now)
         XCTAssertNil(window(flat, "claude", "five_hour")?["forecast_seconds_to_cap"])
+    }
+
+    func testForecastIsAnchoredToTheReadingAndBoundedByTheReset() throws {
+        // Reading 10 min old; rising 0.02 %/s from 40% → cap 3000 s after capture.
+        let s = state(capturedAgo: 600)
+        let rising = (0..<6).map { UsageSample(t: now - 1_100 + Int64($0) * 100, p: 30 + Double($0) * 2) }
+        let r = UsageReport.build(state: s, history: rising, codex: nil, now: now)
+        let five = try XCTUnwrap(window(r, "claude", "five_hour"))
+        let capAt = try XCTUnwrap(five["forecast_cap_at"] as? Int64)
+        XCTAssertEqual(Double(capAt), Double(now - 600 + 3_000), accuracy: 5)
+        XCTAssertEqual(Double(five["forecast_seconds_to_cap"] as? Int64 ?? -1), 2_400, accuracy: 5)
+        // A cap projected past the reset never happens in this window.
+        let late = CachedState(capturedAt: now, snapshot: RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 40, resetsAt: now + 1_000), sevenDay: nil))
+        let samples = (0..<6).map { UsageSample(t: now - 500 + Int64($0) * 100, p: 30 + Double($0) * 2) }
+        XCTAssertNil(window(UsageReport.build(state: late, history: samples, codex: nil, now: now), "claude", "five_hour")?["forecast_cap_at"])
+    }
+
+    func testNoPaceAtTheExactResetSecond() throws {
+        let s = CachedState(capturedAt: now, snapshot: RateLimitsSnapshot(
+            fiveHour: nil, sevenDay: WindowSnapshot(usedPercentage: 90, resetsAt: now)))
+        let w = try XCTUnwrap(window(UsageReport.build(state: s, history: [], codex: nil, now: now), "claude", "seven_day"))
+        XCTAssertEqual(w["reset_passed"] as? Bool, true)
+        XCTAssertNil(w["pace"])
     }
 
     func testPassedResetReportsZeroAndKeepsTheOldReading() throws {

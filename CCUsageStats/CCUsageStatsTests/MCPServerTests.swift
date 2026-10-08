@@ -108,6 +108,11 @@ final class MCPServerTests: XCTestCase {
         XCTAssertEqual((r["error"] as? [String: Any])?["code"] as? Int, -32600)
     }
 
+    func testNullIdIsInvalidRequest() throws {
+        let r = try reply(#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#)
+        XCTAssertEqual((r["error"] as? [String: Any])?["code"] as? Int, -32600)
+    }
+
     func testResponsesFromTheClientAreIgnored() {
         XCTAssertNil(server.handle(line: #"{"jsonrpc":"2.0","id":9,"result":{}}"#))
     }
