@@ -276,7 +276,7 @@ nonisolated enum CodexMCPConfig {
 
     // MARK: - IO (mirrors SessionHookInstaller)
 
-    private static func update(_ link: URL, _ transform: (String) throws -> String?) throws {
+    static func update(_ link: URL, _ transform: (String) throws -> String?) throws {
         let url = link.resolvingSymlinksInPath()
         for _ in 0..<3 {
             let (original, text) = try read(url)

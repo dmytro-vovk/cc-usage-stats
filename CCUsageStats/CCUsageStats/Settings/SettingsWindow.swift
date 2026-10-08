@@ -193,12 +193,21 @@ private struct CodexSessionsSection: View {
             }
             if tracker.codexEnabled, !tracker.codexHookFailed, let trust = trustStatus {
                 LabeledContent("Codex trust") {
-                    Text(trust.text).foregroundStyle(trust.ok ? Color.secondary : Color.orange)
+                    HStack(spacing: 8) {
+                        Text(trust.text).foregroundStyle(trust.ok ? Color.secondary : Color.orange)
+                        if !trust.ok {
+                            Button("Trust in Codex") { tracker.trustCodexHooks() }
+                        }
+                    }
                 }
                 if !trust.ok {
-                    Text("Codex only runs hooks you've trusted. In Codex, run /hooks and trust the cc-usage-stats session hooks; until then Codex sessions don't appear.")
+                    Text("Codex only runs hooks you've trusted, so Codex sessions don't appear yet. Trust in Codex records that trust for these hooks only, the same as approving them in Codex's /hooks; Codex sessions started afterwards show up.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let error = tracker.codexTrustError {
+                    Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

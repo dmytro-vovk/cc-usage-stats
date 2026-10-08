@@ -162,8 +162,7 @@ nonisolated enum CodexHookTrust {
     }
 
     static func check(hooksURL: URL, configURL: URL, command: String) -> State {
-        guard let settings = try? SessionHookInstaller.readSettings(hooksURL) else { return .unknown }
-        let entries = entries(hooksPath: hooksURL.path, settings: settings, command: command)
+        guard let entries = try? entries(hooksURL: hooksURL, command: command) else { return .unknown }
         let fm = FileManager.default
         let text: String
         if fm.fileExists(atPath: configURL.path) {
@@ -173,5 +172,157 @@ nonisolated enum CodexHookTrust {
             text = ""
         }
         return check(entries: entries, configText: text)
+    }
+
+    // MARK: - Writing trust (Settings → "Trust in Codex")
+
+    enum TrustError: Error, Equatable, CustomStringConvertible {
+        /// `hooks.state` (or one of our records) is written in a form a new
+        /// table can't be added beside without breaking the TOML.
+        case unsupportedLayout
+        case notInstalled
+        var description: String {
+            switch self {
+            case .unsupportedLayout:
+                return "config.toml defines hook trust inline; trust the hooks with /hooks in Codex instead. Left it untouched."
+            case .notInstalled: return "The Codex hooks aren't installed."
+            }
+        }
+    }
+
+    /// The path as Codex keys it: symlinks resolved by the OS (`/tmp` →
+    /// `/private/tmp`), which Foundation's `resolvingSymlinksInPath` undoes.
+    static func canonicalPath(_ url: URL) -> String {
+        guard let resolved = realpath(url.path, nil) else { return url.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    static func entries(hooksURL: URL, command: String) throws -> [Entry] {
+        let settings = try SessionHookInstaller.readSettings(hooksURL)
+        return entries(hooksPath: canonicalPath(hooksURL), settings: settings, command: command)
+    }
+
+    /// Records Codex's trust for our hooks, exactly as `/hooks` would.
+    static func trust(hooksURL: URL, configURL: URL, command: String) throws {
+        let entries = try entries(hooksURL: hooksURL, command: command)
+        guard !entries.isEmpty else { throw TrustError.notInstalled }
+        try CodexMCPConfig.update(configURL) { try trusting(entries, in: $0) }
+    }
+
+    /// Takes our trust records out again (the hooks are being removed).
+    static func forget(hooksURL: URL, configURL: URL, command: String) throws {
+        let entries = try entries(hooksURL: hooksURL, command: command)
+        guard !entries.isEmpty, FileManager.default.fileExists(atPath: configURL.path) else { return }
+        try CodexMCPConfig.update(configURL) { text in
+            let out = forgetting(entries, in: text)
+            return out == text ? nil : out
+        }
+    }
+
+    private static func quotedKey(_ key: String) -> String {
+        "\"" + key.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
+    /// Text edit, like `CodexMCPConfig`: each entry's `[hooks.state."key"]`
+    /// table gets the current hash (and loses `enabled = false`); missing
+    /// tables are appended. Nil when everything is already trusted.
+    static func trusting(_ entries: [Entry], in text: String) throws -> String? {
+        let keys = Set(entries.map(\.key))
+        var lines = text.components(separatedBy: "\n")
+        var unsupported = false
+        // header index → key, for the tables that are ours
+        var ourTables: [String: Int] = [:]
+        var allHeaders: [Int] = []
+        CodexMCPConfig.scan(lines) { i, table, isHeader in
+            if isHeader {
+                allHeaders.append(i)
+                if let t = table, t.count == 3, t[0] == "hooks", t[1] == "state", keys.contains(t[2]) { ourTables[t[2]] = i }
+                return
+            }
+            let line = CodexMCPConfig.stripComment(lines[i])
+            guard let eq = assignment(in: line) else { return }
+            let full = (table ?? []) + CodexMCPConfig.keySegments(line[..<eq])
+            if full == ["hooks"] { unsupported = true }
+            if full.count >= 2, full[0] == "hooks", full[1] == "state" {
+                if full.count <= 3 { unsupported = true }
+                else if keys.contains(full[2]), table?.count != 3 { unsupported = true }
+            }
+        }
+        if unsupported { throw TrustError.unsupportedLayout }
+
+        let states = states(inConfig: text)
+        var changed = false
+        // Edit existing tables bottom-up so earlier indices stay valid.
+        for (key, header) in ourTables.sorted(by: { $0.value > $1.value }) {
+            guard let entry = entries.first(where: { $0.key == key }) else { continue }
+            if states[key]?.trustedHash == entry.hash, states[key]?.enabled != false { continue }
+            let end = allHeaders.first { $0 > header } ?? lines.count
+            var body: [String] = []
+            var wroteHash = false
+            for line in lines[(header + 1)..<end] {
+                let t = CodexMCPConfig.stripComment(line)
+                let k = assignment(in: t).map { CodexMCPConfig.keySegments(t[..<$0]) }
+                if k == ["trusted_hash"] {
+                    if !wroteHash { body.append("trusted_hash = \"\(entry.hash)\""); wroteHash = true }
+                } else if k == ["enabled"] {
+                    continue
+                } else {
+                    body.append(line)
+                }
+            }
+            if !wroteHash { body.insert("trusted_hash = \"\(entry.hash)\"", at: 0) }
+            lines.replaceSubrange((header + 1)..<end, with: body)
+            changed = true
+        }
+        var out = lines.joined(separator: "\n")
+        for entry in entries where ourTables[entry.key] == nil {
+            if !out.isEmpty { out += out.hasSuffix("\n") ? "\n" : "\n\n" }
+            out += "[hooks.state.\(quotedKey(entry.key))]\ntrusted_hash = \"\(entry.hash)\"\n"
+            changed = true
+        }
+        return changed ? out : nil
+    }
+
+    /// Removes our tables — only those holding nothing but our current hash
+    /// (and `enabled`), plus the blank line `trusting` put before each.
+    static func forgetting(_ entries: [Entry], in text: String) -> String {
+        let hashes = Dictionary(entries.map { ($0.key, $0.hash) }, uniquingKeysWith: { a, _ in a })
+        var lines = text.components(separatedBy: "\n")
+        // One table per pass, rescanning after each removal so every index is current.
+        var skip = Set<Int>()
+        while true {
+            var headers: [(Int, String)] = []
+            var allHeaders: [Int] = []
+            CodexMCPConfig.scan(lines) { i, table, isHeader in
+                guard isHeader else { return }
+                allHeaders.append(i)
+                if let t = table, t.count == 3, t[0] == "hooks", t[1] == "state", hashes[t[2]] != nil { headers.append((i, t[2])) }
+            }
+            guard let (header, key) = headers.first(where: { !skip.contains($0.0) }) else { break }
+            var end = allHeaders.first { $0 > header } ?? lines.count
+            var ours = false
+            var foreign = false
+            for line in lines[(header + 1)..<end] {
+                let t = CodexMCPConfig.stripComment(line).trimmingCharacters(in: .whitespaces)
+                if t.isEmpty { continue }
+                guard let eq = assignment(in: t) else { foreign = true; continue }
+                let k = CodexMCPConfig.keySegments(t[..<eq])
+                let v = t[t.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+                if k == ["trusted_hash"], CodexMCPConfig.basicString(v) == hashes[key] { ours = true }
+                else if k != ["enabled"] { foreign = true }
+            }
+            guard ours, !foreign else { skip.insert(header); continue }
+            // Drop the blank line `trusting` put before the table; when there
+            // is none, keep the blank that separates the next table.
+            var start = header
+            if start > 0, lines[start - 1].trimmingCharacters(in: .whitespaces).isEmpty { start -= 1 }
+            else if end < lines.count, end > header + 1, lines[end - 1].isEmpty { end -= 1 }
+            lines.removeSubrange(start..<end)
+            skip = Set(skip.filter { $0 < start })
+        }
+        var out = lines.joined(separator: "\n")
+        if text.hasSuffix("\n"), !out.isEmpty, !out.hasSuffix("\n") { out += "\n" }
+        return out
     }
 }

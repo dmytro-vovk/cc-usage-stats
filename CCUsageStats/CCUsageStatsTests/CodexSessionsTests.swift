@@ -253,7 +253,7 @@ final class CodexSessionsTests: XCTestCase {
         ], client: .codex)
         try FileManager.default.createDirectory(at: hooks.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: settings).write(to: hooks)
-        let entries = CodexHookTrust.entries(hooksPath: hooks.path, settings: settings, command: codexCommand)
+        let entries = CodexHookTrust.entries(hooksPath: CodexHookTrust.canonicalPath(hooks), settings: settings, command: codexCommand)
         return (hooks, config, entries)
     }
 
@@ -267,8 +267,9 @@ final class CodexSessionsTests: XCTestCase {
     func testOurEntriesAreKeyedByTheirPosition() throws {
         let f = try installTrustFixture()
         XCTAssertEqual(f.entries.count, 9)
-        XCTAssertTrue(f.entries.contains { $0.key == "\(f.hooks.path):pre_tool_use:1:0" }, "after the user's group")
-        XCTAssertTrue(f.entries.contains { $0.key == "\(f.hooks.path):session_start:0:0" })
+        let path = CodexHookTrust.canonicalPath(f.hooks)
+        XCTAssertTrue(f.entries.contains { $0.key == "\(path):pre_tool_use:1:0" }, "after the user's group")
+        XCTAssertTrue(f.entries.contains { $0.key == "\(path):session_start:0:0" })
     }
 
     func testTrustStates() throws {
@@ -386,6 +387,22 @@ final class CodexSessionTrackingTests: XCTestCase {
         XCTAssertFalse(SessionHookInstaller.status(settingsURL: t.codexHooksURL, scriptURL: t.codexScriptURL, client: .codex))
     }
 
+    func testTrustInCodexThenToggleOff() throws {
+        let defaults = UserDefaults(suiteName: "CodexSessionTrackingTests-\(UUID().uuidString)")!
+        defaults.set(false, forKey: SessionTracker.enabledKey)
+        defaults.set(true, forKey: SessionTracker.codexEnabledKey)
+        let t = makeTracker(defaults)
+        t.start()
+        defer { t.stop() }
+        try "model = \"m\"\n".write(to: t.codexConfigURL, atomically: true, encoding: .utf8)
+        t.trustCodexHooks()
+        XCTAssertNil(t.codexTrustError)
+        XCTAssertEqual(t.codexTrust, .trusted)
+        t.codexEnabled = false
+        XCTAssertEqual(try String(contentsOf: t.codexConfigURL, encoding: .utf8), "model = \"m\"\n",
+                       "our trust records leave with the hooks")
+    }
+
     func testNeverEnabledCodexReportsNoFailureForAnUnreadableHooksFile() throws {
         let defaults = UserDefaults(suiteName: "CodexSessionTrackingTests-\(UUID().uuidString)")!
         defaults.set(false, forKey: SessionTracker.enabledKey)
@@ -426,5 +443,93 @@ final class CodexSessionTrackingTests: XCTestCase {
         XCTAssertFalse(make().codexEnabled)
         make().codexEnabled = true
         XCTAssertTrue(make().codexEnabled)
+    }
+}
+
+/// One-click trust: writing Codex's own trust records for our hooks.
+final class CodexHookTrustWritingTests: XCTestCase {
+    private let a = CodexHookTrust.Entry(key: "/h/hooks.json:stop:1:0", hash: "sha256:aaa")
+    private let b = CodexHookTrust.Entry(key: "/h/hooks.json:session_start:0:0", hash: "sha256:bbb")
+
+    private func trusted(_ text: String, _ entries: [CodexHookTrust.Entry]) -> Bool {
+        CodexHookTrust.check(entries: entries, configText: text) == .trusted
+    }
+
+    func testAppendsTablesAndKeepsEverythingElse() throws {
+        let original = "model = \"gpt\"\n\n[mcp_servers.x]\ncommand = \"y\" # note\n"
+        let out = try XCTUnwrap(CodexHookTrust.trusting([a, b], in: original))
+        XCTAssertTrue(out.hasPrefix(original))
+        XCTAssertTrue(trusted(out, [a, b]))
+        XCTAssertNil(try CodexHookTrust.trusting([a, b], in: out), "already trusted: nothing to write")
+    }
+
+    func testReplacesAStaleHashAndTurnsOursBackOn() throws {
+        let text = "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:old\"\nenabled = false\n\n[other]\nk = 1\n"
+        let out = try XCTUnwrap(CodexHookTrust.trusting([a], in: text))
+        XCTAssertEqual(out, "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:aaa\"\n\n[other]\nk = 1\n")
+        XCTAssertTrue(trusted(out, [a]))
+    }
+
+    func testOtherHooksTrustIsUntouched() throws {
+        let theirs = "[hooks.state.\"/h/hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:theirs\"\n"
+        let out = try XCTUnwrap(CodexHookTrust.trusting([a], in: theirs))
+        XCTAssertTrue(out.hasPrefix(theirs))
+        XCTAssertEqual(CodexHookTrust.states(inConfig: out)["/h/hooks.json:pre_tool_use:0:0"]?.trustedHash, "sha256:theirs")
+    }
+
+    func testQuotesInThePathAreEscaped() throws {
+        let odd = CodexHookTrust.Entry(key: #"/Users/o"b\c/.codex/hooks.json:stop:0:0"#, hash: "sha256:x")
+        let out = try XCTUnwrap(CodexHookTrust.trusting([odd], in: ""))
+        XCTAssertTrue(trusted(out, [odd]))
+    }
+
+    /// Appending a [hooks.state."…"] table next to these would be invalid
+    /// TOML and break Codex's whole config.
+    func testRefusesShapesItCantSafelyExtend() {
+        for text in [
+            "hooks = { state = {} }\n",
+            "[hooks]\nstate = { \"x\" = { trusted_hash = \"y\" } }\n",
+            "[hooks.state]\n\"/h/hooks.json:stop:1:0\" = { trusted_hash = \"sha256:old\" }\n",
+            "[hooks.state]\n\"/h/hooks.json:stop:1:0\".trusted_hash = \"sha256:old\"\n",
+        ] {
+            XCTAssertThrowsError(try CodexHookTrust.trusting([a], in: text), text)
+        }
+        // Other hooks' dotted keys are fine to sit beside.
+        XCTAssertNoThrow(try CodexHookTrust.trusting([a], in: "[hooks.state]\n\"/h/x:stop:0:0\".trusted_hash = \"sha256:z\"\n"))
+    }
+
+    func testForgettingRemovesOnlyOurExactRecords() throws {
+        let theirs = "[hooks.state.\"/h/hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:theirs\"\n"
+        let withOurs = try XCTUnwrap(CodexHookTrust.trusting([a, b], in: theirs))
+        XCTAssertEqual(CodexHookTrust.forgetting([a, b], in: withOurs), theirs)
+        // A record at our key with someone else's hash isn't ours to remove.
+        let foreign = "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:else\"\n"
+        XCTAssertEqual(CodexHookTrust.forgetting([a], in: foreign), foreign)
+    }
+
+    func testFileLevelTrustUsesTheResolvedHooksPath() throws {
+        let fm = FileManager.default
+        let real = fm.temporaryDirectory.appendingPathComponent("trust-real-\(UUID().uuidString)")
+        let link = fm.temporaryDirectory.appendingPathComponent("trust-link-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: real); try? fm.removeItem(at: link) }
+        try fm.createDirectory(at: real, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: link, withDestinationURL: real)
+        let cmd = "'/x/cc-usage-stats/hooks/codex-session-hook.sh'"
+        let hooks = link.appendingPathComponent("hooks.json"), config = link.appendingPathComponent("config.toml")
+        try JSONSerialization.data(withJSONObject: SessionHookInstaller.installing(command: cmd, into: [:], client: .codex))
+            .write(to: hooks)
+        try "model = \"m\"\n".write(to: config, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(CodexHookTrust.check(hooksURL: hooks, configURL: config, command: cmd), .untrusted(trusted: 0, of: 9))
+        try CodexHookTrust.trust(hooksURL: hooks, configURL: config, command: cmd)
+        XCTAssertEqual(CodexHookTrust.check(hooksURL: hooks, configURL: config, command: cmd), .trusted)
+        // Codex canonicalises the path (e.g. /tmp → /private/tmp); so do we.
+        let text = try String(contentsOf: config, encoding: .utf8)
+        XCTAssertTrue(text.contains(CodexHookTrust.canonicalPath(hooks)))
+        XCTAssertFalse(text.contains(link.path + "/hooks.json"))
+        XCTAssertTrue(text.hasPrefix("model = \"m\"\n"))
+
+        try CodexHookTrust.forget(hooksURL: hooks, configURL: config, command: cmd)
+        XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), "model = \"m\"\n")
     }
 }

@@ -100,6 +100,8 @@ final class SessionTracker: ObservableObject {
     /// Re-read with every scan while Codex tracking is on, so it follows the
     /// user trusting the hooks in Codex.
     @Published private(set) var codexTrust: CodexHookTrust.State = .unknown
+    /// Why "Trust in Codex" didn't work; nil after a success.
+    @Published private(set) var codexTrustError: String?
     var hookFailed: Bool {
         if case .failed = hookState { return true }
         return false
@@ -165,6 +167,20 @@ final class SessionTracker: ObservableObject {
         if isEnabled(client) { installHooks(client) } else { removeHooks(client) }
     }
 
+    /// Settings → "Trust in Codex": records Codex's trust for our hooks, as
+    /// `/hooks` would. Codex sessions started afterwards run them.
+    func trustCodexHooks() {
+        do {
+            try CodexHookTrust.trust(hooksURL: codexHooksURL, configURL: codexConfigURL,
+                                     command: SessionHookInstaller.command(for: codexScriptURL))
+            codexTrustError = nil
+        } catch {
+            codexTrustError = "\(error)"
+        }
+        codexTrust = CodexHookTrust.check(hooksURL: codexHooksURL, configURL: codexConfigURL,
+                                          command: SessionHookInstaller.command(for: codexScriptURL))
+    }
+
     func isEnabled(_ client: SessionClient) -> Bool {
         client == .claude ? enabled : codexEnabled
     }
@@ -226,6 +242,13 @@ final class SessionTracker: ObservableObject {
         if !FileManager.default.fileExists(atPath: url.path) {
             setHookState(.removed, for: client)
             return
+        }
+        if client == .codex {
+            // Our trust records go with the hooks; a failure leaves only
+            // harmless records for hooks that no longer exist.
+            try? CodexHookTrust.forget(hooksURL: codexHooksURL, configURL: codexConfigURL,
+                                       command: SessionHookInstaller.command(for: codexScriptURL))
+            codexTrustError = nil
         }
         do {
             try SessionHookInstaller.uninstall(settingsURL: url, client: client)
