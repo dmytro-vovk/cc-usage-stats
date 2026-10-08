@@ -62,9 +62,10 @@ final class UsageMCPSettings: ObservableObject {
         guard !busy else { return }
         busy = true
         error = nil
+        let lock = ClaudeMCPRegistration.lockURL(appSupport: Paths.appSupportDir)
         Task.detached(priority: .userInitiated) {
             let failure: String?
-            do { try ClaudeMCPRegistration.changeLock.withLock(work); failure = nil } catch { failure = "\(error)" }
+            do { try RegistrationLock.withLock(at: lock, work); failure = nil } catch { failure = "\(error)" }
             await MainActor.run {
                 self.busy = false
                 self.error = failure

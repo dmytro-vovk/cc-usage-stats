@@ -24,14 +24,18 @@ nonisolated enum UsageMCPMigration {
         }
         let link = HelperLink.liveRegistrationCommand
         guard link == HelperLink.liveLink.path else { return }
+        let lock = ClaudeMCPRegistration.lockURL(appSupport: Paths.appSupportDir)
         // Off the main thread: the Claude CLI takes a second or two to start.
-        Task.detached(priority: .utility) { migrate(link: link) }
+        Task.detached(priority: .utility) {
+            // After any change in flight (Settings, another copy); state is
+            // read inside the lock.
+            do { try RegistrationLock.withLock(at: lock) { migrate(link: link) } } catch {
+                log.error("registration lock: \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     static func migrate(link: String) {
-        // After any Settings change in flight; state is read inside the lock.
-        ClaudeMCPRegistration.changeLock.lock()
-        defer { ClaudeMCPRegistration.changeLock.unlock() }
         let claudeJSON = try? Data(contentsOf: ClaudeMCPRegistration.claudeJSONURL)
         if ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON, link: link) {
             if let cli = ClaudeMCPRegistration.liveFindCLI() {

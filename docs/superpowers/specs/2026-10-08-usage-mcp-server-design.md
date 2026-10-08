@@ -117,8 +117,14 @@ launch, after repointing the link, a registration whose command is any
 `*.app/Contents/MacOS/CCUsageStats` with args `["--mcp-server"]` is moved to
 the link: Claude Code through the same CLI remove+add, Codex through the
 same merge-only `update` (one-time backup, CAS rename) — and only when the
-entry already exists. Never creates a registration, never touches a
-hand-made command. Skipped under test.
+entry already exists and is exactly what the app wrote (Claude: only
+`type: stdio`, `command`, `args`; Codex: the block byte-for-byte). Never
+creates a registration, never touches a hand-made one. If the Claude add
+fails after the remove, the old entry is re-added; if that fails too, the
+error carries the command to restore it by hand. Every registration change
+(Settings toggles, migration) holds an exclusive `flock` on
+`cc-usage-stats/mcp-registration.lock`, so two app copies can't interleave.
+Skipped under test.
 
 **Claude Code (user scope)** — via the CLI, `claude mcp remove --scope user
 cc-usage-stats` then `claude mcp add-json --scope user cc-usage-stats

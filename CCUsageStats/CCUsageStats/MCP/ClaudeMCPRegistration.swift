@@ -6,6 +6,10 @@ import Foundation
 /// constantly and without a lock, so we never write it ourselves: the
 /// `claude mcp` CLI does, and we only *read* the file for status.
 nonisolated enum ClaudeMCPRegistration {
+    /// Lock file serialising registration changes across threads and app
+    /// copies (Settings toggles, launch migration).
+    static func lockURL(appSupport: URL) -> URL { appSupport.appendingPathComponent("mcp-registration.lock") }
+
     static let serverName = MCPServer.serverName
 
     enum Status: Equatable {
@@ -92,7 +96,9 @@ nonisolated enum ClaudeMCPRegistration {
               let root = try? JSONSerialization.jsonObject(with: claudeJSON) as? [String: Any],
               let entry = (root["mcpServers"] as? [String: Any])?[serverName] as? [String: Any],
               let command = entry["command"] as? String,
-              entry["args"] as? [String] == [MCPServer.launchFlag]
+              entry["args"] as? [String] == [MCPServer.launchFlag],
+              Set(entry.keys).isSubset(of: ["type", "command", "args"]),
+              (entry["type"] as? String ?? "stdio") == "stdio"
         else { return false }
         return command != link && HelperLink.isBundleExecutable(command)
     }
@@ -107,15 +113,13 @@ nonisolated enum ClaudeMCPRegistration {
         do {
             try install(cli: cli, binary: link, run: run)
         } catch {
-            _ = try? run(cli, addArguments(binary: old))
-            throw error
+            let restored = (try? run(cli, addArguments(binary: old)))?.status == 0
+            if restored { throw error }
+            throw RegistrationError.cliFailed(
+                "\(error); restoring the old entry failed too. Run in Terminal: \(manualCommand(binary: old))")
         }
         return true
     }
-
-    /// Serialises every registration change (Settings toggles, launch
-    /// migration): each is a multi-step CLI or file edit.
-    static let changeLock = NSLock()
 
     static func uninstall(cli: String, run: Runner) throws {
         let (status, output) = try run(cli, removeArguments)

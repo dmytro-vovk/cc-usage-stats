@@ -7,8 +7,8 @@ final class UsageMCPMigrationTests: XCTestCase {
     private let bundle = "/Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats"
     private let link = "/Users/u/Library/Application Support/cc-usage-stats/bin/ccusagestats"
 
-    private func claudeJSON(command: String, args: [String] = ["--mcp-server"]) -> Data {
-        let entry: [String: Any] = ["type": "stdio", "command": command, "args": args]
+    private func claudeJSON(command: String, args: [String] = ["--mcp-server"], extra: [String: Any] = [:]) -> Data {
+        let entry: [String: Any] = ["type": "stdio", "command": command, "args": args].merging(extra) { $1 }
         return try! JSONSerialization.data(withJSONObject: ["mcpServers": ["cc-usage-stats": entry], "other": 1])
     }
 
@@ -29,6 +29,9 @@ final class UsageMCPMigrationTests: XCTestCase {
                        "a hand-made entry")
         XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON(command: bundle, args: ["--mcp-server", "-v"]), link: link),
                        "hand-edited args")
+        XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON(command: bundle, extra: ["env": ["A": "1"]]), link: link),
+                       "the user added env")
+        XCTAssertFalse(ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON(command: bundle, extra: ["type": "sse"]), link: link))
     }
 
     func testClaudeMigrationReRegistersThroughTheCLI() throws {
@@ -53,6 +56,33 @@ final class UsageMCPMigrationTests: XCTestCase {
             return (args.last?.contains(self.link) == true ? 1 : 0, "")
         })
         XCTAssertEqual(runs.last, ClaudeMCPRegistration.addArguments(binary: bundle), "the user's registration is put back")
+    }
+
+    func testClaudeMigrationReportsAFailedRestore() {
+        XCTAssertThrowsError(try ClaudeMCPRegistration.migrate(cli: "/c", link: link, claudeJSON: claudeJSON(command: bundle)) { _, args in
+            (args[1] == "add-json" ? 1 : 0, "disk full")
+        }) { error in
+            XCTAssertTrue("\(error)".contains("claude mcp add-json --scope user cc-usage-stats"),
+                          "tells the user how to put it back: \(error)")
+        }
+    }
+
+    func testRegistrationLockExcludesOtherHolders() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("reg-lock-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let inside = expectation(description: "second holder ran")
+        var order: [Int] = []
+        let lock = NSLock()
+        try RegistrationLock.withLock(at: url) {
+            DispatchQueue.global().async {
+                try? RegistrationLock.withLock(at: url) { lock.withLock { order.append(2) } }
+                inside.fulfill()
+            }
+            Thread.sleep(forTimeInterval: 0.3)
+            lock.withLock { order.append(1) }
+        }
+        wait(for: [inside], timeout: 5)
+        XCTAssertEqual(order, [1, 2])
     }
 
     // MARK: Codex
