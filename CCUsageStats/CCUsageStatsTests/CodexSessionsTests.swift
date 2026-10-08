@@ -477,10 +477,11 @@ final class CodexHookTrustWritingTests: XCTestCase {
         XCTAssertEqual(CodexHookTrust.states(inConfig: out)["/h/hooks.json:pre_tool_use:0:0"]?.trustedHash, "sha256:theirs")
     }
 
-    func testQuotesInThePathAreEscaped() throws {
+    /// A key needing escapes is refused rather than written: escaped keys
+    /// are exactly what the edit can't match reliably later.
+    func testQuotesInThePathAreRefused() {
         let odd = CodexHookTrust.Entry(key: #"/Users/o"b\c/.codex/hooks.json:stop:0:0"#, hash: "sha256:x")
-        let out = try XCTUnwrap(CodexHookTrust.trusting([odd], in: ""))
-        XCTAssertTrue(trusted(out, [odd]))
+        XCTAssertThrowsError(try CodexHookTrust.trusting([odd], in: ""))
     }
 
     /// Appending a [hooks.state."…"] table next to these would be invalid
@@ -506,6 +507,7 @@ final class CodexHookTrustWritingTests: XCTestCase {
             "[hooks.state.\"\\u002Fh\\u002Fhooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:old\"\n",
             "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"\"\"\nsha256:old\n\"\"\"\n",
             "[hooks.state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = 'sha256:old'\n",
+            "[\"\\u0068ooks\".state.\"/h/hooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:old\"\n",
         ] {
             XCTAssertThrowsError(try CodexHookTrust.trusting([a], in: text), text.debugDescription)
         }

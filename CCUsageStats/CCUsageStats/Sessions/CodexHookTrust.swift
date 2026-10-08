@@ -242,7 +242,7 @@ nonisolated enum CodexHookTrust {
         // control characters in our keys, no escapes in hook keys (an
         // escaped spelling of our key would be missed and then defined twice).
         if text.unicodeScalars.contains("\r") { throw TrustError.unsupportedLayout }
-        if keys.contains(where: { $0.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F } }) {
+        if keys.contains(where: { $0.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F || $0 == "\"" || $0 == "\\" } }) {
             throw TrustError.unsupportedLayout
         }
         var lines = text.components(separatedBy: "\n")
@@ -253,7 +253,8 @@ nonisolated enum CodexHookTrust {
         CodexMCPConfig.scan(lines) { i, table, isHeader in
             if isHeader {
                 allHeaders.append(i)
-                if table?.first == "hooks", CodexMCPConfig.stripComment(lines[i]).contains("\\") { unsupported = true }
+                // Escapes could spell a hooks key we'd then define twice.
+                if CodexMCPConfig.stripComment(lines[i]).contains("\\") { unsupported = true }
                 if let t = table, t.count == 3, t[0] == "hooks", t[1] == "state", keys.contains(t[2]) { ourTables[t[2]] = i }
                 return
             }
@@ -261,7 +262,7 @@ nonisolated enum CodexHookTrust {
             guard let eq = assignment(in: line) else { return }
             let keyPart = CodexMCPConfig.keySegments(line[..<eq])
             let full = (table ?? []) + keyPart
-            if full.first == "hooks", line[..<eq].contains("\\") { unsupported = true }
+            if line[..<eq].contains("\\") { unsupported = true }
             // Our own records must be the plain shape we rewrite line by line.
             if let t = table, t.count == 3, t[0] == "hooks", t[1] == "state", keys.contains(t[2]) {
                 let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
