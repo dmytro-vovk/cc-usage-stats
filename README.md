@@ -689,9 +689,11 @@ over ad-hoc signing when present. Release artifacts (`release.sh`) always
 use ad-hoc signing regardless.
 
 **It does not keep the OAuth-token Keychain entry usable across
-rebuilds** — expect the menubar to show "Token rejected" after a rebuild
-with or without it. (Measured on macOS 26.5.2.) The entry's ACL carries
-two independent checks, and a certificate only stabilises one of them:
+rebuilds** — with or without it, the first launch of each new build asks
+for Keychain access; **Always Allow** adds that build, while denying it
+leaves the menubar on "Token rejected". (Measured on macOS 26.5.2,
+re-checked on macOS 27 on 2026-10-08.) The entry's ACL carries two
+independent checks, and a certificate only stabilises one of them:
 
 - The *trusted application* entry is pinned to the certificate
   (`identifier "dev.dv.ccusagestats.CCUsageStats" and certificate

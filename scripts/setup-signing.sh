@@ -7,7 +7,8 @@
 # rebuilds. That entry's ACL has a `partition_id` component which macOS
 # pins to `cdhash:<hash>` whenever the signer has no Team ID — and a
 # self-signed cert never has one. So any rebuild that changes a build
-# input still locks the new binary out, and the app still shows "Token
+# input still locks the new binary out: macOS asks for Keychain access on
+# its first launch ("Always Allow" adds it), and denying leaves "Token
 # rejected". Recover from the dropdown's "Re-import from Claude Code
 # Keychain" button. See the README's "Scripts" section for the details.
 #
@@ -80,6 +81,7 @@ All future rebuilds then reuse the same signing identity.
 
 Note: this does not preserve the app's OAuth-token Keychain entry across
 rebuilds. macOS pins that entry to the code hash, which changes whenever
-a build input does. When the menubar shows "Token rejected", use the
+a build input does: expect a Keychain prompt on each new build's first
+launch ("Always Allow"). If the menubar shows "Token rejected", use the
 dropdown's "Re-import from Claude Code Keychain" button.
 EOF
