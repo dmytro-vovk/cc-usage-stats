@@ -105,9 +105,13 @@ final class MenuViewModelAlertTests: XCTestCase {
     }
 
     func testColoringFollowsTheSettings() {
+        // Shares UserDefaults.standard with the app: put the user's values back.
+        let d = UserDefaults.standard
+        let saved = ["cc-usage-stats.colorByPace", "cc-usage-stats.paceThreshold"].map { ($0, d.object(forKey: $0)) }
+        addTeardownBlock { for (k, v) in saved { d.set(v, forKey: k) } }
         let vm = viewModel()
         vm.colorByPace = false
-        XCTAssertEqual(vm.coloring, .absolute)
+        XCTAssertFalse(vm.coloring.byPace, "a saved pace threshold doesn't matter while colouring is absolute")
         vm.colorByPace = true
         vm.paceThreshold = 2
         XCTAssertEqual(vm.coloring, UsageColoring(byPace: true, burnRateThreshold: 2))

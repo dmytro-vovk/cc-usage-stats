@@ -3,8 +3,9 @@ import CoreServices
 import Combine
 
 /// Keeps the current Codex reading: passively from the CLI's session logs
-/// (FSEvents on `~/.codex/sessions`), and optionally by polling the live
-/// usage endpoint. Both feed one `snapshot` — whichever observation is newer.
+/// (FSEvents on `~/.codex/sessions`), and optionally by polling — through
+/// `codex app-server`, or the usage endpoint when that can't answer. Both
+/// feed one `snapshot` — whichever observation is newer.
 @MainActor
 final class CodexMonitor: ObservableObject {
     static let trackingKey = "cc-usage-stats.codexTracking"
@@ -41,6 +42,7 @@ final class CodexMonitor: ObservableObject {
     var onSnapshotChange: ((CodexSnapshot?, CodexSnapshot?) -> Void)?
 
     private let defaults: UserDefaults
+    private let liveRead: LiveRead
     private var started = false
     private var stream: FSEventStreamRef?
     private var rescanTimer: Timer?
@@ -57,13 +59,29 @@ final class CodexMonitor: ObservableObject {
     init(
         sessionsDirectory: URL = CodexSessionReader.defaultDirectory,
         authURL: URL = CodexCredentials.defaultURL,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        liveRead: @escaping LiveRead = CodexMonitor.defaultLiveRead
     ) {
+        self.liveRead = liveRead
         self.sessionsDirectory = sessionsDirectory
         self.authURL = authURL
         self.defaults = defaults
         trackingEnabled = defaults.bool(forKey: Self.trackingKey)
         livePollingEnabled = defaults.bool(forKey: Self.livePollingKey)
+    }
+
+    typealias LiveRead = @Sendable (_ authURL: URL) async -> Result<CodexSnapshot, CodexLiveReadError>
+
+    private static let appServer = CodexAppServerRunner()
+
+    nonisolated static let defaultLiveRead: LiveRead = { authURL in
+        await CodexLiveRead.read(
+            appServer: { await appServer.read() },
+            endpoint: {
+                let creds = CodexLiveClient.readCredentials(at: authURL)
+                return await CodexLiveClient.fetch(credentials: creds, now: Int64(Date().timeIntervalSince1970))
+            }
+        )
     }
 
     func start() {
@@ -218,15 +236,14 @@ final class CodexMonitor: ObservableObject {
         lastLiveAttempt = Date()
         Task { @MainActor in
             defer { self.polling = false }
-            let creds = await Task.detached { CodexLiveClient.readCredentials(at: authURL) }.value
-            let result = await CodexLiveClient.fetch(credentials: creds, now: Int64(Date().timeIntervalSince1970))
+            let result = await self.liveRead(authURL)
             guard gen == self.liveGeneration, self.started, self.trackingEnabled, self.livePollingEnabled else { return }
             switch result {
             case .success(let s):
                 self.liveSnapshot = s
                 self.liveError = nil
-            case .failure(let f):
-                self.liveError = f.message
+            case .failure(let e):
+                self.liveError = e.message
             }
             self.publish()
         }

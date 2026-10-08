@@ -314,8 +314,9 @@ struct AccountsSettingsView: View {
         }
         return """
         Session logs only update when Codex runs, so a reading is "as of" its time; a window \
-        past its reset shows 0%. Live polling asks chatgpt.com every 5 minutes using the Codex \
-        CLI's sign-in in ~/.codex/auth.json — read-only, never refreshed.
+        past its reset shows 0%. Live polling asks the Codex CLI (codex app-server) every \
+        5 minutes; Codex renews its own sign-in. If the CLI can't answer, it falls back to \
+        chatgpt.com with the sign-in in ~/.codex/auth.json, read-only.
         """
     }
 

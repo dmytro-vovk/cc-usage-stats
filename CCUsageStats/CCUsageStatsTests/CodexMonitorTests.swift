@@ -43,4 +43,28 @@ final class CodexMonitorTests: XCTestCase {
         XCTAssertNil(CodexRolloutParser.parse(line: line))
         XCTAssertNil(CodexLiveClient.parseUsage(Data(#"{"rate_limit":{"primary_window":{"used_percent":-1e100,"limit_window_seconds":18000,"reset_at":1}}}"#.utf8), observedAt: 0))
     }
+
+    func testLivePollingPublishesTheAppServerReadingOrItsError() async throws {
+        let d = UserDefaults(suiteName: "CodexMonitorTests-\(UUID().uuidString)")!
+        d.set(true, forKey: CodexMonitor.trackingKey)
+        d.set(true, forKey: CodexMonitor.livePollingKey)
+        let empty = FileManager.default.temporaryDirectory.appendingPathComponent("cm-\(UUID().uuidString)/sessions")
+        let reading = CodexSnapshot(windows: [CodexWindow(usedPercent: 33, windowMinutes: 10080, resetsAt: 9_999_999_999)],
+                                    planType: "prolite", observedAt: 100, source: .appServer)
+        let m = CodexMonitor(sessionsDirectory: empty, authURL: empty.appendingPathComponent("none.json"), defaults: d,
+                             liveRead: { _ in .success(reading) })
+        m.start()
+        defer { m.stop() }
+        for _ in 0..<50 where m.snapshot == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertEqual(m.snapshot, reading)
+        XCTAssertNil(m.liveError)
+
+        let failing = CodexMonitor(sessionsDirectory: empty, authURL: empty.appendingPathComponent("none.json"), defaults: d,
+                                   liveRead: { _ in .failure(CodexLiveReadError(message: "Codex: auth required")) })
+        failing.start()
+        defer { failing.stop() }
+        for _ in 0..<50 where failing.liveError == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertEqual(failing.liveError, "Codex: auth required")
+        XCTAssertNil(failing.snapshot)
+    }
 }

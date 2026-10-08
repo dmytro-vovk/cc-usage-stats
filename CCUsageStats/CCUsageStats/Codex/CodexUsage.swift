@@ -32,13 +32,16 @@ nonisolated struct CodexWindow: Equatable, Sendable {
 nonisolated struct CodexSnapshot: Equatable, Sendable {
     enum Source: String, Equatable, Sendable {
         case sessionLog = "session log"
+        /// The usage endpoint (fallback).
         case live = "live"
+        /// `codex app-server`.
+        case appServer = "app-server"
     }
 
     /// Shortest window first, so a 5-hour row sits above the weekly one.
     let windows: [CodexWindow]
     let planType: String?
-    /// Epoch seconds of the log event, or of the live fetch.
+    /// Epoch seconds of the log event, or of the live read.
     let observedAt: Int64
     let source: Source
 
