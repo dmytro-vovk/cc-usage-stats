@@ -34,8 +34,27 @@ struct CCUsageStatsApp: App {
 }
 
 /// Receives `ccusagestats://` URLs (Info.plist `CFBundleURLTypes`).
+///
+/// Through our own `kAEGetURL` handler rather than `application(_:open:)`,
+/// which a MenuBarExtra-only SwiftUI app never receives. Installed before
+/// launch finishes (so the URL that launched the app arrives) and again
+/// after, in case SwiftUI claimed the event in between.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    func application(_ application: NSApplication, open urls: [URL]) {
-        urls.forEach(AppURLRouter.shared.handle)
+    func applicationWillFinishLaunching(_ notification: Notification) { claimURLEvents() }
+    func applicationDidFinishLaunching(_ notification: Notification) { claimURLEvents() }
+
+    private func claimURLEvents() {
+        NSAppleEventManager.shared().setEventHandler(
+            self, andSelector: #selector(handleGetURL(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let url = Self.url(from: event) else { return }
+        AppURLRouter.shared.handle(url)
+    }
+
+    nonisolated static func url(from event: NSAppleEventDescriptor) -> URL? {
+        event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue.flatMap(URL.init(string:))
     }
 }

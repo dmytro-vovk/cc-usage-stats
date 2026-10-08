@@ -35,3 +35,14 @@ final class AppURLCommandTests: XCTestCase {
         XCTAssertNil(parse("ccusagestats://settings?tab=alerts&tab=general"))
     }
 }
+
+final class AppDelegateURLEventTests: XCTestCase {
+    func testReadsTheURLFromAGetURLAppleEvent() {
+        let event = NSAppleEventDescriptor(eventClass: AEEventClass(kInternetEventClass), eventID: AEEventID(kAEGetURL),
+                                           targetDescriptor: nil, returnID: AEReturnID(kAutoGenerateReturnID),
+                                           transactionID: AETransactionID(kAnyTransactionID))
+        event.setParam(NSAppleEventDescriptor(string: "ccusagestats://settings?tab=alerts"), forKeyword: keyDirectObject)
+        XCTAssertEqual(AppDelegate.url(from: event), URL(string: "ccusagestats://settings?tab=alerts"))
+        XCTAssertNil(AppDelegate.url(from: NSAppleEventDescriptor.null()))
+    }
+}
