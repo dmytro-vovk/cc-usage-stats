@@ -163,7 +163,8 @@ nonisolated enum CodexAppServer {
         cli: String,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         timeout: TimeInterval = 20,
-        now: @escaping @Sendable () -> Int64
+        now: @escaping @Sendable () -> Int64,
+        readerFinished: (@Sendable () -> Void)? = nil
     ) -> Result<CodexSnapshot, Failure> {
         let child: SpawnedChild
         do { child = try SpawnedChild(cli: cli, arguments: ["app-server"], environment: childEnvironment(cli: cli, base: environment)) } catch {
@@ -171,12 +172,12 @@ nonisolated enum CodexAppServer {
         }
         let outcome = OutcomeBox()
         let answered = DispatchSemaphore(value: 0)
+        let readerDone = DispatchSemaphore(value: 0)
         let fd = child.stdoutFD
-        readers.add(1)
         DispatchQueue.global(qos: .utility).async {
             // The reader owns its descriptor and closes it, so it can never
             // read one that was closed and reused under it.
-            defer { close(fd); readers.add(-1); answered.signal() }
+            defer { close(fd); readerFinished?(); answered.signal(); readerDone.signal() }
             var chunk = [UInt8](repeating: 0, count: 64 * 1024)
             var buffer = Data()
             while !outcome.cancelled {
@@ -217,6 +218,9 @@ nonisolated enum CodexAppServer {
         // Whatever the server left running in its group (the native binary
         // behind npm's node wrapper, say) goes too.
         child.finish()
+        // The reader sees the cancel within one poll interval, or EOF now
+        // that the group is gone: don't return with it still running.
+        _ = readerDone.wait(timeout: .now() + 1)
         guard gotAnswer else { return .failure(.timedOut) }
         return outcome.get() ?? .failure(.noAnswer)
     }
@@ -334,16 +338,6 @@ nonisolated enum CodexAppServer {
         deinit { closeStdin() }
     }
 
-    /// Stdout readers still running — for tests.
-    static var liveReaders: Int { readers.value }
-    private static let readers = Counter()
-
-    private final class Counter: @unchecked Sendable {
-        private let lock = NSLock()
-        private var n = 0
-        func add(_ d: Int) { lock.lock(); n += d; lock.unlock() }
-        var value: Int { lock.lock(); defer { lock.unlock() }; return n }
-    }
 
     private final class OutcomeBox: @unchecked Sendable {
         private let lock = NSLock()

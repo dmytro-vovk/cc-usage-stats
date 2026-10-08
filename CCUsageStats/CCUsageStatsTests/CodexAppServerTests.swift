@@ -172,13 +172,33 @@ final class CodexAppServerTests: XCTestCase {
         let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("cas-pid-\(UUID().uuidString)").path
         let cli = try fakeCLI("sleep 30 & echo $! > '\(pidFile)'; exit 0")
         let start = Date()
-        XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 1, now: { 0 }), .failure(.timedOut))
+        // This read's own reader, not a process-wide count: the test host is
+        // the app, whose Codex monitor may be reading at the same time.
+        let readerStopped = DispatchSemaphore(value: 0)
+        XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 1, now: { 0 }, readerFinished: { readerStopped.signal() }),
+                       .failure(.timedOut))
         XCTAssertLessThan(Date().timeIntervalSince(start), 3)
-        XCTAssertEqual(CodexAppServer.liveReaders, 0, "the stdout reader stopped")
+        XCTAssertEqual(readerStopped.wait(timeout: .now()), .success, "the stdout reader stopped before read returned")
         let pid = try XCTUnwrap(pid_t(String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
         var alive = true
         for _ in 0..<20 where alive { alive = kill(pid, 0) == 0; if alive { usleep(50_000) } }
         XCTAssertFalse(alive, "the server's whole process group is killed, grandchildren included")
+    }
+
+    /// A holder that left the process group survives the kill, so only the
+    /// reader's own cancel can stop it — and read must wait for that.
+    func testReadWaitsForItsReaderEvenWhenStdoutStaysOpen() throws {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("cas-pid-\(UUID().uuidString)").path
+        let cli = try fakeCLI(#"/usr/bin/perl -e 'setpgrp(0,0); open(F,">","\#(pidFile)"); print F $$; close F; exec "sleep","30"' & exit 0"#)
+        defer {
+            if let pid = (try? String(contentsOfFile: pidFile, encoding: .utf8)).flatMap({ pid_t($0) }) { kill(pid, SIGKILL) }
+        }
+        let readerStopped = DispatchSemaphore(value: 0)
+        // 1.1 s: off the reader's 200 ms poll ticks, so it can't see the
+        // cancel by luck before read returns.
+        XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 1.1, now: { 0 }, readerFinished: { readerStopped.signal() }),
+                       .failure(.timedOut))
+        XCTAssertEqual(readerStopped.wait(timeout: .now()), .success, "the stdout reader stopped before read returned")
     }
 
     func testAnAnswerThenARefusalToExitStaysBounded() throws {
