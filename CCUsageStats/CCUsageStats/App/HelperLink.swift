@@ -33,11 +33,15 @@ nonisolated enum HelperLink {
 
     /// Atomically (re)points `link` at `target`: a fresh symlink renamed over
     /// the old one, so an agent starting at that moment never sees it missing.
+    /// Only ever replaces a symlink, and only inside a real `bin` directory —
+    /// never a file or directory someone else put there.
     @discardableResult
     static func update(link: URL, target: String) throws -> String {
         let fm = FileManager.default
-        if (try? fm.destinationOfSymbolicLink(atPath: link.path)) == target { return link.path }
         let dir = link.deletingLastPathComponent()
+        if let type = fileType(dir.path), type != S_IFDIR { throw POSIXError(.ENOTDIR) }
+        if let type = fileType(link.path), type != S_IFLNK { throw POSIXError(.EEXIST) }
+        if (try? fm.destinationOfSymbolicLink(atPath: link.path)) == target { return link.path }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let staged = dir.appendingPathComponent(".\(link.lastPathComponent).\(ProcessInfo.processInfo.processIdentifier).tmp")
         try? fm.removeItem(at: staged)
@@ -48,6 +52,13 @@ nonisolated enum HelperLink {
             throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
         }
         return link.path
+    }
+
+    /// `lstat` file type (`S_IFLNK`, `S_IFDIR`, …), nil when absent.
+    private static func fileType(_ path: String) -> mode_t? {
+        var st = stat()
+        guard lstat(path, &st) == 0 else { return nil }
+        return st.st_mode & S_IFMT
     }
 
     /// The command to register: the link while it leads to this executable,

@@ -64,7 +64,9 @@ final class UsageMCPSettings: ObservableObject {
         error = nil
         Task.detached(priority: .userInitiated) {
             let failure: String?
+            ClaudeMCPRegistration.changeLock.lock()
             do { try work(); failure = nil } catch { failure = "\(error)" }
+            ClaudeMCPRegistration.changeLock.unlock()
             await MainActor.run {
                 self.busy = false
                 self.error = failure

@@ -46,6 +46,15 @@ final class UsageMCPMigrationTests: XCTestCase {
         XCTAssertEqual(runs, [], "no CLI run when nothing to migrate")
     }
 
+    func testClaudeMigrationRestoresTheOldEntryWhenTheAddFails() {
+        var runs: [[String]] = []
+        XCTAssertThrowsError(try ClaudeMCPRegistration.migrate(cli: "/c", link: link, claudeJSON: claudeJSON(command: bundle)) { _, args in
+            runs.append(args)
+            return (args.last?.contains(self.link) == true ? 1 : 0, "")
+        })
+        XCTAssertEqual(runs.last, ClaudeMCPRegistration.addArguments(binary: bundle), "the user's registration is put back")
+    }
+
     // MARK: Codex
 
     private let theirs = "model = \"gpt-5\"\n\n[mcp_servers.other]\ncommand = \"x\"\n"
@@ -66,6 +75,10 @@ final class UsageMCPMigrationTests: XCTestCase {
         XCTAssertNil(try CodexMCPConfig.migrating(migrated, to: link), "already moved")
         let custom = try CodexMCPConfig.installing(command: "/opt/custom/wrapper", into: theirs)
         XCTAssertNil(try CodexMCPConfig.migrating(custom, to: link), "a hand-made entry")
+        let withEnv = old + "\n[mcp_servers.cc-usage-stats.env]\nFOO = \"bar\"\n"
+        XCTAssertNil(try CodexMCPConfig.migrating(withEnv, to: link), "the user added an env table")
+        let withArgs = old.replacingOccurrences(of: #"args = ["--mcp-server"]"#, with: #"args = ["--mcp-server", "-v"]"#)
+        XCTAssertNil(try CodexMCPConfig.migrating(withArgs, to: link), "the user changed args")
     }
 
     func testCodexFileMigrationKeepsTheBackupRule() throws {

@@ -17,14 +17,15 @@ enum AppURLCommand: Equatable {
     init?(url: URL) {
         guard url.scheme?.lowercased() == Self.scheme,
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.path.isEmpty || components.path == "/"
+              components.path.isEmpty || components.path == "/",
+              components.fragment == nil
         else { return nil }
         let query = components.queryItems ?? []
         switch components.host?.lowercased() {
         case "open" where query.isEmpty: self = .open
         case "refresh" where query.isEmpty: self = .refresh
-        case "settings":
-            let tab = query.first { $0.name == "tab" }?.value?.lowercased()
+        case "settings" where query.isEmpty || (query.count == 1 && query[0].name == "tab"):
+            let tab = query.first?.value?.lowercased()
             guard let match = tab.map({ t in SettingsTab.allCases.first { $0.title.lowercased() == t } }) ?? .general
             else { return nil }
             self = .settings(match)

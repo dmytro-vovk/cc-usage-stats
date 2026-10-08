@@ -383,12 +383,14 @@ Skip this if you've never had the Phase 1 statusline integration.
   the link now points into the new location, Settings shows the toggles
   on with no **Repair** row, and `claude mcp list` is still Connected.
 - Upgrade from v0.14 with both registered (commands = the bundle path):
-  after the first launch both name the link; `config.toml` differs from
-  `config.toml.cc-usage-stats.bak` only in our table's `command`. With
-  nothing registered, neither file changes.
+  after the first launch both name the link; `config.toml` differs from a
+  copy taken just before the launch only in our table's `command` (the
+  table moves to the end of the file). With nothing registered, neither
+  file changes. An entry with extra args / env is left alone.
 - Open the app straight from a quarantined download (translocated): the
   link is untouched; turning the toggle on registers the translocated
-  path, and Settings shows **Repair** once moved to Applications.
+  path. Move it to Applications and launch: the registration moves to the
+  link, no **Repair** row.
 - **Agent instructions → Copy**: the button reads "Copied" for ~2 s; the
   clipboard holds a markdown section naming `get_usage`, the
   `claude mcp add-json …` command and the `[mcp_servers.cc-usage-stats]`

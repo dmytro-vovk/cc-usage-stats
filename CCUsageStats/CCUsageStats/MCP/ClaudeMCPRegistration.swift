@@ -98,12 +98,24 @@ nonisolated enum ClaudeMCPRegistration {
     }
 
     /// Re-registers a bundle-path entry under `link`. Returns whether it ran.
+    /// add-json refuses an existing name, so this is remove-then-add; if the
+    /// add fails, the user's old entry is put back.
     @discardableResult
     static func migrate(cli: String, link: String, claudeJSON: Data?, run: Runner) throws -> Bool {
-        guard needsMigration(claudeJSON: claudeJSON, link: link) else { return false }
-        try install(cli: cli, binary: link, run: run)
+        guard needsMigration(claudeJSON: claudeJSON, link: link),
+              case .elsewhere(let old) = status(claudeJSON: claudeJSON, binary: link) else { return false }
+        do {
+            try install(cli: cli, binary: link, run: run)
+        } catch {
+            _ = try? run(cli, addArguments(binary: old))
+            throw error
+        }
         return true
     }
+
+    /// Serialises every registration change (Settings toggles, launch
+    /// migration): each is a multi-step CLI or file edit.
+    static let changeLock = NSLock()
 
     static func uninstall(cli: String, run: Runner) throws {
         let (status, output) = try run(cli, removeArguments)

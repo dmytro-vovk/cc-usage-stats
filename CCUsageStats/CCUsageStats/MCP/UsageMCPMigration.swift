@@ -29,6 +29,9 @@ nonisolated enum UsageMCPMigration {
     }
 
     static func migrate(link: String) {
+        // After any Settings change in flight; state is read inside the lock.
+        ClaudeMCPRegistration.changeLock.lock()
+        defer { ClaudeMCPRegistration.changeLock.unlock() }
         let claudeJSON = try? Data(contentsOf: ClaudeMCPRegistration.claudeJSONURL)
         if ClaudeMCPRegistration.needsMigration(claudeJSON: claudeJSON, link: link) {
             if let cli = ClaudeMCPRegistration.liveFindCLI() {

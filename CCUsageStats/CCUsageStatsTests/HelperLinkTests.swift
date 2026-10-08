@@ -38,15 +38,23 @@ final class HelperLinkTests: XCTestCase {
         XCTAssertEqual(leftovers, ["ccusagestats"], "no staging files left behind")
     }
 
-    func testReplacesAStaleFileButNotADirectory() throws {
+    func testNeverReplacesSomethingThatIsNotOurSymlink() throws {
         try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
-        FileManager.default.createFile(atPath: link.path, contents: Data("old".utf8))
-        _ = try HelperLink.update(link: link, target: exe.path)
-        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), exe.path)
+        FileManager.default.createFile(atPath: link.path, contents: Data("theirs".utf8))
+        XCTAssertThrowsError(try HelperLink.update(link: link, target: exe.path))
+        XCTAssertEqual(try String(contentsOf: link, encoding: .utf8), "theirs")
 
         try FileManager.default.removeItem(at: link)
         try FileManager.default.createDirectory(at: link, withIntermediateDirectories: true)
         XCTAssertThrowsError(try HelperLink.update(link: link, target: exe.path))
+    }
+
+    func testRefusesASymlinkedBinDirectory() throws {
+        let elsewhere = dir.appendingPathComponent("Documents")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link.deletingLastPathComponent(), withDestinationURL: elsewhere)
+        XCTAssertThrowsError(try HelperLink.update(link: link, target: exe.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path), [])
     }
 
     func testTranslocatedCopiesAreNotLinked() {

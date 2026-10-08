@@ -311,8 +311,10 @@ a large fan-out.
   registered, with the same CLI / backup rules. A copy Gatekeeper runs
   from a temporary *App Translocation* path (opened straight from
   Downloads) doesn't touch the link and registers its own path; move it to
-  Applications. A hand-made entry with another command shows
-  **Registered for another copy** with **Repair**.
+  Applications. A hand-made entry (another command, extra args or env)
+  is never migrated; one with another command shows **Registered for
+  another copy** with **Repair**. If `bin/ccusagestats` is something
+  other than a symlink, it's left alone and the bundle path is used.
 - **By hand / one-off:**
 
   ```bash

@@ -28,5 +28,10 @@ final class AppURLCommandTests: XCTestCase {
         XCTAssertNil(parse("ccusagestats://open/extra"))
         XCTAssertNil(parse("https://open"))
         XCTAssertNil(parse("ccusagestats:open"))
+        XCTAssertNil(parse("ccusagestats://open#x"))
+        XCTAssertNil(parse("ccusagestats://refresh?x=1"))
+        XCTAssertNil(parse("ccusagestats://settings?foo=x"))
+        XCTAssertNil(parse("ccusagestats://settings?tab=alerts&extra=x"))
+        XCTAssertNil(parse("ccusagestats://settings?tab=alerts&tab=general"))
     }
 }

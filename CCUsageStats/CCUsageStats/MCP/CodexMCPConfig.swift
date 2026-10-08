@@ -75,7 +75,9 @@ nonisolated enum CodexMCPConfig {
     /// no block, already `link`, or a command the user chose.
     static func migrating(_ text: String, to link: String) throws -> String? {
         guard let command = registeredCommand(in: text), command != link,
-              HelperLink.isBundleExecutable(command) else { return nil }
+              HelperLink.isBundleExecutable(command),
+              isInstalled(command: command, in: text)  // exactly what we wrote: no extra args, env or sub-tables
+        else { return nil }
         return try installing(command: link, into: text)
     }
 
