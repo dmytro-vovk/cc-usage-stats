@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# setup-signing.sh — create a stable self-signed code-signing identity
-# in the user's login keychain. With ad-hoc signing (CODE_SIGN_IDENTITY=-)
-# every rebuild gets a fresh code hash, which makes macOS Keychain reject
-# the existing OAuth-token entry's ACL — the app then shows "Token
-# rejected" until you re-paste. A stable identity keeps the ACL valid
-# across rebuilds.
+# setup-signing.sh — create a stable self-signed code-signing identity in
+# the user's login keychain, so local builds carry a real Authority
+# instead of an ad-hoc signature (CODE_SIGN_IDENTITY=-).
+#
+# This does NOT keep the app's OAuth-token Keychain entry usable across
+# rebuilds. That entry's ACL has a `partition_id` component which macOS
+# pins to `cdhash:<hash>` whenever the signer has no Team ID — and a
+# self-signed cert never has one. So any rebuild that changes a build
+# input still locks the new binary out, and the app still shows "Token
+# rejected". Recover from the dropdown's "Re-import from Claude Code
+# Keychain" button. See the README's "Scripts" section for the details.
 #
 # Idempotent: a second run is a no-op once the identity exists.
 # Run once after cloning the repo, then `./scripts/build.sh` picks it up
@@ -71,6 +76,10 @@ cat <<EOF
 
 Next time you run scripts/build.sh, macOS may show a one-time prompt
 asking codesign for permission to use the new key — click "Always Allow".
-After that, all future rebuilds reuse the same signature and your OAuth
-token entry in Keychain stays accessible across builds.
+All future rebuilds then reuse the same signing identity.
+
+Note: this does not preserve the app's OAuth-token Keychain entry across
+rebuilds. macOS pins that entry to the code hash, which changes whenever
+a build input does. When the menubar shows "Token rejected", use the
+dropdown's "Re-import from Claude Code Keychain" button.
 EOF

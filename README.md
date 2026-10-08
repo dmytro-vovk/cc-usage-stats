@@ -609,14 +609,32 @@ security delete-identity -c "CCUsageStats Dev"
 ./scripts/release.sh v0.X.Y  # builds dist/v0.X.Y/{zip,dmg} for a release
 ```
 
-`setup-signing.sh` is optional but recommended for local dev. Without it,
-each rebuild gets a fresh ad-hoc code hash — macOS Keychain rejects the
-existing OAuth-token entry's ACL after every rebuild, which surfaces in
-the menubar as "Token rejected" until you re-paste. The script creates
-a `CCUsageStats Dev` self-signed certificate in your login keychain so
-the signature stays stable across rebuilds and the token entry is reused
-indefinitely. Release artifacts (`release.sh`) always use ad-hoc signing
-regardless.
+`setup-signing.sh` is optional. It creates a `CCUsageStats Dev`
+self-signed certificate in your login keychain, which `build.sh` prefers
+over ad-hoc signing when present. Release artifacts (`release.sh`) always
+use ad-hoc signing regardless.
+
+**It does not keep the OAuth-token Keychain entry usable across
+rebuilds** — expect the menubar to show "Token rejected" after a rebuild
+with or without it. (Measured on macOS 26.5.2.) The entry's ACL carries
+two independent checks, and a certificate only stabilises one of them:
+
+- The *trusted application* entry is pinned to the certificate
+  (`identifier "dev.dv.ccusagestats.CCUsageStats" and certificate
+  leaf = H"…"`). This one does survive rebuilds.
+- A separate `partition_id` entry is pinned to `cdhash:<hash>`. macOS
+  derives the partition from the signer's Team ID, and falls back to the
+  code hash when there is none — which is always the case for a
+  self-signed cert (`TeamIdentifier=not set`). Any rebuild that changes
+  a build input changes that hash and puts the new binary outside the
+  partition. A plain `git commit` is enough, since `build.sh` derives the
+  build number from the commit count.
+
+Recovery is one click: the dropdown's **Re-import from Claude Code
+Keychain** button (v0.6.9+) re-reads whatever token the CLI currently
+holds, with nothing to retype. That token is short-lived, though — for an
+entry you'd rather re-authorise rarely, paste `claude setup-token` output
+instead. See [Token lifetime](#token-lifetime).
 
 ## Manual test checklist
 

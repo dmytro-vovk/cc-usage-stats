@@ -10,9 +10,11 @@ SHORT_VERSION="${MARKETING_VERSION_OVERRIDE:-${LATEST_TAG#v}}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 
 # Prefer a stable self-signed identity created by scripts/setup-signing.sh
-# so the Keychain ACL on the OAuth-token entry stays valid across rebuilds.
-# Fall back to ad-hoc (-) if the cert isn't installed; that still produces
-# a runnable binary, just one whose Keychain access prompts on every rebuild.
+# so the signature carries a real Authority rather than being ad-hoc.
+# Fall back to ad-hoc (-) if the cert isn't installed; both produce an
+# equally runnable binary. Neither keeps the OAuth-token Keychain entry
+# usable across rebuilds — macOS pins that entry to the code hash. See
+# the README's "Scripts" section.
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 if [ -z "$SIGN_IDENTITY" ]; then
   if security find-identity -v -p codesigning 2>/dev/null | grep -q "CCUsageStats Dev"; then
