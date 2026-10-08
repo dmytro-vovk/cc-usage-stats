@@ -110,6 +110,8 @@ final class MenuViewModelAlertTests: XCTestCase {
         let saved = ["cc-usage-stats.colorByPace", "cc-usage-stats.paceThreshold"].map { ($0, d.object(forKey: $0)) }
         addTeardownBlock { for (k, v) in saved { d.set(v, forKey: k) } }
         let vm = viewModel()
+        // The defaults domain is the real app's: start from the default threshold.
+        vm.paceThreshold = UsageColoring.defaultBurnRateThreshold
         vm.colorByPace = false
         XCTAssertFalse(vm.coloring.byPace, "a saved pace threshold doesn't matter while colouring is absolute")
         vm.colorByPace = true
