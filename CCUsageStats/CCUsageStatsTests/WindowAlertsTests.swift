@@ -86,14 +86,14 @@ final class WindowAlertLatchTests: XCTestCase {
         XCTAssertEqual(latch.observe(id: "x", window: w(12, 1_790_674_200), thresholds: [80, 100], now: now), [])
     }
 
-    /// A reset that moves backwards by more than jitter is a different
-    /// account (or schedule): start over from that reading, silently,
-    /// rather than ignoring the window until the old reset time comes round.
-    func testRegressedResetRebaselines() {
+    /// A reading of an older window (a late response from an overlapping
+    /// refresh) is neither a reset nor a baseline for the next reading.
+    func testRegressedResetIsIgnored() {
         var latch = WindowAlertLatch()
         _ = latch.observe(id: "x", window: w(30, r2), thresholds: [80], now: now)
-        XCTAssertEqual(latch.observe(id: "x", window: w(70, r1), thresholds: [80], now: now), [])
-        XCTAssertEqual(latch.observe(id: "x", window: w(81, r1), thresholds: [80], now: now),
+        XCTAssertEqual(latch.observe(id: "x", window: w(95, r1), thresholds: [80], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(35, r2), thresholds: [80], now: now), [])
+        XCTAssertEqual(latch.observe(id: "x", window: w(81, r2), thresholds: [80], now: now),
                        [.crossed(id: "x", percent: 80)])
     }
 

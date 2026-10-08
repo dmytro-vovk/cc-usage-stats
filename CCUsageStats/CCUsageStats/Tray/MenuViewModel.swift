@@ -153,6 +153,9 @@ final class MenuViewModel: ObservableObject {
     private var pollerCancellables: Set<AnyCancellable> = []
     /// Claude windows' alert state: once per window, resets noticed.
     private var alertLatch = WindowAlertLatch()
+    /// Set when polling restarts: readings captured before this are the
+    /// previous token's and must not seed the fresh latch.
+    private var alertsHeldUntil: Int64?
     private var wakeObserver: NSObjectProtocol?
     private var history: UsageHistory?
     /// Last `resetsAt` (5h) for which we already kicked an immediate
@@ -478,8 +481,10 @@ final class MenuViewModel: ObservableObject {
         // A new token is in play, so any explanation of why the previous one
         // couldn't be recovered is now history.
         recoveryHint = nil
-        // Possibly another account: its windows aren't the ones latched.
+        // Possibly another account: its windows aren't the ones latched, and
+        // the cache on disk is still the old account's until a poll lands.
         alertLatch = WindowAlertLatch()
+        alertsHeldUntil = Int64(Date().timeIntervalSince1970)
         attachPoller(token: loadStoredToken())
     }
 
@@ -564,7 +569,7 @@ final class MenuViewModel: ObservableObject {
 
     private func reloadCache() {
         let newCached = (try? CacheStore.read(at: Paths.stateFile)) ?? nil
-        let outcome = alertOutcome(now: Int64(Date().timeIntervalSince1970), for: newCached?.snapshot)
+        let outcome = alertOutcome(now: Int64(Date().timeIntervalSince1970), for: newCached)
         cached = newCached
         recomputeFromCachedOnly()
 
@@ -597,8 +602,13 @@ final class MenuViewModel: ObservableObject {
     /// Feeds every Claude window to the latch. 100% always sounds; each
     /// window kind adds its own warning threshold when enabled. A cached
     /// window past its reset describes a period that's over and is skipped.
-    func alertOutcome(now: Int64, for snapshot: RateLimitsSnapshot?) -> AlertOutcome {
-        guard let snapshot else { return AlertOutcome() }
+    func alertOutcome(now: Int64, for cached: CachedState?) -> AlertOutcome {
+        guard let cached else { return AlertOutcome() }
+        if let held = alertsHeldUntil {
+            guard cached.capturedAt >= held else { return AlertOutcome() }
+            alertsHeldUntil = nil
+        }
+        let snapshot = cached.snapshot
         var windows: [(String, WindowSnapshot?)] = [
             (AlertOutcome.fiveHourID, snapshot.fiveHour),
             ("seven_day", snapshot.sevenDay),

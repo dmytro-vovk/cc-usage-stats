@@ -62,9 +62,10 @@ enum ResetAnnouncement: String, CaseIterable, Identifiable {
 /// launch is a baseline, not an alert. A latch per window then keeps a
 /// reading that dips under a threshold and climbs back from sounding twice.
 /// A window is identified by its id plus its reset time; the reset time must
-/// advance by more than `minResetAdvance` to count as a new window. A reset
-/// time that moves backwards (another account) or a window unseen for more
-/// than `maxResetAnnounceDelay` past its reset starts over silently.
+/// advance by more than `minResetAdvance` to count as a new window. A reading
+/// of an earlier window (a late response) is ignored; a window unseen for
+/// more than `maxResetAnnounceDelay` past its reset starts over silently.
+/// Another account's windows aren't these: the owner starts a new latch.
 struct WindowAlertLatch {
     enum Event: Equatable {
         case crossed(id: String, percent: Int)
@@ -93,8 +94,9 @@ struct WindowAlertLatch {
 
     mutating func observe(id: String, window: WindowSnapshot?, thresholds: [Int], now: Int64) -> [Event] {
         guard let window else { return [] }
+        // A late response describing an earlier window: not this one's level.
+        if let entry = entries[id], window.resetsAt < entry.resetsAt - Self.minResetAdvance { return [] }
         guard var entry = entries[id],
-              window.resetsAt >= entry.resetsAt - Self.minResetAdvance,
               !(window.resetsAt - entry.resetsAt > Self.minResetAdvance
                 && now - entry.resetsAt > Self.maxResetAnnounceDelay)
         else {
