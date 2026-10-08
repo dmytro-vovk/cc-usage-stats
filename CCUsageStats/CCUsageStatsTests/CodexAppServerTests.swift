@@ -169,11 +169,16 @@ final class CodexAppServerTests: XCTestCase {
     /// The server exits but a background child keeps stdout open: the read
     /// must still end at the deadline, and its reader must not linger.
     func testAGrandchildHoldingStdoutDoesNotHangTheRead() throws {
-        let cli = try fakeCLI("sleep 30 & exit 0")
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("cas-pid-\(UUID().uuidString)").path
+        let cli = try fakeCLI("sleep 30 & echo $! > '\(pidFile)'; exit 0")
         let start = Date()
         XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 1, now: { 0 }), .failure(.timedOut))
         XCTAssertLessThan(Date().timeIntervalSince(start), 3)
         XCTAssertEqual(CodexAppServer.liveReaders, 0, "the stdout reader stopped")
+        let pid = try XCTUnwrap(pid_t(String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        var alive = true
+        for _ in 0..<20 where alive { alive = kill(pid, 0) == 0; if alive { usleep(50_000) } }
+        XCTAssertFalse(alive, "the server's whole process group is killed, grandchildren included")
     }
 
     func testAnAnswerThenARefusalToExitStaysBounded() throws {
