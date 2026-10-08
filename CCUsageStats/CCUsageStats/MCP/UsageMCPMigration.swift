@@ -10,7 +10,7 @@ import os
 nonisolated enum UsageMCPMigration {
     private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "mcp")
 
-    static func runAtLaunch() {
+    @MainActor static func runAtLaunch() {
         guard !TestEnvironment.isRunningTests else { return }
         let executable = HelperLink.liveExecutable
         do {

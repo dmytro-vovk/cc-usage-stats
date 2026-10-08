@@ -72,11 +72,11 @@ nonisolated enum HelperLink {
 
     // MARK: - Live
 
-    static var liveLink: URL { link(in: Paths.appSupportDir) }
+    @MainActor static var liveLink: URL { link(in: Paths.appSupportDir) }
 
     static var liveExecutable: String { Bundle.main.executablePath ?? "" }
 
-    static var liveRegistrationCommand: String {
+    @MainActor static var liveRegistrationCommand: String {
         registrationCommand(link: liveLink, executable: liveExecutable)
     }
 }

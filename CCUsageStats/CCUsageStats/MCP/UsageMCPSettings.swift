@@ -15,8 +15,8 @@ final class UsageMCPSettings: ObservableObject {
     let binary: String
     private let codexURL: URL
 
-    init(binary: String = HelperLink.liveRegistrationCommand, codexURL: URL = CodexMCPConfig.defaultURL) {
-        self.binary = binary
+    init(binary: String? = nil, codexURL: URL = CodexMCPConfig.defaultURL) {
+        self.binary = binary ?? HelperLink.liveRegistrationCommand
         self.codexURL = codexURL
         refresh()
     }
@@ -64,9 +64,7 @@ final class UsageMCPSettings: ObservableObject {
         error = nil
         Task.detached(priority: .userInitiated) {
             let failure: String?
-            ClaudeMCPRegistration.changeLock.lock()
-            do { try work(); failure = nil } catch { failure = "\(error)" }
-            ClaudeMCPRegistration.changeLock.unlock()
+            do { try ClaudeMCPRegistration.changeLock.withLock(work); failure = nil } catch { failure = "\(error)" }
             await MainActor.run {
                 self.busy = false
                 self.error = failure
