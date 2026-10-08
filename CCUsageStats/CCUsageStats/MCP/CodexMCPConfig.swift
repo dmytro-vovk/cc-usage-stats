@@ -82,7 +82,7 @@ nonisolated enum CodexMCPConfig {
     }
 
     /// A one-line TOML basic string's value (`"a\"b"` → `a"b`).
-    private static func basicString(_ s: String) -> String? {
+    static func basicString(_ s: String) -> String? {
         guard s.count >= 2, s.hasPrefix("\""), s.hasSuffix("\"") else { return nil }
         var out = ""
         var escaped = false
@@ -141,7 +141,7 @@ nonisolated enum CodexMCPConfig {
 
     /// Dotted key → segments, honouring quotes: a dot inside `"…"` / `'…'`
     /// is part of the name, not a separator.
-    private static func keySegments<S: StringProtocol>(_ key: S) -> [String] {
+    static func keySegments<S: StringProtocol>(_ key: S) -> [String] {
         var segments: [String] = []
         var current = ""
         var quote: Character?
@@ -166,7 +166,7 @@ nonisolated enum CodexMCPConfig {
 
     /// The line without its `#` comment; a `#` inside a one-line string is
     /// not a comment.
-    private static func stripComment(_ line: String) -> String {
+    static func stripComment(_ line: String) -> String {
         var quote: Character?
         var escaped = false
         var out = ""
@@ -192,7 +192,7 @@ nonisolated enum CodexMCPConfig {
     /// Walks the lines tracking the current table and multi-line strings
     /// (whose lines may look like headers but aren't). `visit` gets each
     /// line with the table it belongs to and whether it is a header.
-    private static func scan(_ lines: [String], _ visit: (Int, [String]?, Bool) -> Void) {
+    static func scan(_ lines: [String], _ visit: (Int, [String]?, Bool) -> Void) {
         var table: [String]?
         var inMultiline: String?
         for (i, line) in lines.enumerated() {

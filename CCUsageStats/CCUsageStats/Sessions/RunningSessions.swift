@@ -26,9 +26,19 @@ nonisolated enum SessionStatus: String, Equatable, Sendable {
     var needsAttention: Bool { self == .needsPermission || self == .error || self == .waitingForInput }
 }
 
+/// Which agent a session belongs to. Each has its own hook script and
+/// settings file; their records share one directory.
+nonisolated enum SessionClient: String, Equatable, Hashable, Sendable, CaseIterable {
+    case claude, codex
+
+    var name: String { self == .claude ? "Claude Code" : "Codex" }
+}
+
 /// One session's latest record, as written by `SessionHookScript`.
 nonisolated struct SessionRecord: Equatable, Sendable {
     let sessionID: String
+    /// Records from before the field existed are Claude's.
+    let client: SessionClient
     let pid: Int32
     let event: String
     /// For tool events: which tool.
@@ -57,6 +67,7 @@ nonisolated struct SessionRecord: Equatable, Sendable {
         func s(_ k: String) -> String? { (o[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         return SessionRecord(
             sessionID: sid,
+            client: s("client") == SessionClient.codex.rawValue ? .codex : .claude,
             pid: Int32(truncatingIfNeeded: (o["pid"] as? NSNumber)?.int64Value ?? 0),
             event: s("hook_event") ?? "",
             toolName: s("tool_name"),
@@ -96,6 +107,8 @@ nonisolated struct SessionRecord: Equatable, Sendable {
             if ClosingQuestion.asksUser(lastMessage) { return .waitingForInput }
             return backgroundTaskCount > 0 ? .background : .done
         case "StopFailure": return .error
+        // Codex: the user stopped the turn. They're at the keyboard; nothing pending.
+        case "Interrupt": return .done
         // Claude put a question to the user and is blocked on the answer.
         case "PreToolUse" where toolName == "AskUserQuestion": return .waitingForInput
         case "Notification":
@@ -130,6 +143,11 @@ nonisolated struct RunningSession: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// VoiceOver's reading of the row; names the client when it isn't Claude.
+    var accessibilityText: String {
+        (record.client == .codex ? "Codex, " : "") + "\(title), \(statusText)"
+    }
+
     /// The row's hover text: what it's doing, and where.
     var tooltip: String { tooltip(limits: nil, now: 0) }
 
@@ -142,6 +160,7 @@ nonisolated struct RunningSession: Identifiable, Equatable, Sendable {
            let reset = limits?.limitResetsAt(now: now, message: record.lastMessage) {
             head += ", resets in \(RelativeTime.format(seconds: reset - now))"
         }
+        if record.client == .codex { head = "Codex · " + head }
         var text = "\(head) — \(record.cwd ?? title)"
         if record.failure != nil, let message = record.lastMessage { text += "\n\(message)" }
         return text
@@ -313,7 +332,7 @@ nonisolated enum RunningSessions {
     }
 
     static func fallbackTitle(_ r: SessionRecord) -> String {
-        guard let cwd = r.cwd, !cwd.isEmpty else { return "Claude Code" }
+        guard let cwd = r.cwd, !cwd.isEmpty else { return r.client.name }
         return URL(fileURLWithPath: cwd).lastPathComponent
     }
 }

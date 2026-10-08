@@ -38,6 +38,21 @@ enum Paths {
                 .appendingPathComponent(".claude/settings.json")
     }
 
+    /// Codex's home: `$CODEX_HOME`, else `~/.codex`. Redirected under test,
+    /// like `claudeSettings`, so a test host never edits the real hooks.json.
+    static var codexHome: URL {
+        TestEnvironment.isRunningTests
+            ? testAppSupportDir.appendingPathComponent("codex-home", isDirectory: true)
+            : liveCodexHome
+    }
+
+    static var liveCodexHome: URL {
+        if let env = ProcessInfo.processInfo.environment["CODEX_HOME"], !env.isEmpty {
+            return URL(fileURLWithPath: (env as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
+    }
+
     static var liveClaudeSettings: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")

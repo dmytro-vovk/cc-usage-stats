@@ -1,6 +1,7 @@
 import Foundation
 
-/// Registers `SessionHookScript` in Claude Code's user settings.
+/// Registers `SessionHookScript` in Claude Code's user settings, or the
+/// Codex copy in Codex's `hooks.json` — the same `hooks` shape.
 ///
 /// The settings file belongs to the user (and to Claude Code), so the rules
 /// are strict: merge, never replace; touch only entries whose command is our
@@ -14,12 +15,37 @@ nonisolated enum SessionHookInstaller {
         "Notification", "Stop", "StopFailure", "PreCompact", "SessionEnd",
     ]
 
+    /// Codex's events (2026-10-08 spec). No subagent events: rows are
+    /// sessions. `Interrupt` ends a turn the user stopped.
+    static let codexEvents = [
+        "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
+        "PreCompact", "PostCompact", "Stop", "Interrupt", "SessionEnd",
+    ]
+
+    static func events(for client: SessionClient) -> [String] {
+        client == .claude ? events : codexEvents
+    }
+
     static let scriptName = "session-hook.sh"
     /// Recognises our entries — also at an old app-support location — and
     /// nobody else's: a bare "session-hook.sh" could be another tool's.
     static let ownMarker = "/cc-usage-stats/hooks/session-hook.sh"
 
+    static func scriptName(for client: SessionClient) -> String {
+        client == .claude ? scriptName : "codex-session-hook.sh"
+    }
+
+    static func ownMarker(for client: SessionClient) -> String {
+        "/cc-usage-stats/hooks/" + scriptName(for: client)
+    }
+
     static let timeoutSeconds = 10
+
+    /// Codex caps `SessionEnd` and `Interrupt` hooks at 3 s; one value for
+    /// every event keeps the entries alike. The script takes milliseconds.
+    static func timeoutSeconds(for client: SessionClient) -> Int {
+        client == .claude ? timeoutSeconds : 3
+    }
 
     enum Outcome: Equatable {
         case alreadyInstalled
@@ -41,8 +67,10 @@ nonisolated enum SessionHookInstaller {
         }
     }
 
-    static var defaultScriptURL: URL {
-        Paths.liveAppSupportDir.appendingPathComponent("hooks/\(scriptName)")
+    static var defaultScriptURL: URL { defaultScriptURL(for: .claude) }
+
+    static func defaultScriptURL(for client: SessionClient) -> URL {
+        Paths.liveAppSupportDir.appendingPathComponent("hooks/\(scriptName(for: client))")
     }
 
     /// POSIX single-quoted: "Application Support" has a space, and a home
@@ -55,28 +83,28 @@ nonisolated enum SessionHookInstaller {
 
     /// Exactly our quoted script path — the current one or an older
     /// app-support location — with nothing else in the command.
-    static func isOurs(_ hook: [String: Any]) -> Bool {
+    static func isOurs(_ hook: [String: Any], client: SessionClient = .claude) -> Bool {
         guard let cmd = hook["command"] as? String, cmd.hasPrefix("'"), cmd.hasSuffix("'"), cmd.count > 2 else {
             return false
         }
         let path = String(cmd.dropFirst().dropLast()).replacingOccurrences(of: #"'\''"#, with: "'")
-        return path.hasPrefix("/") && path.hasSuffix(ownMarker)
+        return path.hasPrefix("/") && path.hasSuffix(ownMarker(for: client))
             && command(for: URL(fileURLWithPath: path)) == cmd
     }
 
     /// Every event has our entry, in exactly the shape we write: a group with
     /// no matcher holding one command hook with our timeout. Anything else
     /// (a narrowing matcher, a changed type) is repaired by reinstalling.
-    static func isInstalled(command: String, in settings: [String: Any]) -> Bool {
+    static func isInstalled(command: String, in settings: [String: Any], client: SessionClient = .claude) -> Bool {
         let hooks = settings["hooks"] as? [String: Any] ?? [:]
-        return events.allSatisfy { event in
+        return events(for: client).allSatisfy { event in
             (hooks[event] as? [[String: Any]] ?? []).contains { group in
                 guard group["matcher"] == nil,
                       let entries = group["hooks"] as? [[String: Any]], entries.count == 1
                 else { return false }
                 let e = entries[0]
                 return e["command"] as? String == command && e["type"] as? String == "command"
-                    && (e["timeout"] as? NSNumber)?.intValue == timeoutSeconds
+                    && (e["timeout"] as? NSNumber)?.intValue == timeoutSeconds(for: client)
             }
         }
     }
@@ -99,12 +127,14 @@ nonisolated enum SessionHookInstaller {
         }
     }
 
-    static func installing(command: String, into settings: [String: Any]) -> [String: Any] {
-        var out = uninstalling(from: settings)
+    /// Ours go last in each event: groups before them keep their positions,
+    /// which Codex's trust records are keyed by.
+    static func installing(command: String, into settings: [String: Any], client: SessionClient = .claude) -> [String: Any] {
+        var out = uninstalling(from: settings, client: client)
         var hooks = out["hooks"] as? [String: Any] ?? [:]
-        for event in events {
+        for event in events(for: client) {
             var groups = hooks[event] as? [[String: Any]] ?? []
-            groups.append(["hooks": [["type": "command", "command": command, "timeout": timeoutSeconds]]])
+            groups.append(["hooks": [["type": "command", "command": command, "timeout": timeoutSeconds(for: client)]]])
             hooks[event] = groups
         }
         out["hooks"] = hooks
@@ -112,14 +142,14 @@ nonisolated enum SessionHookInstaller {
     }
 
     /// Removes our entries from every event; groups and events left empty go too.
-    static func uninstalling(from settings: [String: Any]) -> [String: Any] {
+    static func uninstalling(from settings: [String: Any], client: SessionClient = .claude) -> [String: Any] {
         var out = settings
         guard var hooks = settings["hooks"] as? [String: Any] else { return out }
         for (event, value) in hooks {
             guard let groups = value as? [[String: Any]] else { continue }
             let kept: [[String: Any]] = groups.compactMap { group in
                 guard let entries = group["hooks"] as? [[String: Any]] else { return group }
-                let remaining = entries.filter { !isOurs($0) }
+                let remaining = entries.filter { !isOurs($0, client: client) }
                 if remaining.isEmpty { return nil }
                 var g = group
                 g["hooks"] = remaining
@@ -134,31 +164,37 @@ nonisolated enum SessionHookInstaller {
     // MARK: - Files
 
     @discardableResult
-    static func ensureInstalled(settingsURL: URL, scriptURL: URL = defaultScriptURL) throws -> Outcome {
-        let scriptChanged = try writeScriptIfNeeded(at: scriptURL)
+    static func ensureInstalled(settingsURL: URL, scriptURL: URL = defaultScriptURL,
+                                client: SessionClient = .claude) throws -> Outcome {
+        let scriptChanged = try writeScriptIfNeeded(at: scriptURL, contents: SessionHookScript.contents(for: client))
         let cmd = command(for: scriptURL)
         var outcome = Outcome.alreadyInstalled
         try update(settingsURL) { settings in
-            if isInstalled(command: cmd, in: settings) { return nil }
+            if isInstalled(command: cmd, in: settings, client: client) { return nil }
             outcome = .installed
-            return installing(command: cmd, into: settings)
+            return installing(command: cmd, into: settings, client: client)
         }
         if outcome == .alreadyInstalled, scriptChanged { return .updatedScript }
         return outcome
     }
 
-    static func uninstall(settingsURL: URL) throws {
+    static func uninstall(settingsURL: URL, client: SessionClient = .claude) throws {
         try update(settingsURL) { settings in
-            let out = uninstalling(from: settings)
+            let out = uninstalling(from: settings, client: client)
             return NSDictionary(dictionary: out).isEqual(to: settings) ? nil : out
         }
     }
 
-    static func status(settingsURL: URL, scriptURL: URL = defaultScriptURL) -> Bool {
-        guard let (_, settings) = try? read(settingsURL.resolvingSymlinksInPath()),
-              (try? String(contentsOf: scriptURL, encoding: .utf8)) == SessionHookScript.contents
+    static func status(settingsURL: URL, scriptURL: URL = defaultScriptURL, client: SessionClient = .claude) -> Bool {
+        guard let settings = try? readSettings(settingsURL),
+              (try? String(contentsOf: scriptURL, encoding: .utf8)) == SessionHookScript.contents(for: client)
         else { return false }
-        return isInstalled(command: command(for: scriptURL), in: settings)
+        return isInstalled(command: command(for: scriptURL), in: settings, client: client)
+    }
+
+    /// The parsed settings ({} when missing); throws when unreadable.
+    static func readSettings(_ url: URL) throws -> [String: Any] {
+        try read(url.resolvingSymlinksInPath()).1
     }
 
     /// Read–transform–write with a compare-and-swap: if the file changed
@@ -191,10 +227,10 @@ nonisolated enum SessionHookInstaller {
         throw InstallError.changedWhileWriting(url.path)
     }
 
-    private static func writeScriptIfNeeded(at url: URL) throws -> Bool {
-        if (try? String(contentsOf: url, encoding: .utf8)) == SessionHookScript.contents { return false }
+    private static func writeScriptIfNeeded(at url: URL, contents: String) throws -> Bool {
+        if (try? String(contentsOf: url, encoding: .utf8)) == contents { return false }
         try Paths.ensureDirectory(url.deletingLastPathComponent())
-        try SessionHookScript.contents.write(to: url, atomically: true, encoding: .utf8)
+        try contents.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         return true
     }

@@ -153,6 +153,7 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            CodexSessionsSection(tracker: vm.sessions)
             UsageMCPSection()
         }
     }
@@ -169,6 +170,62 @@ struct GeneralSettingsView: View {
         case .installedNow: return "Installed just now"
         case .removed: return "Removed"
         case .failed(let why): return why
+        }
+    }
+}
+
+/// Opt-in Codex session tracking: its hooks, and whether Codex trusts them.
+private struct CodexSessionsSection: View {
+    @ObservedObject var tracker: SessionTracker
+
+    var body: some View {
+        Section {
+            Toggle("Show active Codex sessions", isOn: $tracker.codexEnabled)
+            if tracker.codexEnabled || tracker.codexHookFailed {
+                LabeledContent("Hooks") {
+                    HStack(spacing: 8) {
+                        Text(hookStatus).foregroundStyle(tracker.codexHookFailed ? Color.red : Color.secondary)
+                        if tracker.codexHookFailed {
+                            Button(tracker.codexEnabled ? "Repair" : "Retry removal") { tracker.reinstall(.codex) }
+                        }
+                    }
+                }
+            }
+            if tracker.codexEnabled, !tracker.codexHookFailed, let trust = trustStatus {
+                LabeledContent("Codex trust") {
+                    Text(trust.text).foregroundStyle(trust.ok ? Color.secondary : Color.orange)
+                }
+                if !trust.ok {
+                    Text("Codex only runs hooks you've trusted. In Codex, run /hooks and trust the cc-usage-stats session hooks; until then Codex sessions don't appear.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } footer: {
+            Text("Adds hooks to ~/.codex/hooks.json (or $CODEX_HOME; your other hooks are kept; a backup is saved first). Turning this off removes them. Codex rows carry a Codex badge.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var hookStatus: String {
+        switch tracker.codexHookState {
+        case .unknown: return "Not checked yet"
+        case .installed: return "Installed"
+        case .installedNow: return "Installed just now"
+        case .removed: return "Removed"
+        case .failed(let why): return why
+        }
+    }
+
+    private var trustStatus: (text: String, ok: Bool)? {
+        switch tracker.codexTrust {
+        case .trusted: return ("Trusted", true)
+        case .untrusted(let trusted, let of): return ("Not trusted yet (\(trusted) of \(of))", false)
+        case .disabled(let n): return ("\(n) turned off in /hooks", false)
+        case .unknown: return nil
         }
     }
 }

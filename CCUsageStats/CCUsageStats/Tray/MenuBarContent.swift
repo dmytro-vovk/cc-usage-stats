@@ -569,7 +569,7 @@ struct MenuBarDropdown: View {
     }
 }
 
-/// Active Claude Code sessions, from the hooks. Rows open their session.
+/// Active Claude Code and Codex sessions, from the hooks. Rows open their session.
 /// No header: the rows' icons say what they are. Frozen while hovered (see
 /// `SessionListFreeze`), and it stays on screen until the pointer leaves
 /// even if every session finishes meanwhile.
@@ -587,10 +587,16 @@ private struct SessionsSection: View {
 
     var body: some View {
         let shown = SessionListFreeze.display(frozen: frozen, live: tracker.sessions)
-        if !shown.isEmpty || tracker.hookFailed {
+        if !shown.isEmpty || tracker.anyHookFailed {
             VStack(alignment: .leading, spacing: 4) {
                 if case .failed(let why) = tracker.hookState {
                     Text("Session hooks couldn't be installed: \(why)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .wrapsFully()
+                }
+                if case .failed(let why) = tracker.codexHookState {
+                    Text("Codex session hooks couldn't be installed: \(why)")
                         .font(.caption)
                         .foregroundStyle(.red)
                         .wrapsFully()
@@ -635,6 +641,7 @@ private struct SessionRow: View {
                     .sessionStatusStyle(session.status)
                     .frame(width: 14)
                 MarqueeText(text: session.title, active: hovering)
+                if session.record.client == .codex { CodexBadge() }
                 Spacer(minLength: 6)
                 // Just the timer; the status is the icon, spelled out on hover.
                 Text(RelativeTime.format(seconds: now - session.record.updatedAt))
@@ -651,7 +658,21 @@ private struct SessionRow: View {
         .disabled(!canOpen)
         .onHover { hovering = $0 }
         .help(session.tooltip(limits: limits, now: now))
-        .accessibilityLabel("\(session.title), \(session.statusText)")
+        .accessibilityLabel(session.accessibilityText)
+    }
+}
+
+/// Tells Codex rows from Claude Code ones.
+private struct CodexBadge: View {
+    var body: some View {
+        Text("Codex")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.6), lineWidth: 0.5))
+            .fixedSize()
+            .accessibilityHidden(true)
     }
 }
 

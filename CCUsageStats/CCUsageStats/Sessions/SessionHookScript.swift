@@ -1,8 +1,10 @@
 import Foundation
 
-/// The hook command registered in `~/.claude/settings.json`. Written to disk
-/// by the app (see `SessionHookInstaller`) and run by Claude Code on every
-/// session event, so it has to be fast, dependency-free and harmless:
+/// The hook command registered in `~/.claude/settings.json` — and, as a
+/// separate copy that marks its records `"client":"codex"`, in Codex's
+/// `hooks.json`. Written to disk by the app (see `SessionHookInstaller`) and
+/// run by the agent on every session event, so it has to be fast,
+/// dependency-free and harmless:
 ///
 /// - bash 3.2 (macOS's `/bin/bash`), builtins only on the hot path — no `jq`,
 ///   no `python`, no subprocess per field;
@@ -15,20 +17,31 @@ import Foundation
 ///   adds the error type and its message.
 ///
 /// Top-level fields are found with a leftmost regex match. That is safe
-/// because Claude Code serialises `session_id`, `cwd` and `hook_event_name`
-/// before any tool content, so text inside a tool payload can't impersonate
-/// them.
+/// because Claude Code and Codex both serialise `session_id`, `cwd` and
+/// `hook_event_name` before any tool content or prompt, so text inside a
+/// payload can't impersonate them. Codex sends no `Notification`,
+/// `StopFailure` or `background_tasks`; those parts simply never match.
 nonisolated enum SessionHookScript {
     /// Bump when `contents` changes; the installer rewrites outdated copies.
-    static let version = 4
+    static let version = 5
 
-    static let contents = #"""
+    /// The Claude Code script.
+    static let contents = contents(for: .claude)
+
+    static func contents(for client: SessionClient) -> String {
+        template
+            .replacingOccurrences(of: "__CLIENT__", with: client.rawValue)
+            .replacingOccurrences(of: "__AGENT__", with: client.name)
+            .replacingOccurrences(of: "__SETTINGS__", with: client == .claude ? "~/.claude/settings.json" : "Codex's hooks.json")
+    }
+
+    private static let template = #"""
     #!/bin/bash
-    # cc-usage-stats session hook v4
+    # cc-usage-stats session hook v5 (__CLIENT__)
     # Managed by the CCUsageStats menu-bar app, which rewrites this file when
-    # its version changes and registers it in ~/.claude/settings.json. Local
-    # edits are lost. Records each Claude Code session's latest event so the
-    # app can list running sessions. Never blocks or fails Claude Code.
+    # its version changes and registers it in __SETTINGS__. Local
+    # edits are lost. Records each __AGENT__ session's latest event so the
+    # app can list running sessions. Never blocks or fails __AGENT__.
     # The fields we need come first; tool events can carry megabytes after
     # them. Keep a bounded prefix and drain the rest so the writer never blocks.
     # Big enough for a long final reply plus the Stop event's task list.
@@ -91,7 +104,7 @@ nonisolated enum SessionHookScript {
 
     mkdir -p "$dir" 2>/dev/null || exit 0
     tmp="$dir/.$sid.$$.tmp"
-    printf '{"v":1,"pid":%d,"session_id":"%s","hook_event":"%s","tool_name":"%s","cwd":"%s","notification_type":"%s","message":"%s","entrypoint":"%s","host_session":"%s","app_bundle":"%s","term_program":"%s","last_message":"%s","error":"%s","background_tasks":%s}\n' \
+    printf '{"v":1,"client":"__CLIENT__","pid":%d,"session_id":"%s","hook_event":"%s","tool_name":"%s","cwd":"%s","notification_type":"%s","message":"%s","entrypoint":"%s","host_session":"%s","app_bundle":"%s","term_program":"%s","last_message":"%s","error":"%s","background_tasks":%s}\n' \
       "$PPID" "$sid" "$event" "$tool" "$cwd" "$ntype" "$message" "$entry" "$host" "$bundle" "$term" "$last" "$error" "$tasks" \
       > "$tmp" 2>/dev/null && mv -f "$tmp" "$dir/$sid.json" 2>/dev/null
     rm -f "$tmp" 2>/dev/null

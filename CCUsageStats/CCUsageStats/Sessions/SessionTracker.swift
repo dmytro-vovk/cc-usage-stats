@@ -32,13 +32,41 @@ nonisolated enum ProcessProbe {
         let name = URL(fileURLWithPath: path).lastPathComponent
         return name == "node" || name == "bun"
     }
+
+    /// The Codex CLI's `…/bin/codex` (npm, Homebrew, standalone) or the
+    /// desktop app's bundled one.
+    static func looksLikeCodex(path: String?) -> Bool {
+        guard let path, !path.isEmpty else { return false }
+        return path.lowercased().contains("codex")
+    }
 }
 
-/// Lists live Claude Code sessions from the records `SessionHookScript`
-/// writes, and keeps the hooks installed while enabled.
+/// Codex thread names, from `$CODEX_HOME/session_index.jsonl` (one line per
+/// rename; only named threads appear). Read-only and optional.
+nonisolated struct CodexSessionTitles {
+    let indexURL: URL
+
+    /// Session id → latest name.
+    func all() -> [String: String] {
+        guard let text = try? String(contentsOf: indexURL, encoding: .utf8) else { return [:] }
+        var out: [String: String] = [:]
+        for line in text.split(whereSeparator: \.isNewline) {
+            guard let o = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let id = o["id"] as? String, let name = o["thread_name"] as? String, !name.isEmpty
+            else { continue }
+            out[id] = name
+        }
+        return out
+    }
+}
+
+/// Lists live Claude Code and Codex sessions from the records
+/// `SessionHookScript` writes, and keeps each client's hooks installed while
+/// its toggle is on.
 @MainActor
 final class SessionTracker: ObservableObject {
     static let enabledKey = "cc-usage-stats.sessionTracking"
+    static let codexEnabledKey = "cc-usage-stats.codexSessionTracking"
     static let livenessInterval: TimeInterval = 5
 
     enum HookState: Equatable {
@@ -52,23 +80,44 @@ final class SessionTracker: ObservableObject {
         case removed
     }
 
+    /// Claude Code sessions.
     @Published var enabled: Bool {
         didSet {
             defaults.set(enabled, forKey: Self.enabledKey)
-            if started { apply() }
+            if started { apply(.claude) }
+        }
+    }
+    /// Codex sessions. Opt-in: Codex asks the user to trust new hooks.
+    @Published var codexEnabled: Bool {
+        didSet {
+            defaults.set(codexEnabled, forKey: Self.codexEnabledKey)
+            if started { apply(.codex) }
         }
     }
     @Published private(set) var sessions: [RunningSession] = []
     @Published private(set) var hookState: HookState = .unknown
+    @Published private(set) var codexHookState: HookState = .unknown
+    /// Re-read with every scan while Codex tracking is on, so it follows the
+    /// user trusting the hooks in Codex.
+    @Published private(set) var codexTrust: CodexHookTrust.State = .unknown
     var hookFailed: Bool {
         if case .failed = hookState { return true }
         return false
     }
+    var codexHookFailed: Bool {
+        if case .failed = codexHookState { return true }
+        return false
+    }
+    var anyHookFailed: Bool { hookFailed || codexHookFailed }
 
     nonisolated let sessionsDir: URL
     let settingsURL: URL
     let scriptURL: URL
     let titlesRoot: URL
+    let codexHome: URL
+    let codexScriptURL: URL
+    var codexHooksURL: URL { codexHome.appendingPathComponent("hooks.json") }
+    var codexConfigURL: URL { codexHome.appendingPathComponent("config.toml") }
     private let defaults: UserDefaults
     private var started = false
     private var source: DispatchSourceFileSystemObject?
@@ -83,6 +132,8 @@ final class SessionTracker: ObservableObject {
         settingsURL: URL? = nil,
         scriptURL: URL = SessionHookInstaller.defaultScriptURL,
         titlesRoot: URL = DesktopSessionTitles.defaultRoot,
+        codexHome: URL? = nil,
+        codexScriptURL: URL? = nil,
         defaults: UserDefaults = .standard
     ) {
         self.sessionsDir = sessionsDir
@@ -90,14 +141,18 @@ final class SessionTracker: ObservableObject {
         self.settingsURL = settingsURL ?? Paths.claudeSettings
         self.scriptURL = scriptURL
         self.titlesRoot = titlesRoot
+        self.codexHome = codexHome ?? Paths.codexHome
+        self.codexScriptURL = codexScriptURL ?? SessionHookInstaller.defaultScriptURL(for: .codex)
         self.defaults = defaults
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
+        codexEnabled = defaults.object(forKey: Self.codexEnabledKey) as? Bool ?? false
     }
 
     func start() {
         guard !started else { return }
         started = true
-        apply()
+        apply(.claude)
+        apply(.codex)
     }
 
     func stop() {
@@ -106,8 +161,16 @@ final class SessionTracker: ObservableObject {
     }
 
     /// Settings → "Repair" / "Retry removal": redo whatever the toggle asks for.
-    func reinstall() {
-        if enabled { installHooks() } else { removeHooks() }
+    func reinstall(_ client: SessionClient = .claude) {
+        if isEnabled(client) { installHooks(client) } else { removeHooks(client) }
+    }
+
+    func isEnabled(_ client: SessionClient) -> Bool {
+        client == .claude ? enabled : codexEnabled
+    }
+
+    private var enabledClients: Set<SessionClient> {
+        Set(SessionClient.allCases.filter(isEnabled))
     }
 
     func open(_ session: RunningSession) {
@@ -125,35 +188,60 @@ final class SessionTracker: ObservableObject {
         }
     }
 
-    private func apply() {
-        if enabled {
-            installHooks()
+    private func apply(_ client: SessionClient) {
+        if isEnabled(client) { installHooks(client) } else { removeHooks(client) }
+        if client == .codex, !codexEnabled { codexTrust = .unknown }
+        if enabled || codexEnabled {
             startWatching()
             rescan()
         } else {
             stopWatching()
             sessions = []
-            removeHooks()
         }
     }
 
-    private func removeHooks() {
+    private func settingsURL(for client: SessionClient) -> URL {
+        client == .claude ? settingsURL : codexHooksURL
+    }
+
+    private func scriptURL(for client: SessionClient) -> URL {
+        client == .claude ? scriptURL : codexScriptURL
+    }
+
+    private func setHookState(_ state: HookState, for client: SessionClient) {
+        if client == .claude { hookState = state } else { codexHookState = state }
+    }
+
+    private func removeHooks(_ client: SessionClient) {
+        // Nothing of ours in it (or no file): nothing to parse, so a file
+        // we couldn't read can't report a failure for hooks never installed.
+        let url = settingsURL(for: client)
+        if let data = try? Data(contentsOf: url.resolvingSymlinksInPath()),
+           !String(decoding: data, as: UTF8.self).contains(SessionHookInstaller.ownMarker(for: client)) {
+            setHookState(.removed, for: client)
+            return
+        }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            setHookState(.removed, for: client)
+            return
+        }
         do {
-            try SessionHookInstaller.uninstall(settingsURL: settingsURL)
-            hookState = .removed
+            try SessionHookInstaller.uninstall(settingsURL: url, client: client)
+            setHookState(.removed, for: client)
         } catch {
-            hookState = .failed("\(error)")
+            setHookState(.failed("\(error)"), for: client)
         }
     }
 
-    private func installHooks() {
+    private func installHooks(_ client: SessionClient) {
         do {
-            switch try SessionHookInstaller.ensureInstalled(settingsURL: settingsURL, scriptURL: scriptURL) {
-            case .alreadyInstalled: hookState = .installed
-            case .installed, .updatedScript: hookState = .installedNow
+            switch try SessionHookInstaller.ensureInstalled(
+                settingsURL: settingsURL(for: client), scriptURL: scriptURL(for: client), client: client) {
+            case .alreadyInstalled: setHookState(.installed, for: client)
+            case .installed, .updatedScript: setHookState(.installedNow, for: client)
             }
         } catch {
-            hookState = .failed("\(error)")
+            setHookState(.failed("\(error)"), for: client)
         }
     }
 
@@ -186,17 +274,27 @@ final class SessionTracker: ObservableObject {
     }
 
     private func rescan() {
-        guard started, enabled else { return }
+        guard started, enabled || codexEnabled else { return }
         if scanning { rescanPending = true; return }
         scanning = true
         let dir = sessionsDir
         let titles = DesktopSessionTitles(root: titlesRoot)
+        let codexTitles = CodexSessionTitles(indexURL: codexHome.appendingPathComponent("session_index.jsonl"))
+        let clients = enabledClients
+        let hooksURL = codexHooksURL, configURL = codexConfigURL
+        let codexCommand = SessionHookInstaller.command(for: codexScriptURL)
         Task.detached(priority: .utility) {
-            let list = SessionTracker.scan(dir: dir, titles: titles)
+            let list = SessionTracker.scan(dir: dir, titles: titles, codexTitles: codexTitles, clients: clients)
+            let trust: CodexHookTrust.State = clients.contains(.codex)
+                ? CodexHookTrust.check(hooksURL: hooksURL, configURL: configURL, command: codexCommand)
+                : .unknown
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.scanning = false
-                if self.started, self.enabled, list != self.sessions { self.sessions = list }
+                if self.started, self.enabledClients == clients {
+                    if list != self.sessions { self.sessions = list }
+                    if trust != self.codexTrust { self.codexTrust = trust }
+                }
                 if self.rescanPending { self.rescanPending = false; self.rescan() }
             }
         }
@@ -214,7 +312,10 @@ final class SessionTracker: ObservableObject {
     nonisolated static func scan(
         dir: URL,
         titles: DesktopSessionTitles,
+        codexTitles: CodexSessionTitles? = nil,
+        clients: Set<SessionClient> = Set(SessionClient.allCases),
         isClaude: (Int32) -> Bool = { ProcessProbe.looksLikeClaude(path: ProcessProbe.executablePath(of: $0)) },
+        isCodex: (Int32) -> Bool = { ProcessProbe.looksLikeCodex(path: ProcessProbe.executablePath(of: $0)) },
         now: Int64 = Int64(Date().timeIntervalSince1970)
     ) -> [RunningSession] {
         let fm = FileManager.default
@@ -229,9 +330,11 @@ final class SessionTracker: ObservableObject {
                   let record = SessionRecord.decode(data, updatedAt: mtime)
             else { continue }
             let live = (ProcessProbe.startTime(of: record.pid).map { $0 <= mtime + 1 } ?? false)
-                && isClaude(record.pid)
+                && (record.client == .codex ? isCodex(record.pid) : isClaude(record.pid))
             if live {
-                records.append(record)
+                // A switched-off client's sessions aren't listed; its dead
+                // records are still cleaned up.
+                if clients.contains(record.client) { records.append(record) }
             } else if now - mtime >= staleAfter {
                 if modified != nil, modificationDate(url) == modified { try? fm.removeItem(at: url) }
             }
@@ -239,8 +342,11 @@ final class SessionTracker: ObservableObject {
         func modificationDate(_ url: URL) -> Date? {
             (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         }
+        let codexNames = records.contains { $0.client == .codex } ? (codexTitles?.all() ?? [:]) : [:]
         return RunningSessions.build(records, isAlive: { _ in true }) { r in
-            r.hostSessionID.flatMap(titles.title(forHostSession:))
+            r.client == .codex
+                ? codexNames[r.sessionID]
+                : r.hostSessionID.flatMap(titles.title(forHostSession:))
         }
     }
 }
