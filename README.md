@@ -76,8 +76,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
 ### Dropdown
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.16.3">
-  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.16.3" width="280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.18.0">
+  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.18.0" width="280">
 </picture>
 
 - A **Claude** header with the ↻ refresh button (⌘R) right-aligned;
@@ -200,8 +200,8 @@ windows; the gauge needle always shows the absolute level.
 ### Settings window
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.14.2">
-  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.14.2" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.18.0">
+  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.18.0" width="460">
 </picture>
 &nbsp;
 <picture>
