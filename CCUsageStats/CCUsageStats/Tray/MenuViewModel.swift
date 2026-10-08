@@ -17,8 +17,8 @@ final class MenuViewModel: ObservableObject {
     @Published var launchAtLogin: Bool = LaunchAtLoginService.isEnabled
     /// What the menubar pill shows. Codex choices only apply while Codex
     /// tracking is on.
-    @Published var pillMode: PillMode = PillMode.read() {
-        didSet { UserDefaults.standard.set(pillMode.rawValue, forKey: PillMode.defaultsKey) }
+    @Published var pillMode: PillMode = .claude {
+        didSet { defaults.set(pillMode.rawValue, forKey: PillMode.defaultsKey) }
     }
     /// Where Claude usage currently comes from, for the Accounts tab.
     @Published private(set) var claudeSource: ClaudeSource = .none
@@ -49,47 +49,47 @@ final class MenuViewModel: ObservableObject {
     @Published private(set) var recoveryHint: String?
     /// 5-hour warning. Keys predate the per-window rules, so an existing
     /// setting carries over as the 5-hour one.
-    @Published var warningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.warningEnabledKey) {
-        didSet { UserDefaults.standard.set(warningEnabled, forKey: Self.warningEnabledKey) }
+    @Published var warningEnabled = false {
+        didSet { defaults.set(warningEnabled, forKey: Self.warningEnabledKey) }
     }
-    @Published var warningThreshold: Int = MenuViewModel.readWarningThreshold(key: warningThresholdKey) {
-        didSet { UserDefaults.standard.set(warningThreshold, forKey: Self.warningThresholdKey) }
+    @Published var warningThreshold = 80 {
+        didSet { defaults.set(warningThreshold, forKey: Self.warningThresholdKey) }
     }
     /// Claude's 7-day window and Codex's weekly window.
-    @Published var weeklyWarningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.weeklyWarningEnabledKey) {
-        didSet { UserDefaults.standard.set(weeklyWarningEnabled, forKey: Self.weeklyWarningEnabledKey) }
+    @Published var weeklyWarningEnabled = false {
+        didSet { defaults.set(weeklyWarningEnabled, forKey: Self.weeklyWarningEnabledKey) }
     }
-    @Published var weeklyWarningThreshold: Int = MenuViewModel.readWarningThreshold(key: weeklyWarningThresholdKey) {
-        didSet { UserDefaults.standard.set(weeklyWarningThreshold, forKey: Self.weeklyWarningThresholdKey) }
+    @Published var weeklyWarningThreshold = 80 {
+        didSet { defaults.set(weeklyWarningThreshold, forKey: Self.weeklyWarningThresholdKey) }
     }
     /// Per-model weekly windows (e.g. Fable weekly).
-    @Published var modelWarningEnabled: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.modelWarningEnabledKey) {
-        didSet { UserDefaults.standard.set(modelWarningEnabled, forKey: Self.modelWarningEnabledKey) }
+    @Published var modelWarningEnabled = false {
+        didSet { defaults.set(modelWarningEnabled, forKey: Self.modelWarningEnabledKey) }
     }
-    @Published var modelWarningThreshold: Int = MenuViewModel.readWarningThreshold(key: modelWarningThresholdKey) {
-        didSet { UserDefaults.standard.set(modelWarningThreshold, forKey: Self.modelWarningThresholdKey) }
+    @Published var modelWarningThreshold = 80 {
+        didSet { defaults.set(modelWarningThreshold, forKey: Self.modelWarningThresholdKey) }
     }
-    @Published var resetAnnouncement: ResetAnnouncement = ResetAnnouncement.read() {
-        didSet { UserDefaults.standard.set(resetAnnouncement.rawValue, forKey: ResetAnnouncement.defaultsKey) }
+    @Published var resetAnnouncement: ResetAnnouncement = .fiveHour {
+        didSet { defaults.set(resetAnnouncement.rawValue, forKey: ResetAnnouncement.defaultsKey) }
     }
     /// Colour bars and the pill by burn rate instead of absolute percentage.
-    @Published var colorByPace: Bool = UserDefaults.standard.bool(forKey: MenuViewModel.colorByPaceKey) {
-        didSet { UserDefaults.standard.set(colorByPace, forKey: Self.colorByPaceKey) }
+    @Published var colorByPace = false {
+        didSet { defaults.set(colorByPace, forKey: Self.colorByPaceKey) }
     }
-    @Published var paceThreshold: Double = MenuViewModel.readPaceThreshold() {
-        didSet { UserDefaults.standard.set(paceThreshold, forKey: Self.paceThresholdKey) }
+    @Published var paceThreshold = UsageColoring.defaultBurnRateThreshold {
+        didSet { defaults.set(paceThreshold, forKey: Self.paceThresholdKey) }
     }
-    @Published var warningSound: String = MenuViewModel.readSound(key: warningSoundKey, default: "Tink") {
-        didSet { UserDefaults.standard.set(warningSound, forKey: Self.warningSoundKey) }
+    @Published var warningSound = "Tink" {
+        didSet { defaults.set(warningSound, forKey: Self.warningSoundKey) }
     }
-    @Published var reachedLimitSound: String = MenuViewModel.readSound(key: reachedLimitSoundKey, default: "Bottle") {
-        didSet { UserDefaults.standard.set(reachedLimitSound, forKey: Self.reachedLimitSoundKey) }
+    @Published var reachedLimitSound = "Bottle" {
+        didSet { defaults.set(reachedLimitSound, forKey: Self.reachedLimitSoundKey) }
     }
-    @Published var limitResetSound: String = MenuViewModel.readSound(key: limitResetSoundKey, default: "Hero") {
-        didSet { UserDefaults.standard.set(limitResetSound, forKey: Self.limitResetSoundKey) }
+    @Published var limitResetSound = "Hero" {
+        didSet { defaults.set(limitResetSound, forKey: Self.limitResetSoundKey) }
     }
-    @Published var outageSound: String = MenuViewModel.readSound(key: outageSoundKey, default: "Sosumi") {
-        didSet { UserDefaults.standard.set(outageSound, forKey: Self.outageSoundKey) }
+    @Published var outageSound = "Sosumi" {
+        didSet { defaults.set(outageSound, forKey: Self.outageSoundKey) }
     }
     private static let warningEnabledKey    = "cc-usage-stats.warningEnabled"
     private static let warningThresholdKey  = "cc-usage-stats.warningThreshold"
@@ -105,13 +105,13 @@ final class MenuViewModel: ObservableObject {
     private static let paceThresholdKey          = "cc-usage-stats.paceThreshold"
     static let paceThresholdRange: ClosedRange<Double> = 1.1...3.0
 
-    private static func readWarningThreshold(key: String) -> Int {
-        let v = UserDefaults.standard.integer(forKey: key)
+    private static func readWarningThreshold(key: String, from defaults: UserDefaults) -> Int {
+        let v = defaults.integer(forKey: key)
         return (v >= 1 && v <= 99) ? v : 80
     }
 
-    private static func readPaceThreshold() -> Double {
-        let v = UserDefaults.standard.double(forKey: paceThresholdKey)
+    private static func readPaceThreshold(from defaults: UserDefaults) -> Double {
+        let v = defaults.double(forKey: paceThresholdKey)
         return paceThresholdRange.contains(v) ? v : UsageColoring.defaultBurnRateThreshold
     }
 
@@ -128,8 +128,8 @@ final class MenuViewModel: ObservableObject {
         UsageColoring(byPace: colorByPace, burnRateThreshold: paceThreshold)
     }
 
-    private static func readSound(key: String, default fallback: String) -> String {
-        let v = UserDefaults.standard.string(forKey: key) ?? ""
+    private static func readSound(key: String, default fallback: String, from defaults: UserDefaults) -> String {
+        let v = defaults.string(forKey: key) ?? ""
         return SoundPlayer.pickableSounds.contains(v) ? v : fallback
     }
 
@@ -190,6 +190,11 @@ final class MenuViewModel: ObservableObject {
     /// to five minutes, none of which a test can do.
     private let connectFlow: () async throws -> OAuthSession
 
+    /// Where the settings above persist. Injected because the app hosts the
+    /// unit tests: with `.standard` a test run rewrote the user's real
+    /// preferences (and read them, so the user's own values broke tests).
+    private let defaults: UserDefaults
+
     init(
         apiFactory: @escaping (String) -> AnthropicAPIClient = { LiveAnthropicAPIClient(token: $0) },
         oauthClientFactory: @escaping @MainActor (OAuthSession) -> AnthropicAPIClient = {
@@ -197,15 +202,32 @@ final class MenuViewModel: ObservableObject {
         },
         connectFlow: @escaping () async throws -> OAuthSession = { try await OAuthFlow.runInteractive() },
         codex: CodexMonitor? = nil,
-        sessions: SessionTracker? = nil
+        sessions: SessionTracker? = nil,
+        defaults: UserDefaults = .standard
     ) {
         self.apiFactory = apiFactory
         self.oauthClientFactory = oauthClientFactory
         self.connectFlow = connectFlow
+        self.defaults = defaults
         // Built here rather than as a default argument: the default would be
         // evaluated in a nonisolated context, and CodexMonitor is main-actor.
-        self.codex = codex ?? CodexMonitor()
-        self.sessions = sessions ?? SessionTracker()
+        self.codex = codex ?? CodexMonitor(defaults: defaults)
+        self.sessions = sessions ?? SessionTracker(defaults: defaults)
+        // Assignments in init skip `didSet`, so loading doesn't write back.
+        pillMode = PillMode.read(from: defaults)
+        warningEnabled = defaults.bool(forKey: Self.warningEnabledKey)
+        warningThreshold = Self.readWarningThreshold(key: Self.warningThresholdKey, from: defaults)
+        weeklyWarningEnabled = defaults.bool(forKey: Self.weeklyWarningEnabledKey)
+        weeklyWarningThreshold = Self.readWarningThreshold(key: Self.weeklyWarningThresholdKey, from: defaults)
+        modelWarningEnabled = defaults.bool(forKey: Self.modelWarningEnabledKey)
+        modelWarningThreshold = Self.readWarningThreshold(key: Self.modelWarningThresholdKey, from: defaults)
+        resetAnnouncement = ResetAnnouncement.read(from: defaults)
+        colorByPace = defaults.bool(forKey: Self.colorByPaceKey)
+        paceThreshold = Self.readPaceThreshold(from: defaults)
+        warningSound = Self.readSound(key: Self.warningSoundKey, default: "Tink", from: defaults)
+        reachedLimitSound = Self.readSound(key: Self.reachedLimitSoundKey, default: "Bottle", from: defaults)
+        limitResetSound = Self.readSound(key: Self.limitResetSoundKey, default: "Hero", from: defaults)
+        outageSound = Self.readSound(key: Self.outageSoundKey, default: "Sosumi", from: defaults)
         codexForwarding = self.codex.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }

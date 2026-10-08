@@ -1,27 +1,17 @@
 import XCTest
 @testable import CCUsageStats
 
-/// Per-window alert rules as wired through the view model. The settings it
-/// writes live in the app's real defaults domain (the app hosts the tests),
-/// so every key touched is restored afterwards.
+/// Per-window alert rules as wired through the view model. Each view model
+/// gets its own throwaway defaults domain: the app hosts the tests, so
+/// `.standard` is the user's real preferences.
 @MainActor
 final class MenuViewModelAlertTests: XCTestCase {
-    private let keys = [
-        "cc-usage-stats.warningEnabled", "cc-usage-stats.warningThreshold",
-        "cc-usage-stats.weeklyWarningEnabled", "cc-usage-stats.weeklyWarningThreshold",
-        "cc-usage-stats.modelWarningEnabled", "cc-usage-stats.modelWarningThreshold",
-        "cc-usage-stats.resetAnnouncement", "cc-usage-stats.colorByPace", "cc-usage-stats.paceThreshold",
-    ]
-    private var saved: [String: Any] = [:]
-
-    override func setUp() {
-        saved = [:]
-        for k in keys { if let v = UserDefaults.standard.object(forKey: k) { saved[k] = v } }
-    }
-
-    override func tearDown() {
-        for k in keys { UserDefaults.standard.removeObject(forKey: k) }
-        for (k, v) in saved { UserDefaults.standard.set(v, forKey: k) }
+    /// A fresh defaults domain, deleted when the test ends.
+    private func throwawayDefaults() -> UserDefaults {
+        let name = "MenuViewModelAlertTests-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: name)!
+        addTeardownBlock { d.removePersistentDomain(forName: name) }
+        return d
     }
 
     private func snapshot(
@@ -35,7 +25,7 @@ final class MenuViewModelAlertTests: XCTestCase {
     }
 
     private func viewModel() -> MenuViewModel {
-        let vm = MenuViewModel()
+        let vm = MenuViewModel(defaults: throwawayDefaults())
         vm.warningEnabled = true
         vm.warningThreshold = 90
         vm.weeklyWarningEnabled = true
@@ -104,15 +94,59 @@ final class MenuViewModelAlertTests: XCTestCase {
                        AlertOutcome(warning: true))
     }
 
+    /// The app hosts the tests, so `.standard` is the user's real menu-bar
+    /// preferences: settings must land in the injected domain and nowhere else.
+    func testSettingsStayInTheInjectedDefaults() {
+        let keys = [
+            "cc-usage-stats.warningEnabled", "cc-usage-stats.warningThreshold",
+            "cc-usage-stats.weeklyWarningEnabled", "cc-usage-stats.weeklyWarningThreshold",
+            "cc-usage-stats.modelWarningEnabled", "cc-usage-stats.modelWarningThreshold",
+            "cc-usage-stats.resetAnnouncement", "cc-usage-stats.colorByPace", "cc-usage-stats.paceThreshold",
+            "cc-usage-stats.warningSound", "cc-usage-stats.reachedLimitSound",
+            "cc-usage-stats.limitResetSound", "cc-usage-stats.outageSound", "cc-usage-stats.pillMode",
+        ]
+        let real = UserDefaults.standard
+        let before = keys.map { real.object(forKey: $0) as? NSObject }
+        // Should a setter regress to `.standard`, undo the leak — touching
+        // only keys that changed, so a concurrent edit elsewhere survives.
+        addTeardownBlock {
+            for (k, v) in zip(keys, before) where real.object(forKey: k) as? NSObject != v {
+                if let v { real.set(v, forKey: k) } else { real.removeObject(forKey: k) }
+            }
+        }
+        let d = throwawayDefaults()
+        let vm = MenuViewModel(defaults: d)
+        vm.warningEnabled = !vm.warningEnabled
+        vm.warningThreshold = 37
+        vm.weeklyWarningEnabled = !vm.weeklyWarningEnabled
+        vm.weeklyWarningThreshold = 38
+        vm.modelWarningEnabled = !vm.modelWarningEnabled
+        vm.modelWarningThreshold = 39
+        vm.resetAnnouncement = .both
+        vm.colorByPace = !vm.colorByPace
+        vm.paceThreshold = 2.7
+        vm.warningSound = SoundPlayer.none
+        vm.reachedLimitSound = SoundPlayer.none
+        vm.limitResetSound = SoundPlayer.none
+        vm.outageSound = SoundPlayer.none
+        vm.pillMode = .both
+        XCTAssertEqual(keys.map { real.object(forKey: $0) as? NSObject }, before, "the real domain was written")
+
+        let reread = MenuViewModel(defaults: d)
+        XCTAssertEqual(reread.warningThreshold, 37)
+        XCTAssertEqual(reread.weeklyWarningThreshold, 38)
+        XCTAssertEqual(reread.modelWarningThreshold, 39)
+        XCTAssertEqual(reread.warningEnabled, vm.warningEnabled)
+        XCTAssertEqual(reread.colorByPace, vm.colorByPace)
+        XCTAssertEqual(reread.resetAnnouncement, .both)
+        XCTAssertEqual(reread.paceThreshold, 2.7)
+        XCTAssertEqual(reread.outageSound, SoundPlayer.none)
+        XCTAssertEqual(reread.pillMode, .both)
+    }
+
     func testColoringFollowsTheSettings() {
-        // Shares UserDefaults.standard with the app: put the user's values back.
-        let d = UserDefaults.standard
-        let saved = ["cc-usage-stats.colorByPace", "cc-usage-stats.paceThreshold"].map { ($0, d.object(forKey: $0)) }
-        addTeardownBlock { for (k, v) in saved { d.set(v, forKey: k) } }
         let vm = viewModel()
-        // The defaults domain is the real app's: start from the default threshold.
-        vm.paceThreshold = UsageColoring.defaultBurnRateThreshold
-        vm.colorByPace = false
+        XCTAssertEqual(vm.coloring, UsageColoring(byPace: false, burnRateThreshold: UsageColoring.defaultBurnRateThreshold))
         XCTAssertFalse(vm.coloring.byPace, "a saved pace threshold doesn't matter while colouring is absolute")
         vm.colorByPace = true
         vm.paceThreshold = 2

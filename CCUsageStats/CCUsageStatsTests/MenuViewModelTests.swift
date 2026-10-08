@@ -35,10 +35,19 @@ final class MenuViewModelTests: XCTestCase {
         func fetchRateLimits() async -> AnthropicAPI.Result { result }
     }
 
+    /// The app hosts the tests, so `.standard` is the user's real preferences.
+    private func throwawayDefaults() -> UserDefaults {
+        let name = "MenuViewModelTests-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: name)!
+        addTeardownBlock { d.removePersistentDomain(forName: name) }
+        return d
+    }
+
     private func viewModel(polling result: AnthropicAPI.Result = .invalidToken) -> MenuViewModel {
         MenuViewModel(
             apiFactory: { _ in StubAPI(result: result) },
-            oauthClientFactory: { _ in StubAPI(result: result) }
+            oauthClientFactory: { _ in StubAPI(result: result) },
+            defaults: throwawayDefaults()
         )
     }
 
@@ -51,7 +60,8 @@ final class MenuViewModelTests: XCTestCase {
         MenuViewModel(
             apiFactory: { _ in StubAPI(result: result) },
             oauthClientFactory: { _ in StubAPI(result: result) },
-            connectFlow: flow
+            connectFlow: flow,
+            defaults: throwawayDefaults()
         )
     }
 

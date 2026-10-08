@@ -778,8 +778,10 @@ The suite is safe to run against a machine that uses the app. The unit
 bundle is hosted in the app, so `xcodebuild test` launches real app
 instances; `TestEnvironment.isRunningTests` redirects the Keychain item to
 `cc-usage-stats.tests.<pid>` and all app state to a per-process scratch
-directory under `$TMPDIR`, and skips the settings migration. Your stored
-token, `history.jsonl` and `~/.claude/settings.json` are never touched.
+directory under `$TMPDIR`, and skips the settings migration. Tests hand
+each view model a throwaway `UserDefaults` suite instead of `.standard`.
+Your stored token, menu-bar preferences, `history.jsonl` and
+`~/.claude/settings.json` are never touched.
 
 Screenshots under `docs/screenshots/` are window captures of the real app
 at 2× (`screencapture -o -l <window id>`), light and dark. To capture the
