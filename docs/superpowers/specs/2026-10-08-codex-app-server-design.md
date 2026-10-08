@@ -1,7 +1,7 @@
 # Codex Live Readings via `codex app-server` — Design Spec
 
 **Date:** 2026-10-08
-**Status:** Implementing
+**Status:** Implemented (v0.17.0)
 **Scope:** Make Codex "Live polling" read rate limits through the Codex CLI's
 own `codex app-server` (JSON-RPC over stdio) instead of calling
 `chatgpt.com/backend-api/wham/usage` with the CLI's access token.
@@ -58,7 +58,7 @@ also under `~/Applications`). The user's own CLI wins over the bundled one: it
 is the one that owns `~/.codex`. The result is cached in the monitor and
 re-resolved when the path stops being executable or a run fails to launch.
 
-The child runs with `PATH` = the CLI's directory, `/opt/homebrew/bin`,
+The child runs with `PATH` = the CLI's directory (and its symlink target's), `/opt/homebrew/bin`,
 `/usr/local/bin`, then the app's own PATH — enough for npm/Homebrew/nvm node
 wrappers (nvm keeps node next to codex).
 
@@ -66,9 +66,11 @@ wrappers (nvm keeps node next to codex).
 
 Every poll (5 min, unchanged) spawns `codex app-server`, writes `initialize`,
 `initialized`, `account/rateLimits/read`, reads stdout lines until the
-response with id 2, then closes stdin and waits for exit. Hard deadline 20 s
-for the whole exchange; on timeout TERM, then KILL (the `liveRun` pattern).
-stderr goes to /dev/null. No long-lived server: one ~1 s process every 5
+response with id 2, then closes stdin and waits for exit. The reply must come
+within 20 s; a server that then won't exit is TERMed, then KILLed (the
+`liveRun` pattern), so one read returns within about 24 s. stdout is read with
+`poll`, so the reader stops at the deadline even when a grandchild keeps the
+pipe open. stderr goes to /dev/null. No long-lived server: one ~1 s process every 5
 minutes is cheaper than a resident one, and nothing is left running if the app
 crashes.
 
@@ -89,8 +91,10 @@ parsers. `observedAt` = time of the read. New source `.appServer`
 ### Fallback to the endpoint: kept, narrowly
 
 The endpoint path stays, but only for when the app-server **can't answer at
-all**: no codex binary, launch failure, timeout, garbled output, or an
-"unknown variant" error (a CLI too old for `account/rateLimits/read`). When the
+all**: no codex binary, launch failure, timeout, garbled output (including
+a reply without `rateLimits`), or an "unknown variant" / `-32601` error (a CLI
+too old for `account/rateLimits/read`). A well-formed reply with no current
+`codex` window is an answer, not a failure to answer: no fallback. When the
 app-server answers with anything else — notably "authentication required" —
 that answer is shown and the endpoint is not tried: it reads the same
 credentials and would fail the same way, only less clearly.

@@ -74,7 +74,15 @@ final class CodexAppServerTests: XCTestCase {
                        .failure(.server("codex account authentication required to read rate limits")))
         let old = #"{"error":{"code":-32600,"message":"Invalid request: unknown variant `account/rateLimits/read`, expected one of `initialize`"},"id":2}"#
         XCTAssertEqual(CodexAppServer.interpret(line: old, observedAt: 0), .failure(.unsupported))
-        XCTAssertEqual(CodexAppServer.interpret(line: #"{"id":2,"result":null}"#, observedAt: 0), .failure(.noRateLimits))
+        XCTAssertEqual(CodexAppServer.interpret(line: #"{"id":2,"result":{"rateLimits":{"limitId":"codex","primary":null,"secondary":null}}}"#, observedAt: 0), .failure(.noRateLimits))
+    }
+
+    func testGarbledRepliesAllowTheFallback() {
+        XCTAssertEqual(CodexAppServer.interpret(line: #"{"id":2,"result":"invalid"}"#, observedAt: 0), .failure(.noAnswer))
+        XCTAssertEqual(CodexAppServer.interpret(line: #"{"id":2,"result":{"unexpected":1}}"#, observedAt: 0), .failure(.noAnswer))
+        XCTAssertEqual(CodexAppServer.interpret(line: #"{"id":2}"#, observedAt: 0), .failure(.noAnswer))
+        XCTAssertEqual(CodexAppServer.interpret(line: #"{"id":2,"error":{"code":-32601,"message":"Method not found"}}"#, observedAt: 0),
+                       .failure(.unsupported))
     }
 
     func testFallbackOnlyWhenTheAppServerCouldNotAnswer() {
@@ -156,6 +164,34 @@ final class CodexAppServerTests: XCTestCase {
         let start = Date()
         XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 1, now: { 0 }), .failure(.timedOut))
         XCTAssertLessThan(Date().timeIntervalSince(start), 6)
+    }
+
+    /// The server exits but a background child keeps stdout open: the read
+    /// must still end at the deadline, and its reader must not linger.
+    func testAGrandchildHoldingStdoutDoesNotHangTheRead() throws {
+        let cli = try fakeCLI("sleep 30 & exit 0")
+        let start = Date()
+        XCTAssertEqual(CodexAppServer.read(cli: cli, timeout: 1, now: { 0 }), .failure(.timedOut))
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+        XCTAssertEqual(CodexAppServer.liveReaders, 0, "the stdout reader stopped")
+    }
+
+    func testAnAnswerThenARefusalToExitStaysBounded() throws {
+        let cli = try fakeCLI(politeServer.replacingOccurrences(of: "cat >/dev/null", with: "trap '' TERM; while :; do sleep 1; done"))
+        let start = Date()
+        XCTAssertEqual(try CodexAppServer.read(cli: cli, timeout: 2, now: { 0 }).get().windows.count, 1)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2 + 4.5)
+    }
+
+    /// `~/.local/bin/codex` → a symlink into an nvm dir whose node sits next to the target.
+    func testSymlinkedWrapperFindsItsInterpreterNextToTheTarget() throws {
+        let target = try fakeCLI(politeServer, shebang: "#!/usr/bin/env fakenode-cas2",
+                                 extra: ["fakenode-cas2": "#!/bin/sh\nexec /bin/sh \"$@\"\n"])
+        let linkDir = FileManager.default.temporaryDirectory.appendingPathComponent("cas-link-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: linkDir, withIntermediateDirectories: true)
+        let link = linkDir.appendingPathComponent("codex").path
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
+        XCTAssertEqual(try CodexAppServer.read(cli: link, timeout: 10, now: { 1 }).get().windows.count, 1)
     }
 
     func testAServerThatExitsWithoutAnsweringIsNoAnswer() throws {

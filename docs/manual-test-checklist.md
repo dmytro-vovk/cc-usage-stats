@@ -350,10 +350,18 @@ by design.
 - Pill = **Codex**: one band, `terminal` icon, the Codex %. Pill =
   **Both**: Claude bands + Codex band; with no Claude token, only the
   red triangle.
-- **Live polling** ON: within seconds the source flips to `live`
-  (or an error is shown — e.g. "Codex sign-in expired — run `codex`
-  once to refresh it."). `~/.codex/auth.json` mtime is unchanged
-  afterwards (`stat -f %m ~/.codex/auth.json` before and after).
+- **Live polling** ON: within ~2s Accounts → **Last seen** reads
+  `… ago (app-server)` and the dropdown hover says `app-server`. No
+  `codex app-server` process is left behind (`pgrep -fl "codex
+  app-server"` shows only ones you started). Only `initialize` and
+  `account/rateLimits/read` are sent (see spec).
+- Fallback (only on a machine with `~/.codex/auth.json` but no codex
+  CLI anywhere — no npm/Homebrew CLI, no Codex desktop app): the source
+  is `live` (endpoint), or the error names both paths.
+- After the access token's `exp` passes (≈10 days after a sign-in), live
+  readings keep arriving and `~/.codex/auth.json` has a newer
+  `last_refresh` — Codex renewed it; `codex` still works without a new
+  login.
 - Tracking OFF: Codex section and band disappear; pill falls back to
   Claude.
 

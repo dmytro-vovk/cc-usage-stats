@@ -86,12 +86,15 @@ nonisolated enum CodexAppServer {
     /// npm's `codex` is `#!/usr/bin/env node`, and a GUI app's PATH has no
     /// node. Homebrew, npm-global and nvm all keep node next to (or in the
     /// usual dirs near) codex.
+    /// A symlinked CLI (`~/.local/bin/codex` → an nvm dir) also gets its
+    /// target's directory, where that node lives.
     static func childEnvironment(cli: String, base: [String: String]) -> [String: String] {
         var env = base
         let dir = (cli as NSString).deletingLastPathComponent
+        let resolved = URL(fileURLWithPath: cli).resolvingSymlinksInPath().deletingLastPathComponent().path
         let rest = (base["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin").split(separator: ":").map(String.init)
         var seen = Set<String>()
-        env["PATH"] = ([dir, "/opt/homebrew/bin", "/usr/local/bin"] + rest)
+        env["PATH"] = ([dir, resolved, "/opt/homebrew/bin", "/usr/local/bin"] + rest)
             .filter { !$0.isEmpty && seen.insert($0).inserted }
             .joined(separator: ":")
         return env
@@ -108,11 +111,15 @@ nonisolated enum CodexAppServer {
         else { return nil }
         if let error = obj["error"] as? [String: Any] {
             let message = error["message"] as? String ?? "error \(error["code"] ?? "?")"
-            return .failure(message.contains("unknown variant") ? .unsupported : .server(message))
+            let code = CodexRolloutParser.number(error["code"])
+            let unknownMethod = code == -32601 || message.contains("unknown variant")
+            return .failure(unknownMethod ? .unsupported : .server(message))
         }
+        // Not the documented shape at all: garbled, so the endpoint may help.
         guard let result = obj["result"] as? [String: Any],
-              let snapshot = parseRateLimits(result, observedAt: observedAt)
-        else { return .failure(.noRateLimits) }
+              result["rateLimits"] is [String: Any] || result["rateLimitsByLimitId"] is [String: Any]
+        else { return .failure(.noAnswer) }
+        guard let snapshot = parseRateLimits(result, observedAt: observedAt) else { return .failure(.noRateLimits) }
         return .success(snapshot)
     }
 
@@ -148,8 +155,10 @@ nonisolated enum CodexAppServer {
 
     /// One read: start `codex app-server`, send the requests, wait for the
     /// reply, close stdin (the server then exits by itself). Blocking — call
-    /// off the main actor. Bounded by `timeout`; a server that doesn't answer
-    /// or doesn't exit is killed (TERM, then KILL).
+    /// off the main actor. The reply must come within `timeout`; a server
+    /// that then won't exit is TERMed and KILLed, so a call returns within
+    /// about `timeout` + 4 s, and leaves no reader thread behind even when a
+    /// grandchild keeps stdout open.
     static func read(
         cli: String,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -173,16 +182,25 @@ nonisolated enum CodexAppServer {
 
         let outcome = OutcomeBox()
         let answered = DispatchSemaphore(value: 0)
+        let readerDone = DispatchSemaphore(value: 0)
+        let fd = stdout.fileHandleForReading.fileDescriptor
+        readers.add(1)
         DispatchQueue.global(qos: .utility).async {
-            // POSIX read: returns whatever is there, where FileHandle's
-            // read(upToCount:) would wait for the full count or EOF.
-            let fd = stdout.fileHandleForReading.fileDescriptor
+            defer { readers.add(-1); answered.signal(); readerDone.signal() }
             var chunk = [UInt8](repeating: 0, count: 64 * 1024)
             var buffer = Data()
-            defer { answered.signal() }
-            while true {
+            while !outcome.cancelled {
+                // Poll, so the reader can be stopped even when a grandchild
+                // holds stdout open and no EOF ever comes.
+                var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                let ready = poll(&pfd, 1, 200)
+                if ready < 0, errno == EINTR { continue }
+                if ready < 0 { return }
+                if ready == 0 { continue }
+                // POSIX read: returns whatever is there, where FileHandle's
+                // read(upToCount:) would wait for the full count or EOF.
                 let n = chunk.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
-                if n < 0, errno == EINTR { continue }
+                if n < 0, errno == EINTR || errno == EAGAIN { continue }
                 guard n > 0 else { return }
                 buffer.append(contentsOf: chunk[0..<n])
                 while let nl = buffer.firstIndex(of: 0x0A) {
@@ -200,21 +218,38 @@ nonisolated enum CodexAppServer {
         try? writer.write(contentsOf: Data((requestLines.joined(separator: "\n") + "\n").utf8))
 
         let gotAnswer = answered.wait(timeout: .now() + timeout) == .success
+        outcome.cancel()
         try? writer.close()
-        if exited.wait(timeout: .now() + (gotAnswer ? 3 : 0)) == .timedOut {
+        if exited.wait(timeout: .now() + (gotAnswer ? 1 : 0)) == .timedOut {
             p.terminate()
-            if exited.wait(timeout: .now() + 2) == .timedOut {
+            if exited.wait(timeout: .now() + 1.5) == .timedOut {
                 kill(p.processIdentifier, SIGKILL)
-                _ = exited.wait(timeout: .now() + 2)
+                _ = exited.wait(timeout: .now() + 1.5)
             }
         }
+        // The reader notices the cancel within one poll interval.
+        _ = readerDone.wait(timeout: .now() + 1)
         guard gotAnswer else { return .failure(.timedOut) }
         return outcome.get() ?? .failure(.noAnswer)
+    }
+
+    /// Stdout readers still running — for tests.
+    static var liveReaders: Int { readers.value }
+    private static let readers = Counter()
+
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var n = 0
+        func add(_ d: Int) { lock.lock(); n += d; lock.unlock() }
+        var value: Int { lock.lock(); defer { lock.unlock() }; return n }
     }
 
     private final class OutcomeBox: @unchecked Sendable {
         private let lock = NSLock()
         private var value: Result<CodexSnapshot, Failure>?
+        private var stop = false
+        var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return stop }
+        func cancel() { lock.lock(); stop = true; lock.unlock() }
         func set(_ v: Result<CodexSnapshot, Failure>) { lock.lock(); value = v; lock.unlock() }
         func get() -> Result<CodexSnapshot, Failure>? { lock.lock(); defer { lock.unlock() }; return value }
     }

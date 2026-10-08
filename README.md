@@ -14,7 +14,7 @@ cap) — the same meter Claude Code's own `/usage` panel shows — right
 here in the menubar, without opening Claude Code.
 
 Optionally tracks **OpenAI Codex** rate limits too — read from the Codex
-CLI's local session logs, with opt-in live polling — so you can balance
+CLI's local session logs, with opt-in live polling through the Codex CLI — so you can balance
 work between the two quotas. See [Codex usage](#codex-usage).
 
 ## What you see
@@ -134,7 +134,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
 - With [Codex tracking](#codex-usage) on, a **Codex** section: one bar
   per Codex window (labelled from its length — "5-hour", "Weekly"), and
   the plan and reading age in the header (`prolite · 2m ago`; hover for
-  the source, `session log` or `live`). Reset times are row tooltips, as
+  the source: `session log`, `app-server`, or `live` for the endpoint
+  fallback). Reset times are row tooltips, as
   for Claude.
 - At the very top, your *active* Claude Code sessions — a status icon, the
   title and the time since their last event (hover for the status in
@@ -307,16 +308,28 @@ Optional, off by default: **Settings → Accounts → Track Codex usage**.
   when Codex wrote it, hence "as of N ago". Once a window's reset time
   has passed it shows **0%** instead of the old number. Before that, the
   number can still be out of date (OpenAI may reset early).
-- **Live polling (opt-in).** Polls `https://chatgpt.com/backend-api/wham/usage`
-  — the endpoint behind the Codex CLI's usage display — every 5 minutes
-  and on wake, using the CLI's ChatGPT sign-in from `~/.codex/auth.json`.
-  The file is only read. The app **never refreshes** that token: Codex
-  refresh tokens are single-use, so refreshing would sign the CLI out.
-  When the access token expires (they last about 10 days) the toggle
-  reports **"Codex sign-in expired — run `codex` once to refresh it."**,
-  and the session logs keep the display going. Whichever source has the
-  newer reading wins. Verification notes:
-  [design spec](docs/superpowers/specs/2026-10-07-settings-window-and-codex-usage-design.md).
+- **Live polling (opt-in).** Every 5 minutes and on wake the app starts
+  the Codex CLI's own `codex app-server` for about a second and asks it
+  for the account's rate limits (`account/rateLimits/read`; nothing else
+  is sent). Because it is Codex itself, Codex renews its ChatGPT sign-in
+  when needed and writes the new tokens to `~/.codex/auth.json`, as any
+  `codex` run does — so live readings no longer stop when the access
+  token expires (about every 10 days). The CLI is looked for in
+  `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then your login
+  shell's `PATH`, then the Codex desktop app's bundled CLI. If Codex says
+  it isn't signed in, that is shown ("Codex: codex account authentication
+  required…" — run `codex login`).
+- **Fallback.** Only when the app-server can't answer at all (no CLI
+  found, it won't start, times out, or is too old), the app calls
+  `https://chatgpt.com/backend-api/wham/usage` with the sign-in from
+  `~/.codex/auth.json` instead. That path only reads the file and
+  **never refreshes** the token (Codex refresh tokens are single-use;
+  refreshing out-of-band would sign the CLI out), so with an expired token
+  it reports **"Codex sign-in expired — run `codex` once to refresh it."**
+  Either way the session logs keep the display going, and whichever source
+  has the newer reading wins. Design notes:
+  [app-server spec](docs/superpowers/specs/2026-10-08-codex-app-server-design.md),
+  [original spec](docs/superpowers/specs/2026-10-07-settings-window-and-codex-usage-design.md).
 
 ### Usage MCP server
 
@@ -328,7 +341,8 @@ window is tight, pick a cheaper subagent model, or wait for a reset before
 a large fan-out.
 
 - **What it returns.** One JSON object: for Claude (5-hour, weekly, each
-  per-model weekly window) and Codex (each window from the session logs):
+  per-model weekly window) and Codex (each window of the newest reading —
+  session log, app-server or endpoint, named in `source`):
   `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace`
   (on-pace percent, ahead or not, projected time at 100%), the 5-hour
   `forecast_seconds_to_cap`, plus `as_of`, `age_seconds` and `stale`
@@ -663,8 +677,12 @@ security delete-identity -c "CCUsageStats Dev"
   message) to `~/Library/Application Support/cc-usage-stats/sessions/` and
   nowhere else. No prompts, tool input or output are stored.
 - Codex tracking (off by default) reads `~/.codex/sessions` locally.
-  Opt-in live polling adds one request every 5 minutes to `chatgpt.com`
-  with the Codex CLI's existing sign-in; `~/.codex` is never written.
+  Opt-in live polling runs the Codex CLI (`codex app-server`) every 5
+  minutes; Codex itself contacts OpenAI and may renew its sign-in in
+  `~/.codex/auth.json` (and writes its usual state under `~/.codex`), as
+  any `codex` run does. The app itself writes nothing there. Only if the
+  CLI can't answer does the app send one request to `chatgpt.com` with
+  the CLI's existing sign-in, read-only.
 - The usage MCP server (off by default) only reads local files and
   answers the agent that launched it over stdio; it opens no port and
   makes no requests. What an agent does with the numbers is up to the
