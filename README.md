@@ -205,8 +205,8 @@ windows; the gauge needle always shows the absolute level.
 </picture>
 &nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-accounts-dark.png?v=0.14.2">
-  <img alt="Settings — Accounts tab" src="docs/screenshots/settings-accounts-light.png?v=0.14.2" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-accounts-dark.png?v=0.17.0">
+  <img alt="Settings — Accounts tab" src="docs/screenshots/settings-accounts-light.png?v=0.17.0" width="460">
 </picture>
 &nbsp;
 <picture>
