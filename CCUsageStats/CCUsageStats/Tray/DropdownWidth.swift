@@ -97,11 +97,34 @@ private extension View {
         if #available(macOS 15, *) {
             pointerStyle(.frameResize(position: edge == .leading ? .leading : .trailing))
         } else {
-            // Push/pop pairs per hover; a close mid-hover can leave one
-            // pushed, which the next hover-exit clears.
-            onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
+            modifier(LegacyResizeCursor())
         }
+    }
+}
+
+/// macOS 13–14: push/pop the cursor by hand. The panel can close with the
+/// pointer still over the edge, and then no hover-exit arrives — so pop on
+/// disappear and on losing key status (closing always takes it) as well,
+/// at most once per push.
+private struct LegacyResizeCursor: ViewModifier {
+    @State private var pushed = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in inside ? push() : pop() }
+            .onDisappear { pop() }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in pop() }
+    }
+
+    private func push() {
+        guard !pushed else { return }
+        NSCursor.resizeLeftRight.push()
+        pushed = true
+    }
+
+    private func pop() {
+        guard pushed else { return }
+        NSCursor.pop()
+        pushed = false
     }
 }
