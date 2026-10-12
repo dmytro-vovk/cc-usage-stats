@@ -86,6 +86,21 @@ final class AdaptiveColumnsLayoutTests: XCTestCase {
         XCTAssertTrue(isBlue(color(rep, size, x: 500, y: size.height / 2)))
     }
 
+    /// The menu-bar panel proposes its current height; a divider between
+    /// the columns once took all of it, so the panel never shrank to fit
+    /// two columns (live: 612×536 with the lower half empty).
+    func testDividedColumnsDoNotAbsorbAProposedHeight() {
+        let view = AdaptiveColumns(twoColumn: true, divided: true) {
+            Color.red.frame(height: 40)
+        } trailing: {
+            Color.blue.frame(height: 20)
+        }
+        .frame(width: 600)
+        let c = NSHostingController(rootView: view)
+        XCTAssertEqual(c.sizeThatFits(in: NSSize(width: 600, height: 536)).height, 40)
+        XCTAssertEqual(c.sizeThatFits(in: NSSize(width: 600, height: 5000)).height, 40)
+    }
+
     func testStackedWhenNarrow() {
         let (rep, size) = render(width: 320)
         XCTAssertGreaterThan(size.height, 80, "two stacked 40pt blocks")

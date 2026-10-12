@@ -54,6 +54,10 @@ struct AdaptiveColumns<Leading: View, Trailing: View>: View {
                 VStack(alignment: .leading, spacing: 8) { trailing }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            // The panel proposes its current height, and a vertical divider
+            // takes whatever it's offered — the panel then never shrinks to
+            // the columns. Sized to content, the divider spans the taller one.
+            .fixedSize(horizontal: false, vertical: true)
         } else {
             leading
             if divided { Divider() }
