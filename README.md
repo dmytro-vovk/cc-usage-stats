@@ -81,8 +81,7 @@ work between the two quotas. See [Codex usage](#codex-usage).
 </picture>
 
 - **Resizable width**: drag either side edge of the panel (280–720 pt,
-  320 by default; remembered across opens and launches; double-click an
-  edge to go back to 320). From about 550 pt the content reflows into two
+  320 by default; remembered across opens and launches). From about 550 pt the content reflows into two
   columns — Claude beside Codex, or with Codex tracking off, the 5-hour
   window beside the weekly ones — and session titles get the extra room.
   Height still follows the content.

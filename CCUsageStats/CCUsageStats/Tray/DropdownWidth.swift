@@ -67,7 +67,9 @@ struct AdaptiveColumns<Leading: View, Trailing: View>: View {
 }
 
 /// An invisible strip along one side edge of the panel that resizes it.
-/// Double-click resets to the standard width.
+///
+/// No double-click reset: inside the menu-bar panel a double-click on the
+/// strip closed the panel instead (an ordinary window delivered it fine).
 struct DropdownResizeEdge: View {
     let edge: HorizontalEdge
     @Binding var width: Double
@@ -89,8 +91,7 @@ struct DropdownResizeEdge: View {
                     }
                     .onEnded { _ in drag = nil }
             )
-            .onTapGesture(count: 2) { width = DropdownWidth.standard }
-            .help("Drag to resize · double-click for the standard width")
+            .help("Drag to resize")
             .accessibilityHidden(true)
     }
 }

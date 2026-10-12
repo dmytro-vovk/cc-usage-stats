@@ -86,11 +86,14 @@ Skip this if you've never had the Phase 1 statusline integration.
 - Hover either side edge of the open dropdown — the cursor turns into a
   left/right resize arrow.
 - Drag the right edge right — the panel widens under the pointer up to
-  720 pt; drag left — it stops at 280 pt. The left edge works mirrored.
+  720 pt; drag left — it stops at 280 pt. The left edge works mirrored
+  (dragging it out widens the panel), but the panel stays anchored under
+  its menu-bar item, so the change shows on the right side.
 - Past ~550 pt, Claude and Codex sit side by side with a vertical divider
-  (Codex tracking off: 5-hour on the left, weekly windows on the right).
+  (Codex tracking off: 5-hour on the left, weekly windows on the right),
+  and the panel's height shrinks to the columns — no empty band at the
+  bottom.
 - Close and reopen, then quit and relaunch — the width is kept.
-- Double-click an edge — back to 320 pt.
 
 ### 6. Sparkline + forecast
 
