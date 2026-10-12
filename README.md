@@ -80,6 +80,12 @@ work between the two quotas. See [Codex usage](#codex-usage).
   <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.18.0" width="280">
 </picture>
 
+- **Resizable width**: drag either side edge of the panel (280–720 pt,
+  320 by default; remembered across opens and launches; double-click an
+  edge to go back to 320). From about 550 pt the content reflows into two
+  columns — Claude beside Codex, or with Codex tracking off, the 5-hour
+  window beside the weekly ones — and session titles get the extra room.
+  Height still follows the content.
 - A **Claude** header with the ↻ refresh button (⌘R) right-aligned;
   hovering it shows "Last updated Xs ago".
 - 5-hour and 7-day windows: title + bold gradient-coloured percentage

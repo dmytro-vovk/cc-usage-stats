@@ -81,6 +81,17 @@ Skip this if you've never had the Phase 1 statusline integration.
   resets within a second.
 - Hidden when polling is stopped (e.g. Anthropic 401 → invalid token).
 
+### 5a. Resizable dropdown
+
+- Hover either side edge of the open dropdown — the cursor turns into a
+  left/right resize arrow.
+- Drag the right edge right — the panel widens under the pointer up to
+  720 pt; drag left — it stops at 280 pt. The left edge works mirrored.
+- Past ~550 pt, Claude and Codex sit side by side with a vertical divider
+  (Codex tracking off: 5-hour on the left, weekly windows on the right).
+- Close and reopen, then quit and relaunch — the width is kept.
+- Double-click an edge — back to 320 pt.
+
 ### 6. Sparkline + forecast
 
 - After at least two polls, the 5-hour section shows a filled-area
