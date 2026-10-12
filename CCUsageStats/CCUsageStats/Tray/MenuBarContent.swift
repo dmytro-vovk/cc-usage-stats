@@ -204,7 +204,7 @@ struct MenuBarLabel: View {
 extension View {
     /// Opts a caption out of single-line truncation.
     ///
-    /// The dropdown is a fixed 280pt wide and often taller than the panel it
+    /// The dropdown has a set width and is often taller than the panel it
     /// is given (sparklines, the settings block, an incident banner). SwiftUI
     /// answers a too-short height proposal by collapsing text to one
     /// tail-truncated line — which silently ate the `claude setup-token`
@@ -221,6 +221,7 @@ extension View {
 
 struct MenuBarDropdown: View {
     @ObservedObject var vm: MenuViewModel
+    @AppStorage(DropdownWidth.key) private var storedWidth = Double(DropdownWidth.standard)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -234,73 +235,23 @@ struct MenuBarDropdown: View {
             // beyond "All Systems Operational").
             statusBanner
 
-            // Header: refresh lives here, with the capture age as its tooltip.
-            HStack(alignment: .firstTextBaseline) {
-                Text("Claude").font(.headline)
-                Spacer()
-                if vm.canRefresh {
-                    Button {
-                        vm.refreshNow()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.borderless)
-                    .keyboardShortcut("r")
-                    .help(vm.cached.map { WindowTooltip.lastUpdated(secondsAgo: now - $0.capturedAt) }
-                          ?? "Refresh now (⌘R)")
-                }
-            }
-
-            // Window rows.
-            if let cached = vm.cached {
-                let modelKeys = UsageWindows.orderedModelKeys(cached.snapshot.models)
-                WindowSection(
-                    title: "5-hour session",
-                    window: cached.snapshot.fiveHour,
-                    now: now,
-                    windowLength: UsageColoring.fiveHourLength,
-                    coloring: vm.coloring,
-                    sparkline: cached.snapshot.fiveHour.map { five in
-                        SparklineData(
-                            samples: vm.historySamples,
-                            windowStart: five.resetsAt - 5 * 3600,
-                            windowEnd: five.resetsAt,
-                            forecastSecondsToCap: vm.forecastSecondsToCap
-                        )
-                    }
-                )
-                WindowSection(
-                    title: "7-day window",
-                    window: cached.snapshot.sevenDay,
-                    now: now,
-                    windowLength: UsageColoring.weekLength,
-                    coloring: vm.coloring,
-                    breakdown: UsageShare.caption(cached.snapshot.breakdown),
-                    tracksPace: true
-                )
-
-                ForEach(modelKeys, id: \.self) { key in
-                    WindowSection(
-                        title: UsageWindows.label(for: key),
-                        window: cached.snapshot.models[key],
-                        now: now,
-                        windowLength: UsageColoring.weekLength,
-                        coloring: vm.coloring,
-                        tracksPace: true
-                    )
+            if vm.codex.trackingEnabled {
+                // Wide: Claude and Codex side by side.
+                AdaptiveColumns(twoColumn: twoColumn, divided: true) {
+                    claudeHeader
+                    claudeWindows(sessionWindow: true, weeklyWindows: true)
+                } trailing: {
+                    CodexSection(snapshot: vm.codex.snapshot, now: now, coloring: vm.coloring)
                 }
             } else {
-                Text("No data captured yet.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Wide: the 5-hour session beside the weekly windows.
+                claudeHeader
+                AdaptiveColumns(twoColumn: twoColumn && vm.cached != nil) {
+                    claudeWindows(sessionWindow: true, weeklyWindows: false)
+                } trailing: {
+                    claudeWindows(sessionWindow: false, weeklyWindows: true)
+                }
             }
-
-            if vm.codex.trackingEnabled {
-                Divider()
-                CodexSection(snapshot: vm.codex.snapshot, now: now, coloring: vm.coloring)
-            }
-
 
             // Auth / connectivity status.
             authStatusRow
@@ -336,8 +287,82 @@ struct MenuBarDropdown: View {
             }
             .controlSize(.small)
         }
-        .padding(14)
-        .frame(width: 280, alignment: .leading)
+        .padding(DropdownWidth.padding)
+        .frame(width: width, alignment: .leading)
+        .overlay(alignment: .leading) { DropdownResizeEdge(edge: .leading, width: $storedWidth) }
+        .overlay(alignment: .trailing) { DropdownResizeEdge(edge: .trailing, width: $storedWidth) }
+    }
+
+    private var width: CGFloat { DropdownWidth.clamped(storedWidth) }
+    private var twoColumn: Bool { DropdownWidth.isTwoColumn(width) }
+
+    // Header: refresh lives here, with the capture age as its tooltip.
+    private var claudeHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Claude").font(.headline)
+            Spacer()
+            if vm.canRefresh {
+                Button {
+                    vm.refreshNow()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut("r")
+                .help(vm.cached.map { WindowTooltip.lastUpdated(secondsAgo: now - $0.capturedAt) }
+                      ?? "Refresh now (⌘R)")
+            }
+        }
+    }
+
+    /// The Claude window rows: the 5-hour session and/or the weekly ones.
+    @ViewBuilder
+    private func claudeWindows(sessionWindow: Bool, weeklyWindows: Bool) -> some View {
+        if let cached = vm.cached {
+            if sessionWindow {
+                WindowSection(
+                    title: "5-hour session",
+                    window: cached.snapshot.fiveHour,
+                    now: now,
+                    windowLength: UsageColoring.fiveHourLength,
+                    coloring: vm.coloring,
+                    sparkline: cached.snapshot.fiveHour.map { five in
+                        SparklineData(
+                            samples: vm.historySamples,
+                            windowStart: five.resetsAt - 5 * 3600,
+                            windowEnd: five.resetsAt,
+                            forecastSecondsToCap: vm.forecastSecondsToCap
+                        )
+                    }
+                )
+            }
+            if weeklyWindows {
+                WindowSection(
+                    title: "7-day window",
+                    window: cached.snapshot.sevenDay,
+                    now: now,
+                    windowLength: UsageColoring.weekLength,
+                    coloring: vm.coloring,
+                    breakdown: UsageShare.caption(cached.snapshot.breakdown),
+                    tracksPace: true
+                )
+                ForEach(UsageWindows.orderedModelKeys(cached.snapshot.models), id: \.self) { key in
+                    WindowSection(
+                        title: UsageWindows.label(for: key),
+                        window: cached.snapshot.models[key],
+                        now: now,
+                        windowLength: UsageColoring.weekLength,
+                        coloring: vm.coloring,
+                        tracksPace: true
+                    )
+                }
+            }
+        } else if sessionWindow {
+            Text("No data captured yet.")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var versionString: String {
