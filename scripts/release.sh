@@ -27,7 +27,7 @@ if [ -z "${SIGN_IDENTITY:-}" ] && ! printf '%s\n' "$IDENTITIES" | grep -q '"Deve
 fi
 ./scripts/build.sh
 APP="dist/CCUsageStats.app"
-DEVID="$(codesign -dv "$APP" 2>&1 | sed -n 's/^Authority=\(Developer ID Application: .*\)/\1/p')"
+DEVID="$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Authority=\(Developer ID Application: .*\)/\1/p')"
 
 NOTARIZE=0
 if [ -n "$DEVID" ]; then
