@@ -64,6 +64,7 @@ enum UsageReport {
                 if capAt > now, capAt < five.resetsAt {
                     w["forecast_seconds_to_cap"] = capAt - now
                     w["forecast_cap_at"] = capAt
+                    w["forecast_cap_at_iso"] = clock.iso(capAt)
                     w["forecast_cap_at_local"] = clock.local(capAt)
                 }
             }
