@@ -50,17 +50,21 @@ block:
 
 ```json
 {
-  "as_of": "2026-10-08T12:00:00Z", "now": 1791460800,
+  "as_of": "2026-10-08T12:00:00Z", "as_of_local": "Thursday 2026-10-08 13:00 BST",
+  "timezone": "Europe/London", "now": 1791460800,
   "claude": {
     "available": true, "captured_at": 1791460740, "age_seconds": 60,
     "stale": false, "stale_after_seconds": 900,
     "windows": [
       {"id": "five_hour", "label": "5-hour session", "used_percent": 42,
-       "resets_at": 1791470000, "resets_at_iso": "…", "seconds_to_reset": 9200,
+       "resets_at": 1791470000, "resets_at_iso": "…", "resets_at_local": "…",
+       "seconds_to_reset": 9200,
        "reset_passed": false, "forecast_seconds_to_cap": 5400},
       {"id": "seven_day", "label": "7-day window", "used_percent": 61, …,
        "pace": {"elapsed_fraction": 0.55, "on_pace_percent": 55,
-                "ahead_of_pace": true, "projected_cap_at": 1791900000}},
+                "ahead_of_pace": true, "projected_cap_at": 1791900000,
+                "projected_cap_at_iso": "…", "projected_cap_at_local": "…",
+                "note": "projected_cap_at is when … It is not a reset: …"}},
       {"id": "seven_day_fable", "label": "Fable weekly", …}
     ],
     "weekly_breakdown": [{"key": "claude_code", "name": "Claude Code", "percent": 93}]
@@ -73,6 +77,11 @@ block:
 }
 ```
 
+- **Times:** every epoch time also comes as `*_iso` (UTC) and `*_local` —
+  the Mac's wall time with the weekday spelled out (`EEEE yyyy-MM-dd HH:mm
+  zzz`, POSIX locale). Agents read a bare UTC string and named the wrong
+  day, or took `projected_cap_at` (a Saturday) for the weekly reset (a
+  Monday); `*_local`, the pace `note` and the tool description close both.
 - **Forecast:** the dropdown's 5-hour regression, anchored to the reading's
   `captured_at` over samples up to it; reported only when the projected cap
   is still ahead and before the reset.

@@ -392,9 +392,12 @@ a large fan-out.
   per-model weekly window) and Codex (each window of the newest reading —
   session log, app-server or endpoint, named in `source`):
   `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace`
-  (on-pace percent, ahead or not, projected time at 100%), the 5-hour
-  `forecast_seconds_to_cap`, plus `as_of`, `age_seconds` and `stale`
-  (older than 15 minutes) per source. A window whose reset has passed
+  (on-pace percent, ahead or not, projected time at 100% — which is not
+  the reset), the 5-hour `forecast_seconds_to_cap`, plus `as_of`,
+  `age_seconds` and `stale` (older than 15 minutes) per source. Every time
+  comes as epoch seconds, UTC `*_iso` and `*_local` — your wall time with
+  the weekday spelled out (`Monday 2026-10-19 11:00 BST`), so agents quote
+  the day instead of working it out. A window whose reset has passed
   reports 0% with `reset_passed: true`. Facts only — no advice.
 - **How it runs.** The agent launches
   `~/Library/Application Support/cc-usage-stats/bin/ccusagestats --mcp-server`

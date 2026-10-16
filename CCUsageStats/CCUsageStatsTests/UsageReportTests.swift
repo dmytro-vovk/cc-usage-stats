@@ -61,6 +61,24 @@ final class UsageReportTests: XCTestCase {
         XCTAssertNil(window(r, "claude", "five_hour")?["pace"], "pace is a weekly concept")
     }
 
+    func testTimesCarryALocalWeekdayString() throws {
+        // Agents misread bare UTC ISO strings (wrong weekday, or took the
+        // projected cap for the reset). Each time also comes as local wall
+        // time with its weekday spelled out. now + 3 days is Saturday
+        // 03:33 UTC — still Friday evening in Los Angeles.
+        let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let r = UsageReport.build(state: state(), history: [], codex: nil, now: now, timeZone: la)
+        let week = try XCTUnwrap(window(r, "claude", "seven_day"))
+        XCTAssertEqual(week["resets_at_local"] as? String, "Friday 2033-05-20 20:33 PDT")
+        XCTAssertEqual(r["as_of_local"] as? String, "Tuesday 2033-05-17 20:33 PDT")
+        XCTAssertEqual(r["timezone"] as? String, "America/Los_Angeles")
+        let pace = try XCTUnwrap(week["pace"] as? [String: Any])
+        let cap = try XCTUnwrap(pace["projected_cap_at"] as? Int64)
+        XCTAssertLessThan(cap, now + 3 * day, "cap lands before the reset in this fixture")
+        XCTAssertNotNil(pace["projected_cap_at_local"] as? String)
+        XCTAssertTrue((pace["note"] as? String ?? "").contains("not a reset"))
+    }
+
     func testFiveHourForecastUsesOnlySamplesInTheCurrentWindow() throws {
         let windowStart = now + 3_600 - 5 * 3_600
         let old = (0..<6).map { UsageSample(t: windowStart - 1_000 + Int64($0) * 10, p: 99) }

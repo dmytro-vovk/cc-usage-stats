@@ -19,8 +19,12 @@ struct MCPServer {
     Current Claude and Codex usage-limit readings from the CCUsageStats menu-bar app: \
     per window (Claude 5-hour, weekly and per-model weekly; Codex windows) the used percent, \
     reset time, seconds to reset, weekly pace and 5-hour forecast, plus how fresh each reading \
-    is (as_of, age_seconds, stale). Facts only. Use it to plan delegation: which agent or model \
-    has headroom, and whether to wait for a reset before a large fan-out.
+    is (as_of, age_seconds, stale). Each time comes as epoch seconds, *_iso (UTC) and *_local \
+    (the user's wall time with weekday, e.g. "Monday 2026-10-19 11:00 BST"); quote *_local \
+    rather than working out a weekday yourself. A window resets at resets_at; \
+    pace.projected_cap_at is when it would hit 100% at the current rate, not a reset. \
+    Facts only. Use it to plan delegation: which agent or model has headroom, and whether \
+    to wait for a reset before a large fan-out.
     """
 
     let version: String

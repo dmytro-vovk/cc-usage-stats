@@ -462,7 +462,8 @@ by design.
 - In a new `claude` session, ask "call get_usage": the answer quotes the
   same 5-hour / weekly / per-model percentages as the dropdown, and Codex
   windows when Codex tracking has readings. `age_seconds` < 120 while the
-  app runs.
+  app runs. Ask "when does my weekly limit reset?": the answer names the
+  weekday in `resets_at_local`, not the day of `projected_cap_at`.
 - Quit the app, wait 16 minutes, call again: still answers, with
   `"stale": true` for Claude.
 - **Also register with Codex** ON: `~/.codex/config.toml` ends with a
