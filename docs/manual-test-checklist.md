@@ -512,12 +512,16 @@ by design.
 - Same file with `"tag_name"` set to the installed version: no row;
   Settings says "Up to date (checked …)".
 - Settings → General → turn **Check for updates** off: the dropdown row
-  disappears at once, and no further request is made
-  (`/usr/bin/log show --last 5m --predicate 'category == "updates"'` stays quiet).
+  disappears at once, and no further request is made: every check logs
+  "checking GitHub for a newer release", so
+  `/usr/bin/log show --last 5m --predicate 'category == "updates"'` shows no
+  new line after the toggle (also confirm in Little Snitch / `nettop`).
 - Real endpoint (plain launch): Little Snitch may ask about
   `api.github.com`. With the current release installed, Settings shows
   "Up to date". Deny it in Little Snitch: Settings shows "Last check
   failed …; will retry" and the dropdown stays clean.
 - Click **Check now**: the status shows "Checking…", then a fresh time.
+  After a GitHub rate-limit answer the status says "GitHub rate limit …"
+  and **Check now** stays disabled until the retry time passes.
 - `CCUsageStats --mcp-server` makes no request to api.github.com (Little
   Snitch / `nettop -p <pid>` shows none).

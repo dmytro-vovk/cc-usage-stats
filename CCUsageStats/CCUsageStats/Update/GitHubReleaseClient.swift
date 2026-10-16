@@ -22,7 +22,10 @@ nonisolated struct GitHubReleaseClient: UpdateCheckClient {
     let url: URL
     let userAgent: String
 
-    init(session: URLSession = .shared, url: URL = GitHubReleaseClient.defaultURL(), userAgent: String) {
+    /// Ephemeral: no shared cookie jar or URL cache rides along to GitHub.
+    private static let ephemeral = URLSession(configuration: .ephemeral)
+
+    init(session: URLSession = GitHubReleaseClient.ephemeral, url: URL = GitHubReleaseClient.defaultURL(), userAgent: String) {
         self.session = session
         self.url = url
         self.userAgent = userAgent

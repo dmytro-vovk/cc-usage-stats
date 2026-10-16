@@ -28,6 +28,9 @@ final class UpdateChecker: ObservableObject {
     @Published private(set) var lastCheckedAt: Int64?
     /// Whether the last check failed or was rate-limited.
     @Published private(set) var lastCheckFailed = false
+    /// Whether the last check was refused for quota; "Check now" then
+    /// waits out GitHub's hint like the timer does.
+    @Published private(set) var lastCheckRateLimited = false
     @Published private(set) var isChecking = false
 
     @Published var enabled: Bool {
@@ -89,6 +92,15 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
+    /// False for builds without a real version: they never check.
+    var canCheck: Bool { current != nil }
+
+    /// Whether "Check now" may ask GitHub: on, a real version, nothing in
+    /// flight, and not inside a rate-limit wait.
+    var canCheckNow: Bool {
+        enabled && canCheck && !isChecking && !(lastCheckRateLimited && !isDue)
+    }
+
     /// Whether the next check's time has passed (or none has run yet).
     var isDue: Bool {
         guard let last = lastCheckedAt else { return true }
@@ -115,6 +127,7 @@ final class UpdateChecker: ObservableObject {
 
     /// User-initiated check (Settings → "Check now").
     func checkNow() {
+        guard canCheckNow else { return }
         Task { @MainActor in
             await tick()
             if isStarted && enabled { scheduleTimer(after: nextDelay) }
@@ -128,6 +141,7 @@ final class UpdateChecker: ObservableObject {
         guard enabled, let current, !isChecking else { return }
         isChecking = true
         defer { isChecking = false }
+        Self.log.notice("checking GitHub for a newer release")
         let result = await client.fetchLatest()
         // Turned off while the request was in flight: drop the answer.
         guard enabled else { return }
@@ -136,10 +150,12 @@ final class UpdateChecker: ObservableObject {
         case .release(let r):
             consecutiveFailures = 0
             lastCheckFailed = false
+            lastCheckRateLimited = false
             available = r.version > current ? r : nil
         case .failure, .rateLimited:
             consecutiveFailures += 1
             lastCheckFailed = true
+            if case .rateLimited = result { lastCheckRateLimited = true } else { lastCheckRateLimited = false }
             Self.log.notice("update check failed (\(self.consecutiveFailures, privacy: .public) in a row)")
         }
         nextDelay = Self.delay(after: result, failures: consecutiveFailures)
@@ -151,8 +167,12 @@ final class UpdateChecker: ObservableObject {
             Task { @MainActor in
                 guard let self, self.isStarted, self.enabled else { return }
                 await self.tick()
+                // Stopped or turned off while the request was in flight.
+                guard self.isStarted, self.enabled else { return }
                 self.scheduleTimer(after: self.nextDelay)
             }
         }
+        // Daily precision is plenty; let the system coalesce the wakeup.
+        timer?.tolerance = min(600, seconds / 10)
     }
 }

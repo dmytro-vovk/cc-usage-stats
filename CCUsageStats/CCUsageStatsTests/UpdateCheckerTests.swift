@@ -157,8 +157,11 @@ final class UpdateCheckerTests: XCTestCase {
     final class StubClient: UpdateCheckClient {
         var queue: [UpdateFetchResult] = []
         var calls = 0
+        /// Runs while the request is "in flight".
+        var onFetch: (() -> Void)?
         func fetchLatest() async -> UpdateFetchResult {
             calls += 1
+            onFetch?()
             return queue.isEmpty ? .failure : queue.removeFirst()
         }
     }
@@ -313,5 +316,49 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertFalse(c.isDue)
         now += 1
         XCTAssertTrue(c.isDue)
+    }
+
+    // MARK: review follow-ups
+
+    func testDisablingMidFetchDropsTheAnswer() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let c = makeChecker(current: "0.18.7", client: client)
+        client.onFetch = { c.enabled = false }
+        await c.tickForTest()
+        XCTAssertEqual(client.calls, 1)
+        XCTAssertNil(c.available)
+        XCTAssertNil(c.lastCheckedAt)
+    }
+
+    func testDevBuildCannotCheck() {
+        XCTAssertFalse(makeChecker(current: "0.0.0", client: StubClient()).canCheck)
+        XCTAssertTrue(makeChecker(current: "0.18.7", client: StubClient()).canCheck)
+    }
+
+    /// "Check now" must not defeat GitHub's Retry-After.
+    func testCheckNowWaitsOutARateLimit() async {
+        let client = StubClient()
+        client.queue = [.rateLimited(retryAfter: 1800)]
+        let c = makeChecker(current: "0.18.7", client: client)
+        XCTAssertTrue(c.canCheckNow)
+        await c.tickForTest()
+        XCTAssertFalse(c.canCheckNow)
+        now += 1800
+        XCTAssertTrue(c.canCheckNow)
+    }
+
+    func testCheckNowAllowedAfterPlainFailure() async {
+        let client = StubClient()
+        client.queue = [.failure]
+        let c = makeChecker(current: "0.18.7", client: client)
+        await c.tickForTest()
+        XCTAssertTrue(c.canCheckNow)
+    }
+
+    func testCheckNowDisabledWhenOff() {
+        let c = makeChecker(current: "0.18.7", client: StubClient())
+        c.enabled = false
+        XCTAssertFalse(c.canCheckNow)
     }
 }

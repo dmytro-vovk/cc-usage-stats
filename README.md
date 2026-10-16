@@ -458,7 +458,8 @@ automatically — install the new version yourself.
 - **Backoff:** a failed check retries after 30 minutes, doubling up to a
   day. GitHub allows 60 unauthenticated requests an hour per IP; when it
   answers with a rate limit, the app waits for GitHub's `Retry-After` /
-  `x-ratelimit-reset` hint (at least 15 minutes, at most a day).
+  `x-ratelimit-reset` hint (at least 15 minutes, at most a day), and
+  **Check now** stays disabled until then.
 - **Wake from sleep** checks again only if a check fell due while asleep.
 - Builds without a real version (run from Xcode, reporting 0.0.0) and
   `--mcp-server` processes never check.

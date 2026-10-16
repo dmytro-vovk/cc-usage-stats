@@ -252,8 +252,10 @@ private struct UpdatesSection: View {
                 LabeledContent("Status") {
                     HStack(spacing: 8) {
                         status
-                        Button("Check now") { updates.checkNow() }
-                            .disabled(updates.isChecking)
+                        if updates.canCheck {
+                            Button("Check now") { updates.checkNow() }
+                                .disabled(!updates.canCheckNow)
+                        }
                     }
                 }
             }
@@ -277,12 +279,16 @@ private struct UpdatesSection: View {
 
     @ViewBuilder
     private var status: some View {
-        if updates.isChecking {
+        if !updates.canCheck {
+            Text("Off for development builds").foregroundStyle(.secondary)
+        } else if updates.isChecking {
             Text("Checking…").foregroundStyle(.secondary)
         } else if let last = updates.lastCheckedAt {
             let when = Date(timeIntervalSince1970: TimeInterval(last))
                 .formatted(date: .abbreviated, time: .shortened)
-            if updates.lastCheckFailed {
+            if updates.lastCheckRateLimited {
+                Text("GitHub rate limit (\(when)); will retry").foregroundStyle(.secondary)
+            } else if updates.lastCheckFailed {
                 Text("Last check failed (\(when)); will retry").foregroundStyle(.secondary)
             } else if updates.available != nil {
                 Text("Update available (checked \(when))").foregroundStyle(.secondary)
