@@ -32,7 +32,8 @@ if [ -z "$SIGN_IDENTITY" ]; then
 fi
 
 # Developer ID builds get what notarization requires: the hardened
-# runtime and a secure timestamp. The Team ID comes from the identity name.
+# runtime, a secure timestamp, and no get-task-allow (which `xcodebuild
+# build` injects by default). The Team ID comes from the identity name.
 SIGN_ARGS=(CODE_SIGN_IDENTITY="$SIGN_IDENTITY" DEVELOPMENT_TEAM="")
 case "$SIGN_IDENTITY" in
   "Developer ID Application: "*)
@@ -42,6 +43,7 @@ case "$SIGN_IDENTITY" in
       DEVELOPMENT_TEAM="$TEAM_ID"
       ENABLE_HARDENED_RUNTIME=YES
       OTHER_CODE_SIGN_FLAGS="--timestamp"
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
     )
     ;;
 esac

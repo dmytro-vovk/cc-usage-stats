@@ -781,9 +781,8 @@ since the build number is the commit count) lands outside the partition.
 macOS then asks for Keychain access on first launch: **Always Allow**
 adds that build, and denying leaves the menubar on "Token rejected".
 Little Snitch likewise pins ad-hoc apps to a checksum and flags each
-build as "modified". A Developer ID signature carries Team ID
-`5WUWV29325`, and its designated requirement names that team rather
-than a hash, so updates should keep Keychain access and firewall rules.
+build as "modified". A Developer ID signature carries a Team ID, and
+its designated requirement names that team rather than a hash, so updates should keep Keychain access and firewall rules.
 Expect one last round of prompts on the first Developer ID build, since
 the identity itself changes. (Keychain behaviour measured on macOS
 26.5.2 and re-checked on macOS 27 on 2026-10-08.)

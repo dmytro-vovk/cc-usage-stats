@@ -16,7 +16,12 @@ export MARKETING_VERSION_OVERRIDE="$SHORT_VERSION"
 # NOTARY_PROFILE names a `xcrun notarytool store-credentials` profile;
 # without one the artifacts are signed but not notarized.
 NOTARY_PROFILE="${NOTARY_PROFILE:-cc-usage-stats}"
-if ! security find-identity -v -p codesigning | grep -q '"Developer ID Application: '; then
+IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+case "${SIGN_IDENTITY:-}" in
+  ""|"-"|"Developer ID Application: "*) ;;
+  *) echo "!! SIGN_IDENTITY='$SIGN_IDENTITY' only validates on this Mac; use Developer ID or '-'." >&2; exit 1 ;;
+esac
+if [ -z "${SIGN_IDENTITY:-}" ] && ! printf '%s\n' "$IDENTITIES" | grep -q '"Developer ID Application: '; then
   echo "!! No Developer ID Application identity: building ad-hoc."
   export SIGN_IDENTITY="-"
 fi
@@ -27,24 +32,31 @@ DEVID="$(codesign -dv "$APP" 2>&1 | sed -n 's/^Authority=\(Developer ID Applicat
 NOTARIZE=0
 if [ -n "$DEVID" ]; then
   codesign --verify --strict --deep "$APP"
-  if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+  # A missing profile means "not set up yet": ship signed, unnotarized.
+  # Any other failure (offline, bad credentials) stops the release.
+  if PROBE="$(xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" 2>&1)"; then
     NOTARIZE=1
-  else
+  elif printf '%s' "$PROBE" | grep -qi "no keychain password item found"; then
     echo "!! No notarytool profile '$NOTARY_PROFILE': artifacts will be signed but NOT notarized."
     echo "   Create one with: xcrun notarytool store-credentials $NOTARY_PROFILE"
+  else
+    echo "!! notarytool profile '$NOTARY_PROFILE' check failed:" >&2
+    printf '%s\n' "$PROBE" >&2
+    exit 1
   fi
 fi
 
 notarize() {
   echo "==> Notarizing $1"
-  xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m
 }
 
 if [ "$NOTARIZE" = 1 ]; then
   # Notarize the app, then staple the ticket into it so it opens offline.
-  SUBMIT="$(mktemp -d)/CCUsageStats.zip"
-  ditto -c -k --keepParent "$APP" "$SUBMIT"
-  notarize "$SUBMIT"
+  SUBMIT_DIR="$(mktemp -d)"
+  trap 'rm -rf "$SUBMIT_DIR"' EXIT
+  ditto -c -k --keepParent "$APP" "$SUBMIT_DIR/CCUsageStats.zip"
+  notarize "$SUBMIT_DIR/CCUsageStats.zip"
   xcrun stapler staple "$APP"
 fi
 
