@@ -752,28 +752,41 @@ security delete-identity -c "CCUsageStats Dev"
 ./scripts/release.sh v0.X.Y  # builds dist/v0.X.Y/{zip,dmg} for a release
 ```
 
-`setup-signing.sh` is optional. It creates a `CCUsageStats Dev`
-self-signed certificate in your login keychain, which `build.sh` prefers
-over ad-hoc signing when present. Release artifacts (`release.sh`) always
-use ad-hoc signing regardless.
+**Signing.** `build.sh` signs with the first identity it finds:
+`$SIGN_IDENTITY` (`-` forces ad-hoc), then a **Developer ID
+Application** certificate, then the self-signed `CCUsageStats Dev` from
+`setup-signing.sh` (optional), then ad-hoc. Developer ID builds also get
+the hardened runtime and a secure timestamp. `release.sh` uses Developer
+ID when the keychain has it and falls back to ad-hoc, saying so.
 
-**It does not keep the OAuth-token Keychain entry usable across
-rebuilds** — with or without it, the first launch of each new build asks
-for Keychain access; **Always Allow** adds that build, while denying it
-leaves the menubar on "Token rejected". (Measured on macOS 26.5.2,
-re-checked on macOS 27 on 2026-10-08.) The entry's ACL carries two
-independent checks, and a certificate only stabilises one of them:
+**Notarization.** With Developer ID, `release.sh` notarizes and staples
+the app and the dmg, provided a `notarytool` keychain profile exists
+(default name `cc-usage-stats`, override with `NOTARY_PROFILE`). Create
+it once:
 
-- The *trusted application* entry is pinned to the certificate
-  (`identifier "dev.dv.ccusagestats.CCUsageStats" and certificate
-  leaf = H"…"`). This one does survive rebuilds.
-- A separate `partition_id` entry is pinned to `cdhash:<hash>`. macOS
-  derives the partition from the signer's Team ID, and falls back to the
-  code hash when there is none — which is always the case for a
-  self-signed cert (`TeamIdentifier=not set`). Any rebuild that changes
-  a build input changes that hash and puts the new binary outside the
-  partition. A plain `git commit` is enough, since `build.sh` derives the
-  build number from the commit count.
+```bash
+xcrun notarytool store-credentials cc-usage-stats --apple-id <you@example.com> --team-id <TEAMID>
+```
+
+Without the profile the artifacts are signed but not notarized, and a
+downloaded copy still gets Gatekeeper's warning.
+
+**Why Developer ID.** The OAuth-token Keychain entry's ACL has two
+checks. Its *trusted application* entry is pinned to the designated
+requirement. Its `partition_id` is derived from the signer's Team ID, or
+from `cdhash:<hash>` when there is none: that's always the case for
+ad-hoc and self-signed builds (`TeamIdentifier=not set`). With no Team
+ID, every build that changes a build input (even a plain `git commit`,
+since the build number is the commit count) lands outside the partition.
+macOS then asks for Keychain access on first launch: **Always Allow**
+adds that build, and denying leaves the menubar on "Token rejected".
+Little Snitch likewise pins ad-hoc apps to a checksum and flags each
+build as "modified". A Developer ID signature carries Team ID
+`5WUWV29325`, and its designated requirement names that team rather
+than a hash, so updates should keep Keychain access and firewall rules.
+Expect one last round of prompts on the first Developer ID build, since
+the identity itself changes. (Keychain behaviour measured on macOS
+26.5.2 and re-checked on macOS 27 on 2026-10-08.)
 
 Recovery is one click: the dropdown's **Re-import from Claude Code
 Keychain** button (v0.6.9+) re-reads whatever token the CLI currently

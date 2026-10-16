@@ -12,6 +12,9 @@
 # rejected". Recover from the dropdown's "Re-import from Claude Code
 # Keychain" button. See the README's "Scripts" section for the details.
 #
+# build.sh prefers a Developer ID Application identity over this one:
+# it has a Team ID, which fixes the problem above.
+#
 # Idempotent: a second run is a no-op once the identity exists.
 # Run once after cloning the repo, then `./scripts/build.sh` picks it up
 # automatically.
