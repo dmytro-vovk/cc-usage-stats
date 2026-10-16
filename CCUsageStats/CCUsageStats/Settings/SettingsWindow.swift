@@ -284,16 +284,19 @@ private struct UpdatesSection: View {
         } else if updates.isChecking {
             Text("Checking…").foregroundStyle(.secondary)
         } else if let last = updates.lastCheckedAt {
-            let when = Date(timeIntervalSince1970: TimeInterval(last))
-                .formatted(date: .abbreviated, time: .shortened)
+            // Time only for today: the row is narrow beside "Check now".
+            let date = Date(timeIntervalSince1970: TimeInterval(last))
+            let when = Calendar.current.isDateInToday(date)
+                ? date.formatted(date: .omitted, time: .shortened)
+                : date.formatted(.dateTime.day().month(.abbreviated))
             if updates.lastCheckRateLimited {
-                Text("GitHub rate limit (\(when)); will retry").foregroundStyle(.secondary)
+                Text("Rate-limited at \(when)").foregroundStyle(.secondary)
             } else if updates.lastCheckFailed {
-                Text("Last check failed (\(when)); will retry").foregroundStyle(.secondary)
+                Text("Check failed at \(when)").foregroundStyle(.secondary)
             } else if updates.available != nil {
-                Text("Update available (checked \(when))").foregroundStyle(.secondary)
+                Text("Update available, checked \(when)").foregroundStyle(.secondary)
             } else {
-                Text("Up to date (checked \(when))").foregroundStyle(.secondary)
+                Text("Up to date, checked \(when)").foregroundStyle(.secondary)
             }
         } else {
             Text("Not checked yet").foregroundStyle(.secondary)

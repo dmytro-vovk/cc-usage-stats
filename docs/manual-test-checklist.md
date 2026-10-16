@@ -508,9 +508,9 @@ by design.
   `CCUS_RELEASES_URL=file:///tmp/latest.json /Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats`.
   Within ~30 s the dropdown shows **Update available: v99.0.0**; clicking
   it opens the release page in the browser. Settings → General shows
-  "Update available (checked …)", **Release notes** and **Download .dmg**.
+  "Update available, checked …", **Release notes** and **Download .dmg**.
 - Same file with `"tag_name"` set to the installed version: no row;
-  Settings says "Up to date (checked …)".
+  Settings says "Up to date, checked …".
 - Settings → General → turn **Check for updates** off: the dropdown row
   disappears at once, and no further request is made: every check logs
   "checking GitHub for a newer release", so
@@ -518,10 +518,9 @@ by design.
   new line after the toggle (also confirm in Little Snitch / `nettop`).
 - Real endpoint (plain launch): Little Snitch may ask about
   `api.github.com`. With the current release installed, Settings shows
-  "Up to date". Deny it in Little Snitch: Settings shows "Last check
-  failed …; will retry" and the dropdown stays clean.
+  "Up to date, checked …". Deny it in Little Snitch: Settings shows "Check failed at …" and the dropdown stays clean.
 - Click **Check now**: the status shows "Checking…", then a fresh time.
-  After a GitHub rate-limit answer the status says "GitHub rate limit …"
+  After a GitHub rate-limit answer the status says "Rate-limited at …"
   and **Check now** stays disabled until the retry time passes.
 - `CCUsageStats --mcp-server` makes no request to api.github.com (Little
   Snitch / `nettop -p <pid>` shows none).
