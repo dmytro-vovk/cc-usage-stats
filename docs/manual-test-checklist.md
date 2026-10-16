@@ -499,3 +499,25 @@ by design.
 - `open ccusagestats://open` / `open ccusagestats://quit` / `?tab=billing`: nothing happens;
   `/usr/bin/log show --last 1m --predicate 'category == "url"'` shows
   "ignored unknown URL".
+
+### 19. Update check
+
+- Fake a newer release: write
+  `{"tag_name":"v99.0.0","html_url":"https://github.com/dmytro-vovk/cc-usage-stats/releases/tag/v99.0.0","assets":[{"name":"CCUsageStats-v99.0.0.dmg","browser_download_url":"https://github.com/dmytro-vovk/cc-usage-stats/releases/download/v99.0.0/CCUsageStats-v99.0.0.dmg"}]}`
+  to `/tmp/latest.json`, quit the app, then
+  `CCUS_RELEASES_URL=file:///tmp/latest.json /Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats`.
+  Within ~30 s the dropdown shows **Update available: v99.0.0**; clicking
+  it opens the release page in the browser. Settings → General shows
+  "Update available (checked …)", **Release notes** and **Download .dmg**.
+- Same file with `"tag_name"` set to the installed version: no row;
+  Settings says "Up to date (checked …)".
+- Settings → General → turn **Check for updates** off: the dropdown row
+  disappears at once, and no further request is made
+  (`/usr/bin/log show --last 5m --predicate 'category == "updates"'` stays quiet).
+- Real endpoint (plain launch): Little Snitch may ask about
+  `api.github.com`. With the current release installed, Settings shows
+  "Up to date". Deny it in Little Snitch: Settings shows "Last check
+  failed …; will retry" and the dropdown stays clean.
+- Click **Check now**: the status shows "Checking…", then a fresh time.
+- `CCUsageStats --mcp-server` makes no request to api.github.com (Little
+  Snitch / `nettop -p <pid>` shows none).

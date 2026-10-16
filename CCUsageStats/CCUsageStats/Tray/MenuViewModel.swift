@@ -38,6 +38,9 @@ final class MenuViewModel: ObservableObject {
     /// Live Claude Code sessions, reported by the hooks it installs.
     let sessions: SessionTracker
     private var sessionsForwarding: AnyCancellable?
+    /// Daily "is there a newer release" check against GitHub.
+    let updates: UpdateChecker
+    private var updatesForwarding: AnyCancellable?
     @Published var lastError: String?
     /// Why the last "Re-import from Claude Code Keychain" click couldn't help.
     ///
@@ -203,6 +206,7 @@ final class MenuViewModel: ObservableObject {
         connectFlow: @escaping () async throws -> OAuthSession = { try await OAuthFlow.runInteractive() },
         codex: CodexMonitor? = nil,
         sessions: SessionTracker? = nil,
+        updates: UpdateChecker? = nil,
         defaults: UserDefaults = .standard
     ) {
         self.apiFactory = apiFactory
@@ -213,6 +217,12 @@ final class MenuViewModel: ObservableObject {
         // evaluated in a nonisolated context, and CodexMonitor is main-actor.
         self.codex = codex ?? CodexMonitor(defaults: defaults)
         self.sessions = sessions ?? SessionTracker(defaults: defaults)
+        let version = UpdateChecker.bundleVersion
+        self.updates = updates ?? UpdateChecker(
+            client: GitHubReleaseClient(userAgent: "CCUsageStats/\(version ?? "0")"),
+            currentVersion: version,
+            defaults: defaults
+        )
         // Assignments in init skip `didSet`, so loading doesn't write back.
         pillMode = PillMode.read(from: defaults)
         warningEnabled = defaults.bool(forKey: Self.warningEnabledKey)
@@ -235,6 +245,9 @@ final class MenuViewModel: ObservableObject {
             self?.handleCodexChange(previous: old, current: new)
         }
         sessionsForwarding = self.sessions.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        updatesForwarding = self.updates.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
     }
@@ -287,7 +300,10 @@ final class MenuViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.pollNow() }
+            Task { @MainActor in
+                self?.pollNow()
+                self?.updates.checkIfDue()
+            }
         }
 
         // status.claude.com poller — coarse 5-minute cadence, surfaces
@@ -305,6 +321,7 @@ final class MenuViewModel: ObservableObject {
         codex.start()
         // Verifies (and if needed installs) the session hooks.
         sessions.start()
+        updates.start()
         // `ccusagestats://` URLs that arrived during launch run now.
         AppURLRouter.shared.attach(self)
     }
@@ -324,6 +341,7 @@ final class MenuViewModel: ObservableObject {
         cacheWatcher?.stop(); cacheWatcher = nil
         codex.stop()
         sessions.stop()
+        updates.stop()
         if let obs = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             wakeObserver = nil

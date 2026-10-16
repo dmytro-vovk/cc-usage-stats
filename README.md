@@ -136,6 +136,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the reconnect *prompt* above is suppressed whenever one of these is
   up, so the panel never offers an optional upgrade and reports a hard
   failure in the same breath.
+- **Update available: vX.Y.Z** — a link to the release page on GitHub,
+  shown when a newer release is out (see [Update check](#update-check)).
 - With [Codex tracking](#codex-usage) on, a **Codex** section: one bar
   per Codex window (labelled from its length — "5-hour", "Weekly"), and
   the plan and reading age in the header (`prolite · 2m ago`; hover for
@@ -225,7 +227,9 @@ toolbar tabs:
 - **General** — Launch at login; Menu-bar pill shows Claude / Codex /
   Both; Show active Claude Code sessions (with the hook status); Show
   active Codex sessions (hook status and whether Codex trusts them); Usage
-  MCP server for Claude Code / Codex (see [Usage MCP server](#usage-mcp-server)).
+  MCP server for Claude Code / Codex (see [Usage MCP server](#usage-mcp-server));
+  Check for updates (status, **Check now**, and release-notes / `.dmg`
+  links when a newer release is out — see [Update check](#update-check)).
 - **Accounts** — *Claude*: connection status, **Connect / Reconnect
   account** (browser OAuth, see below), **Set / Change token…** (the
   paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
@@ -436,6 +440,32 @@ a large fan-out.
   route reviews and mechanical work to Codex when Claude weekly is ahead
   of pace or above 70%. Edit the rules to taste.
   Design notes: [spec](docs/superpowers/specs/2026-10-08-usage-mcp-server-design.md).
+
+### Update check
+
+Shortly after launch (30 s) and then once a day, the app asks GitHub
+for the newest release
+(`GET https://api.github.com/repos/dmytro-vovk/cc-usage-stats/releases/latest`,
+unauthenticated, no cookies or identifiers) and compares its tag with
+the running version (semver; drafts and pre-releases are ignored). When
+the release is newer, the dropdown shows **Update available: vX.Y.Z**,
+which opens the release page; Settings → General adds **Release notes**
+and **Download .dmg** links. Nothing is downloaded or installed
+automatically — install the new version yourself.
+
+- **Off switch:** Settings → General → **Check for updates**. Off means
+  no request at all and hides the row.
+- **Backoff:** a failed check retries after 30 minutes, doubling up to a
+  day. GitHub allows 60 unauthenticated requests an hour per IP; when it
+  answers with a rate limit, the app waits for GitHub's `Retry-After` /
+  `x-ratelimit-reset` hint (at least 15 minutes, at most a day).
+- **Wake from sleep** checks again only if a check fell due while asleep.
+- Builds without a real version (run from Xcode, reporting 0.0.0) and
+  `--mcp-server` processes never check.
+- Firewalls such as Little Snitch will ask about the new destination
+  `api.github.com`; denying it just leaves the row hidden.
+- `CCUS_RELEASES_URL` overrides the endpoint for testing (e.g.
+  `file:///tmp/latest.json` with a fake newer `tag_name`).
 
 ### URL commands
 

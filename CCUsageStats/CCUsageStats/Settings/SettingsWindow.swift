@@ -155,6 +155,7 @@ struct GeneralSettingsView: View {
             }
             CodexSessionsSection(tracker: vm.sessions)
             UsageMCPSection()
+            UpdatesSection(updates: vm.updates)
         }
     }
 
@@ -236,6 +237,60 @@ private struct CodexSessionsSection: View {
         case .untrusted(let trusted, let of): return ("Not trusted yet (\(trusted) of \(of))", false)
         case .disabled(let n): return ("\(n) turned off in /hooks", false)
         case .unknown: return nil
+        }
+    }
+}
+
+/// The daily GitHub release check.
+private struct UpdatesSection: View {
+    @ObservedObject var updates: UpdateChecker
+
+    var body: some View {
+        Section {
+            Toggle("Check for updates", isOn: $updates.enabled)
+            if updates.enabled {
+                LabeledContent("Status") {
+                    HStack(spacing: 8) {
+                        status
+                        Button("Check now") { updates.checkNow() }
+                            .disabled(updates.isChecking)
+                    }
+                }
+            }
+            if updates.enabled, let r = updates.available {
+                LabeledContent("\(r.tag) is out") {
+                    HStack(spacing: 8) {
+                        Link("Release notes", destination: r.pageURL)
+                        if let dmg = r.dmgURL {
+                            Link("Download .dmg", destination: dmg)
+                        }
+                    }
+                }
+            }
+        } footer: {
+            Text("Once a day, asks GitHub (api.github.com) for the latest release of cc-usage-stats and shows a link when it is newer than this version. Nothing is downloaded or installed automatically.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if updates.isChecking {
+            Text("Checking…").foregroundStyle(.secondary)
+        } else if let last = updates.lastCheckedAt {
+            let when = Date(timeIntervalSince1970: TimeInterval(last))
+                .formatted(date: .abbreviated, time: .shortened)
+            if updates.lastCheckFailed {
+                Text("Last check failed (\(when)); will retry").foregroundStyle(.secondary)
+            } else if updates.available != nil {
+                Text("Update available (checked \(when))").foregroundStyle(.secondary)
+            } else {
+                Text("Up to date (checked \(when))").foregroundStyle(.secondary)
+            }
+        } else {
+            Text("Not checked yet").foregroundStyle(.secondary)
         }
     }
 }

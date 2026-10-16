@@ -257,6 +257,7 @@ struct MenuBarDropdown: View {
             authStatusRow
             reauthorizeRow
             tokenExpiryRow
+            updateRow
             if let err = vm.lastError {
                 Text(err)
                     .foregroundStyle(.red)
@@ -362,6 +363,22 @@ struct MenuBarDropdown: View {
             Text("No data captured yet.")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// "Update available" link, when GitHub has a newer release than this
+    /// build. Opens the release page; nothing installs itself.
+    @ViewBuilder
+    private var updateRow: some View {
+        if let r = vm.updates.available {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down.circle")
+                    .foregroundStyle(.tint)
+                Link("Update available: \(r.tag)", destination: r.pageURL)
+                    .help("Open the \(r.tag) release page on GitHub")
+            }
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
