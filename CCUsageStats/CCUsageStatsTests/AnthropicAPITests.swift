@@ -53,6 +53,18 @@ final class AnthropicAPITests: XCTestCase {
         XCTAssertTrue(snap.fiveHourIsAbsent)
     }
 
+    func testMalformedFiveHourHeaderIsNotAbsence() throws {
+        let headers = [
+            "anthropic-ratelimit-unified-5h-utilization": "0.4",
+            "anthropic-ratelimit-unified-7d-utilization": "0.86",
+            "anthropic-ratelimit-unified-7d-reset": "1714665600",
+        ]
+        let result = AnthropicAPI.parse(status: 200, headers: headers, body: okBody)
+        guard case let .success(snap) = result else { return XCTFail("got \(result)") }
+        XCTAssertNil(snap.fiveHour)
+        XCTAssertFalse(snap.fiveHourIsAbsent)
+    }
+
     func testNoRateLimitHeadersYieldsNotSubscriber() {
         let result = AnthropicAPI.parse(status: 200, headers: [:], body: okBody)
         if case .notSubscriber = result { return }

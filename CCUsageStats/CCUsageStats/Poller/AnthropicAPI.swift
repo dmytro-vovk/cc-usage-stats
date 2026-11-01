@@ -41,8 +41,11 @@ enum AnthropicAPI {
         let five = window(headers: lc, suffix: "5h")
         let seven = window(headers: lc, suffix: "7d")
         if five == nil && seven == nil { return nil }
-        // Weekly headers with no 5h pair: the account has no 5-hour limit.
-        return RateLimitsSnapshot(fiveHour: five, sevenDay: seven, fiveHourIsAbsent: seven != nil)
+        // Weekly headers and no 5h header at all: the account has no 5-hour
+        // limit. A partial or malformed 5h pair is a gap, not absence.
+        let noFiveHeaders = lc["anthropic-ratelimit-unified-5h-utilization"] == nil
+            && lc["anthropic-ratelimit-unified-5h-reset"] == nil
+        return RateLimitsSnapshot(fiveHour: five, sevenDay: seven, fiveHourIsAbsent: seven != nil && noFiveHeaders)
     }
 
     private static func window(headers: [String: String], suffix: String) -> WindowSnapshot? {

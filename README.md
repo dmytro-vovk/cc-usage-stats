@@ -54,6 +54,10 @@ work between the two quotas. See [Codex usage](#codex-usage).
   glance: `5h`, `5h│7d`, `5h│model`, or `5h│7d│model`. Below that
   threshold for every other window the menubar stays as a slim single
   5h pill.
+- **No 5-hour limit** (verified Ultra accounts, since 2026-10-30): the
+  weekly window leads the pill instead — `7d`, or `7d│model` when the
+  busiest per-model window is above 80% and ≥ the weekly fraction — and
+  at 100% it counts down to the weekly reset.
 - At 100% (5h) the percentage swaps to a live `H:MM:SS` countdown to
   the window reset (single pill again — the countdown is the headline).
 - A severity-tinted SF Symbol appended to the right when
@@ -83,11 +87,13 @@ work between the two quotas. See [Codex usage](#codex-usage).
 - **Resizable width**: drag either side edge of the panel (280–720 pt,
   320 by default; remembered across opens and launches). From about 550 pt the content reflows into two
   columns — Claude beside Codex, or with Codex tracking off, the 5-hour
-  window beside the weekly ones — and session titles get the extra room.
+  window beside the weekly ones (one column when the account has no
+  5-hour limit) — and session titles get the extra room.
   Height still follows the content.
 - A **Claude** header with the ↻ refresh button (⌘R) right-aligned;
   hovering it shows "Last updated Xs ago".
-- 5-hour and 7-day windows: title + bold gradient-coloured percentage
+- 5-hour and 7-day windows (no 5-hour row for an account without a
+  5-hour limit): title + bold gradient-coloured percentage
   and a tinted progress bar. Hover a row for its reset time (`Resets in
   …`, plus `· forecast 100% in Nm` for the 5-hour window when the trend
   caps before reset) — kept out of the panel to keep it compact.
@@ -171,7 +177,8 @@ sound, and **None** silences that one event.
   5-hour reset** (the default, and the old behaviour), **Windows that ran
   low** (any Claude window that sounded a warning or hit its limit —
   including one already past its threshold when the app launched), or
-  **Both**. A reset is `resets_at` moving forward by more than 10 minutes;
+  **Both**. An account with no 5-hour limit has no 5-hour reset to
+  announce, so there the default behaves as **Windows that ran low**. A reset is `resets_at` moving forward by more than 10 minutes;
   smaller moves are the API's sub-second jitter, not a new window. A
   window unseen for over a day past its reset (say, a per-model window
   hidden while only a pasted token worked) resumes without a belated
@@ -392,7 +399,8 @@ they can plan around them — route reviews to Codex when Claude's weekly
 window is tight, pick a cheaper subagent model, or wait for a reset before
 a large fan-out.
 
-- **What it returns.** One JSON object: for Claude (5-hour, weekly, each
+- **What it returns.** One JSON object: for Claude (5-hour when the
+  account has one, weekly, each
   per-model weekly window) and Codex (each window of the newest reading —
   session log, app-server or endpoint, named in `source`):
   `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace`
@@ -620,7 +628,10 @@ depending on whether you've connected an account:
 - **`GET /api/oauth/usage` (after [Connect Claude
   account](#connect-claude-account)).** A plain GET, so it costs no
   quota. It returns `five_hour` and `seven_day` as top-level
-  `{utilization, resets_at}` objects. Per-model weekly caps arrive in
+  `{utilization, resets_at}` objects. `"five_hour": null` means the
+  account has no 5-hour limit (verified Ultra) and clears the cached 5h
+  window; an object without `utilization` (between two windows) keeps it.
+  On the header path, 7-day headers with no 5-hour headers mean the same. Per-model weekly caps arrive in
   a `limits` array: each entry with `kind: "weekly_scoped"` and a
   `scope.model.display_name` (e.g. `"Fable"`) becomes a model row,
   keyed `seven_day_<name>`; surface-scoped entries (e.g. Cowork) are
