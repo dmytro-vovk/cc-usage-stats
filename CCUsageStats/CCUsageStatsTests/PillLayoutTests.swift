@@ -14,7 +14,7 @@ final class PillLayoutTests: XCTestCase {
             five: five.map(w),
             seven: seven.map(w),
             models: models.mapValues(w),
-            fiveText: five.map { "\(Int($0))%" } ?? "—",
+            fiveText: (five ?? seven).map { "\(Int($0))%" } ?? "—",
             authState: authState,
             now: now
         )
@@ -23,6 +23,21 @@ final class PillLayoutTests: XCTestCase {
     func testQuietStateIsFiveHourOnly() {
         let s = segments(five: 42, seven: 30, models: ["seven_day_fable": 12])
         XCTAssertEqual(s.map(\.kind), [.fiveHour])
+    }
+
+    func testWeeklyLeadsThePillWithoutFiveHourWindow() {
+        let s = segments(five: nil, seven: 86, models: ["seven_day_fable": 12])
+        XCTAssertEqual(s.map(\.kind), [.sevenDay])
+        XCTAssertEqual(s[0].text, "86%")
+    }
+
+    func testModelJoinsWeeklyLedPill() {
+        let s = segments(five: nil, seven: 82, models: ["seven_day_fable": 93])
+        XCTAssertEqual(s.map(\.kind), [.sevenDay, .model("seven_day_fable")])
+    }
+
+    func testNoWindowsGivesNoSegments() {
+        XCTAssertEqual(segments(five: nil, seven: nil, models: [:]), [])
     }
 
     func testSevenDayJoinsAboveThresholdAndAboveFiveHour() {
@@ -76,11 +91,6 @@ final class PillLayoutTests: XCTestCase {
             let s = segments(five: 42, seven: 88, models: [:], authState: state)
             XCTAssertEqual(s.map(\.kind), [.fiveHour, .sevenDay], "state: \(state)")
         }
-    }
-
-    func testMissingFiveHourYieldsNoSegments() {
-        let s = segments(five: nil, seven: 88, models: [:])
-        XCTAssertTrue(s.isEmpty)
     }
 
     func testFractionIsClampedButTextIsNot() {

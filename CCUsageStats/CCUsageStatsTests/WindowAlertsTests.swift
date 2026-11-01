@@ -172,6 +172,15 @@ final class AlertOutcomeTests: XCTestCase {
         XCTAssertFalse(AlertOutcome(events: weeklyLow, announce: .fiveHour).reset)
     }
 
+    /// An account with no 5-hour window has no "every 5-hour reset" to
+    /// announce, so the default must not silence the weekly reset too.
+    func testFiveHourDefaultAnnouncesLowWindowsWhenAccountHasNoFiveHourWindow() {
+        let weeklyLow: [Event] = [.reset(id: "seven_day", ranLow: true)]
+        XCTAssertTrue(AlertOutcome(events: weeklyLow, announce: .fiveHour, hasFiveHourWindow: false).reset)
+        XCTAssertFalse(AlertOutcome(events: [.reset(id: "seven_day", ranLow: false)],
+                                    announce: .fiveHour, hasFiveHourWindow: false).reset)
+    }
+
     func testRanLowAnnouncesAnyWindowThatWentLowAndNothingElse() {
         XCTAssertFalse(AlertOutcome(events: [.reset(id: "five_hour", ranLow: false)], announce: .ranLow).reset)
         XCTAssertTrue(AlertOutcome(events: [.reset(id: "seven_day", ranLow: true)], announce: .ranLow).reset)

@@ -13,6 +13,31 @@ final class OAuthUsageTests: XCTestCase {
         XCTAssertEqual(snap.fiveHour!.usedPercentage, 42.5, accuracy: 0.001)
     }
 
+    /// Verified Ultra accounts have no 5-hour limit: the endpoint sends
+    /// `"five_hour": null` on every poll. That is a statement, not a gap.
+    func testNullFiveHourIsReportedAbsent() throws {
+        let json = """
+        {"five_hour":null,"seven_day":{"utilization":86,"resets_at":"2026-11-02T09:59:59Z"}}
+        """
+        let result = OAuthUsage.parse(status: 200, body: body(json))
+        guard case let .success(snap) = result else { return XCTFail("got \(result)") }
+        XCTAssertNil(snap.fiveHour)
+        XCTAssertTrue(snap.fiveHourIsAbsent)
+    }
+
+    /// Between one 5h window's reset and the next one starting, `five_hour`
+    /// is an object without `utilization`. The window still exists.
+    func testFiveHourObjectWithoutUtilizationIsNotAbsent() throws {
+        let json = """
+        {"five_hour":{"limit_dollars":5,"used_dollars":0},
+         "seven_day":{"utilization":86,"resets_at":"2026-11-02T09:59:59Z"}}
+        """
+        let result = OAuthUsage.parse(status: 200, body: body(json))
+        guard case let .success(snap) = result else { return XCTFail("got \(result)") }
+        XCTAssertNil(snap.fiveHour)
+        XCTAssertFalse(snap.fiveHourIsAbsent)
+    }
+
     func testISO8601WithAndWithoutFractionalSeconds() {
         XCTAssertEqual(OAuthUsage.epochSeconds(fromISO8601: "2026-07-28T04:00:00Z"), 1785211200)
         XCTAssertEqual(OAuthUsage.epochSeconds(fromISO8601: "2026-07-28T04:00:00.123Z"), 1785211200)

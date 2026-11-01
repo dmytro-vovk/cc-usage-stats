@@ -67,13 +67,22 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
     /// earlier source's alive. See `CacheStore.update`.
     let modelsAreAuthoritative: Bool
 
+    /// The source said this account has no 5-hour limit (verified Ultra
+    /// accounts: `"five_hour": null` on every poll), as opposed to a nil
+    /// `fiveHour` that only means "this response carried no usable 5h
+    /// window" (e.g. the gap between one window's reset and the next). Only
+    /// the first clears a cached 5h window. Not persisted: like
+    /// `modelsAreAuthoritative`, it describes a freshly parsed snapshot.
+    let fiveHourIsAbsent: Bool
+
     /// Header-path shape: two windows, and no opinion about model windows.
-    init(fiveHour: WindowSnapshot?, sevenDay: WindowSnapshot?) {
+    init(fiveHour: WindowSnapshot?, sevenDay: WindowSnapshot?, fiveHourIsAbsent: Bool = false) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.models = [:]
         self.breakdown = []
         self.modelsAreAuthoritative = false
+        self.fiveHourIsAbsent = fiveHourIsAbsent && fiveHour == nil
     }
 
     /// Usage-endpoint shape. Passing `models` at all is the claim that this
@@ -84,14 +93,28 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         fiveHour: WindowSnapshot?,
         sevenDay: WindowSnapshot?,
         models: [String: WindowSnapshot],
-        breakdown: [UsageShare] = []
+        breakdown: [UsageShare] = [],
+        fiveHourIsAbsent: Bool = false
     ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.models = models
         self.breakdown = breakdown
         self.modelsAreAuthoritative = true
+        self.fiveHourIsAbsent = fiveHourIsAbsent && fiveHour == nil
     }
+
+    /// The window the menubar leads with: the 5-hour session, or — for an
+    /// account with no 5-hour limit (verified Ultra) — the weekly window.
+    var primaryWindow: (window: WindowSnapshot, windowLength: Int64)? {
+        if let fiveHour { return (fiveHour, UsageColoring.fiveHourLength) }
+        if let sevenDay { return (sevenDay, UsageColoring.weekLength) }
+        return nil
+    }
+
+    /// A weekly window but no 5-hour one: the account has no session limit,
+    /// so 5-hour rows, sparklines and announcements have nothing to show.
+    var lacksFiveHourWindow: Bool { fiveHour == nil && sevenDay != nil }
 
     /// When a usage limit hit now lifts: the latest reset among the capped
     /// windows (every one has to reset). A per-model window is its own quota,
@@ -137,6 +160,7 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         // through `update` would otherwise clear the rows it just read back.
         // Pinned by `testDecodingDerivesAuthorityFromWhetherModelsWerePersisted`.
         modelsAreAuthoritative = !decodedModels.isEmpty
+        fiveHourIsAbsent = false
     }
 
     func encode(to encoder: Encoder) throws {

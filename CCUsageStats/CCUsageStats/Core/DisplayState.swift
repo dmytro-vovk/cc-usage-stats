@@ -2,7 +2,8 @@ import Foundation
 
 struct DisplayState: Equatable {
     let menuBarText: String
-    /// 0..1 utilization fraction for the 5-hour window, or nil when no data.
+    /// 0..1 utilization fraction for the primary window (5-hour, or weekly
+    /// when the account has none), or nil when no data.
     /// Drives the gradient color applied to the menubar icon + text.
     let utilizationFraction: Double?
     let isStale: Bool
@@ -11,7 +12,7 @@ struct DisplayState: Equatable {
     static let staleThresholdSeconds: Int64 = 30 * 60
 
     static func compute(now: Int64, cached: CachedState?) -> DisplayState {
-        guard let cached, let five = cached.snapshot.fiveHour else {
+        guard let cached, let five = cached.snapshot.primaryWindow?.window else {
             return .init(menuBarText: "—", utilizationFraction: nil, isStale: false, hasFiveHourData: false)
         }
         let pct = Int(five.usedPercentage.rounded())
@@ -30,6 +31,9 @@ struct DisplayState: Equatable {
             text = "\(pct)%"
         }
 
-        return .init(menuBarText: text, utilizationFraction: fraction, isStale: stale, hasFiveHourData: true)
+        return .init(
+            menuBarText: text, utilizationFraction: fraction, isStale: stale,
+            hasFiveHourData: cached.snapshot.fiveHour != nil
+        )
     }
 }

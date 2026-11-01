@@ -24,7 +24,8 @@ struct PillSegment: Equatable {
 /// Decides which windows share the menubar pill.
 ///
 /// Pure so the gating matrix is testable without AppKit. Reachable states:
-/// `5h`, `5h│7d`, `5h│model`, `5h│7d│model`.
+/// `5h`, `5h│7d`, `5h│model`, `5h│7d│model`; with no 5-hour window,
+/// `7d` and `7d│model`.
 enum PillLayout {
     /// A window must be this far along before it earns menubar space.
     static let promoteThreshold = 0.8
@@ -38,11 +39,20 @@ enum PillLayout {
         now: Int64,
         coloring: UsageColoring = .absolute
     ) -> [PillSegment] {
-        guard let five else { return [] }
-        let fiveFraction = clamp(five.usedPercentage / 100.0)
+        // No 5-hour limit (verified Ultra): the weekly window leads instead,
+        // with `fiveText` (DisplayState's text for whichever window leads).
+        let lead: (kind: PillSegment.Kind, window: WindowSnapshot, length: Int64)
+        if let five {
+            lead = (.fiveHour, five, UsageColoring.fiveHourLength)
+        } else if let seven {
+            lead = (.sevenDay, seven, UsageColoring.weekLength)
+        } else {
+            return []
+        }
+        let fiveFraction = clamp(lead.window.usedPercentage / 100.0)
         var result = [PillSegment(
-            kind: .fiveHour, fraction: fiveFraction, text: fiveText,
-            colorFraction: coloring.paint(five, windowLength: UsageColoring.fiveHourLength, now: now)
+            kind: lead.kind, fraction: fiveFraction, text: fiveText,
+            colorFraction: coloring.paint(lead.window, windowLength: lead.length, now: now)
         )]
 
         // No usable token renders a bare triangle; at cap the 5h half shows a
@@ -55,7 +65,7 @@ enum PillLayout {
             fraction > promoteThreshold && fraction >= fiveFraction
         }
 
-        if let seven {
+        if let seven, lead.kind != .sevenDay {
             let f = clamp(seven.usedPercentage / 100.0)
             if qualifies(f) {
                 result.append(.init(

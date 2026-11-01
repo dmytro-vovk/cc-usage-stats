@@ -139,6 +139,12 @@ enum OAuthUsage {
         let five = window("five_hour")
         let seven = window("seven_day")
         if five == nil, seven == nil, models.isEmpty { return nil }
-        return RateLimitsSnapshot(fiveHour: five, sevenDay: seven, models: models, breakdown: breakdown)
+        // An explicit null means the account has no 5-hour limit (verified
+        // Ultra). A missing key or an object without `utilization` does not.
+        let fiveAbsent = obj["five_hour"] is NSNull
+        return RateLimitsSnapshot(
+            fiveHour: five, sevenDay: seven, models: models, breakdown: breakdown,
+            fiveHourIsAbsent: fiveAbsent
+        )
     }
 }

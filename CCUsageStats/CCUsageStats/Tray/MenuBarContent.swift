@@ -190,13 +190,13 @@ struct MenuBarLabel: View {
         return UsageColor.nsColor(t: f)
     }
 
-    /// The 5-hour window's place on the colour ramp: its utilization, or
+    /// The primary window's place on the colour ramp: its utilization, or
     /// its pace when colouring by pace. The gauge needle stays absolute.
     private func paintFraction() -> Double? {
         guard let f = vm.displayState.utilizationFraction else { return nil }
-        guard let five = vm.cached?.snapshot.fiveHour else { return f }
+        guard let lead = vm.cached?.snapshot.primaryWindow else { return f }
         return vm.coloring.paint(
-            five, windowLength: UsageColoring.fiveHourLength, now: Int64(Date().timeIntervalSince1970)
+            lead.window, windowLength: lead.windowLength, now: Int64(Date().timeIntervalSince1970)
         ) ?? f
     }
 }
@@ -246,7 +246,9 @@ struct MenuBarDropdown: View {
             } else {
                 // Wide: the 5-hour session beside the weekly windows.
                 claudeHeader
-                AdaptiveColumns(twoColumn: twoColumn && vm.cached != nil) {
+                // No 5-hour window: the weekly rows get the full width.
+                AdaptiveColumns(twoColumn: twoColumn && vm.cached != nil
+                                && vm.cached?.snapshot.lacksFiveHourWindow != true) {
                     claudeWindows(sessionWindow: true, weeklyWindows: false)
                 } trailing: {
                     claudeWindows(sessionWindow: false, weeklyWindows: true)
@@ -321,7 +323,8 @@ struct MenuBarDropdown: View {
     @ViewBuilder
     private func claudeWindows(sessionWindow: Bool, weeklyWindows: Bool) -> some View {
         if let cached = vm.cached {
-            if sessionWindow {
+            // An account with no 5-hour limit gets no 5-hour row.
+            if sessionWindow, !cached.snapshot.lacksFiveHourWindow {
                 WindowSection(
                     title: "5-hour session",
                     window: cached.snapshot.fiveHour,

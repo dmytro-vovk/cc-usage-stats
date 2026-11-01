@@ -505,7 +505,10 @@ struct AlertsSettingsView: View {
             } header: {
                 Text("Resets")
             } footer: {
-                Text("“Windows that ran low” plays when any Claude window that sounded a warning or hit its limit starts over.")
+                Text("“Windows that ran low” plays when any Claude window that sounded a warning or hit its limit starts over."
+                     + (vm.cached?.snapshot.lacksFiveHourWindow == true
+                        ? " This Claude account has no 5-hour limit, so “Every 5-hour reset” announces windows that ran low."
+                        : ""))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

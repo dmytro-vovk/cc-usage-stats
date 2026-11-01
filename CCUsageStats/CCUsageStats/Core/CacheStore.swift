@@ -40,7 +40,8 @@ enum CacheStore {
 
     /// Merges `incoming` into existing state and atomically writes.
     /// Absent fields in `incoming` (nil five_hour or nil seven_day) preserve
-    /// whatever is on disk for that field.
+    /// whatever is on disk for that field — except a 5h window the source
+    /// says does not exist (`fiveHourIsAbsent`), which is cleared.
     ///
     /// Model windows do **not** work that way, and deliberately so. Only a
     /// source that can see them may define them:
@@ -63,7 +64,7 @@ enum CacheStore {
     static func update(at url: URL, with incoming: RateLimitsSnapshot, now: Int64) throws {
         let existing = try read(at: url)?.snapshot
         let merged = RateLimitsSnapshot(
-            fiveHour: incoming.fiveHour ?? existing?.fiveHour,
+            fiveHour: incoming.fiveHourIsAbsent ? nil : (incoming.fiveHour ?? existing?.fiveHour),
             sevenDay: incoming.sevenDay ?? existing?.sevenDay,
             models: incoming.modelsAreAuthoritative ? incoming.models : [:],
             breakdown: incoming.modelsAreAuthoritative ? incoming.breakdown : []

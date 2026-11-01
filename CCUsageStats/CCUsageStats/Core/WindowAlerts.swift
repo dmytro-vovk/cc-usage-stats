@@ -142,7 +142,11 @@ struct AlertOutcome: Equatable {
         self.reset = reset
     }
 
-    init(events: [WindowAlertLatch.Event], announce: ResetAnnouncement) {
+    /// - Parameter hasFiveHourWindow: false for an account with no 5-hour
+    ///   limit. There is no 5-hour reset to announce then, so `.fiveHour`
+    ///   falls back to announcing windows that ran low rather than nothing.
+    init(events: [WindowAlertLatch.Event], announce: ResetAnnouncement, hasFiveHourWindow: Bool = true) {
+        let announce = !hasFiveHourWindow && announce == .fiveHour ? .ranLow : announce
         for event in events {
             switch event {
             case .crossed(_, let percent) where percent >= 100:

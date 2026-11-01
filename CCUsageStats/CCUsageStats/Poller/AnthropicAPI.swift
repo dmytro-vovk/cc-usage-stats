@@ -41,7 +41,8 @@ enum AnthropicAPI {
         let five = window(headers: lc, suffix: "5h")
         let seven = window(headers: lc, suffix: "7d")
         if five == nil && seven == nil { return nil }
-        return RateLimitsSnapshot(fiveHour: five, sevenDay: seven)
+        // Weekly headers with no 5h pair: the account has no 5-hour limit.
+        return RateLimitsSnapshot(fiveHour: five, sevenDay: seven, fiveHourIsAbsent: seven != nil)
     }
 
     private static func window(headers: [String: String], suffix: String) -> WindowSnapshot? {

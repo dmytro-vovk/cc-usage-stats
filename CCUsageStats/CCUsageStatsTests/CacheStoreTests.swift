@@ -52,6 +52,27 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(read.snapshot.sevenDay?.usedPercentage, 20, "seven_day must be preserved when absent from new payload")
     }
 
+    func testAbsentFiveHourClearsCachedWindow() throws {
+        let initial = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 1, resetsAt: 100),
+            sevenDay: WindowSnapshot(usedPercentage: 20, resetsAt: 200),
+            models: [:]
+        )
+        try CacheStore.update(at: tmpFile, with: initial, now: 50)
+
+        let noFive = RateLimitsSnapshot(
+            fiveHour: nil,
+            sevenDay: WindowSnapshot(usedPercentage: 21, resetsAt: 200),
+            models: [:],
+            fiveHourIsAbsent: true
+        )
+        try CacheStore.update(at: tmpFile, with: noFive, now: 60)
+
+        let read = try CacheStore.read(at: tmpFile)!
+        XCTAssertNil(read.snapshot.fiveHour, "an account with no 5h limit must not keep the last one")
+        XCTAssertEqual(read.snapshot.sevenDay?.usedPercentage, 21)
+    }
+
     func testWriteIsAtomic() throws {
         let snapshot = RateLimitsSnapshot(
             fiveHour: WindowSnapshot(usedPercentage: 1, resetsAt: 100),

@@ -662,7 +662,10 @@ final class MenuViewModel: ObservableObject {
                 now: now
             )
         }
-        return AlertOutcome(events: events, announce: resetAnnouncement)
+        return AlertOutcome(
+            events: events, announce: resetAnnouncement,
+            hasFiveHourWindow: !snapshot.lacksFiveHourWindow
+        )
     }
 
     /// Warning / limit-reached sounds for Codex windows, on the 5-hour and
@@ -706,12 +709,12 @@ final class MenuViewModel: ObservableObject {
     }
 
     /// When the wall clock crosses the cached `resetsAt` we know the
-    /// 5-hour window has just rolled over — trigger an immediate poll
-    /// instead of waiting up to the full base interval. Fires at most
-    /// once per cached `resetsAt`; re-arms when a fresh poll advances
-    /// `resetsAt` past the value we already triggered for.
+    /// primary window (5-hour, or weekly without one) has just rolled over
+    /// — trigger an immediate poll instead of waiting up to the full base
+    /// interval. Fires at most once per cached `resetsAt`; re-arms when a
+    /// fresh poll advances `resetsAt` past the value we already triggered for.
     private func kickRefreshIfWindowReset(now: Int64) {
-        guard let cached, let five = cached.snapshot.fiveHour else { return }
+        guard let cached, let five = cached.snapshot.primaryWindow?.window else { return }
         guard now >= five.resetsAt else { return }
         guard refreshedForResetAt != five.resetsAt else { return }
         refreshedForResetAt = five.resetsAt

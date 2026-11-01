@@ -10,6 +10,27 @@ final class DisplayStateTests: XCTestCase {
         XCTAssertFalse(s.hasFiveHourData)
     }
 
+    /// No 5-hour limit (verified Ultra): the weekly window takes the menubar.
+    func testWeeklyIsPrimaryWithoutFiveHourWindow() {
+        let cached = CachedState(
+            capturedAt: 100,
+            snapshot: .init(fiveHour: nil, sevenDay: .init(usedPercentage: 86.2, resetsAt: 1000), models: [:])
+        )
+        let s = DisplayState.compute(now: 200, cached: cached)
+        XCTAssertEqual(s.menuBarText, "86%")
+        XCTAssertEqual(s.utilizationFraction ?? -1, 0.862, accuracy: 0.001)
+        XCTAssertFalse(s.hasFiveHourData)
+    }
+
+    func testWeeklyAtCapShowsCountdownWithoutFiveHourWindow() {
+        let cached = CachedState(
+            capturedAt: 100,
+            snapshot: .init(fiveHour: nil, sevenDay: .init(usedPercentage: 100, resetsAt: 100 + 26 * 3600), models: [:])
+        )
+        let s = DisplayState.compute(now: 100, cached: cached)
+        XCTAssertEqual(s.menuBarText, RelativeTime.formatHMS(seconds: 26 * 3600))
+    }
+
     func testFreshLowUsage() {
         let cached = CachedState(
             capturedAt: 100,
@@ -91,11 +112,8 @@ final class DisplayStateTests: XCTestCase {
         XCTAssertEqual(DisplayState.compute(now: 590, cached: cached).menuBarText, "0:00:10")
     }
 
-    func testNoFiveHourFallsBackToPlaceholder() {
-        let cached = CachedState(
-            capturedAt: 100,
-            snapshot: .init(fiveHour: nil, sevenDay: .init(usedPercentage: 30, resetsAt: 1000))
-        )
+    func testNoWindowsFallsBackToPlaceholder() {
+        let cached = CachedState(capturedAt: 100, snapshot: .init(fiveHour: nil, sevenDay: nil))
         let s = DisplayState.compute(now: 100, cached: cached)
         XCTAssertEqual(s.menuBarText, "—")
         XCTAssertNil(s.utilizationFraction)
