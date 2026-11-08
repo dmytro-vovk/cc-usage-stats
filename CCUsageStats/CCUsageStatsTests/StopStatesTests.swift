@@ -203,7 +203,7 @@ final class StopStatesTests: XCTestCase {
 
     func testBackgroundRanksBelowEverythingBusy() {
         let bg = RunningSession(record: rec("Stop", tasks(subagent)), title: "a")
-        // No modification time, so never stale (rec's 1970 one would be).
+        // No modification time, so never stale (rec's updatedAt 1_000 would be).
         let compacting = RunningSession(
             record: SessionRecord.decode(Data(#"{"v":1,"pid":1,"session_id":"s2","hook_event":"PreCompact"}"#.utf8))!,
             title: "b")
