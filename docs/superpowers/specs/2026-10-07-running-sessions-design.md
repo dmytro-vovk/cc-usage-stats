@@ -58,11 +58,20 @@ that predates the install may not report until restarted.
 |---|---|
 | SessionStart | Idle |
 | UserPromptSubmit, PreToolUse, PostToolUse | Working |
-| PreCompact | Compacting |
+| PreCompact | Compacting (see the 2026-11-08 revision) |
 | PermissionRequest, Notification (permission) | Needs permission |
 | PreToolUse of `AskUserQuestion`, Notification (elicitation) | Waiting for input |
 | Stop, Notification (idle) | Done |
 | StopFailure | Error |
+
+Revised 2026-11-08 (script v6): Claude Code 2.1.317 precomputes a compaction
+on an idle session (about an hour after its last turn, `PreCompact` with
+trigger `auto`). No turn surrounds it and no event follows it, so those
+sessions read Compacting forever. The script now ignores `PreCompact` and
+`PostCompact` when the record's last event shows the turn had ended or was
+blocked on the user (Stop, StopFailure, SessionStart, PermissionRequest,
+Notification). As a fallback, the app treats a `PreCompact` record that is 10
+minutes old as Done (`SessionRecord.compactingTimeout`).
 
 Revised 2026-10-08 (script v4), after comparing with other menu-bar apps:
 a `Stop` is **Waiting for input** when the reply ends on a decision question

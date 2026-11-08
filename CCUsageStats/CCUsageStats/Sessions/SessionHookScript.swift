@@ -23,7 +23,7 @@ import Foundation
 /// `StopFailure` or `background_tasks`; those parts simply never match.
 nonisolated enum SessionHookScript {
     /// Bump when `contents` changes; the installer rewrites outdated copies.
-    static let version = 5
+    static let version = 6
 
     /// The Claude Code script.
     static let contents = contents(for: .claude)
@@ -37,7 +37,7 @@ nonisolated enum SessionHookScript {
 
     private static let template = #"""
     #!/bin/bash
-    # cc-usage-stats session hook v5 (__CLIENT__)
+    # cc-usage-stats session hook v6 (__CLIENT__)
     # Managed by the CCUsageStats menu-bar app, which rewrites this file when
     # its version changes and registers it in __SETTINGS__. Local
     # edits are lost. Records each __AGENT__ session's latest event so the
@@ -60,6 +60,14 @@ nonisolated enum SessionHookScript {
       if [[ $in =~ \"notification_type\":\"idle_prompt\" ]]; then exit 0; fi
       if [[ ! $in =~ \"notification_type\": && $in =~ \"message\":\"Claude\ is\ waiting\ for\ your\ input\" ]]; then exit 0; fi
     fi
+    # Claude Code precomputes a compaction while a session sits idle: a
+    # PreCompact with no turn around it and nothing after it. Once a turn has
+    # ended (or is blocked on the user), compaction doesn't change that.
+    case $event in PreCompact|PostCompact)
+      prev=
+      read -r prev 2>/dev/null < "$dir/$sid.json"
+      if [[ $prev =~ \"hook_event\":\"(Stop|StopFailure|SessionStart|PermissionRequest|Notification)\" ]]; then exit 0; fi
+    ;; esac
 
     # A JSON string value, still escaped, so it can be written back verbatim.
     field() {

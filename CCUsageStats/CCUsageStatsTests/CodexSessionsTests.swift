@@ -82,7 +82,7 @@ final class CodexSessionsTests: XCTestCase {
     func testCodexEventsMapOntoStatuses() {
         XCTAssertEqual(rec("SessionStart").status, .idle)
         XCTAssertEqual(rec("PermissionRequest").status, .needsPermission)
-        XCTAssertEqual(rec("PreCompact").status, .compacting)
+        XCTAssertEqual(rec("PreCompact").status(now: 10), .compacting)
         XCTAssertEqual(rec("PostCompact").status, .working)
         XCTAssertEqual(rec("Stop").status, .done)
     }

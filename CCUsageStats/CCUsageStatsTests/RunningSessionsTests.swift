@@ -11,14 +11,34 @@ final class RunningSessionsTests: XCTestCase {
         return SessionRecord.decode(Data(json.utf8), updatedAt: at)!
     }
 
+    private static var now: Int64 { Int64(Date().timeIntervalSince1970) }
+
     // MARK: Status mapping
+
+    /// Claude Code precomputes a compaction on an idle session (PreCompact,
+    /// trigger "auto") and fires nothing after it. A Compacting record that
+    /// old is no compaction in progress: it shows as Done (hidden), not
+    /// Compacting forever.
+    func testStaleCompactingCountsAsDone() {
+        let limit = SessionRecord.compactingTimeout
+        XCTAssertEqual(rec("PreCompact", at: 50_000).status(now: 50_000 + limit - 1), .compacting)
+        XCTAssertEqual(rec("PreCompact", at: 50_000).status(now: 50_000 + limit), .done)
+        XCTAssertEqual(rec("PreCompact", at: Self.now - limit - 5).status, .done)
+        // No modification time known: can't tell it's stale.
+        XCTAssertEqual(rec("PreCompact", at: 0).status(now: 50_000), .compacting)
+        // Other states don't age.
+        XCTAssertEqual(rec("PreToolUse", at: 50_000).status(now: 90_000), .working)
+        let stale = [rec("PreCompact", sid: "stale", at: Self.now - limit - 5),
+                     rec("PreCompact", sid: "fresh", at: Self.now)]
+        XCTAssertEqual(RunningSessions.build(stale, isAlive: { _ in true }, title: { _ in nil }).map(\.id), ["fresh"])
+    }
 
     func testStatusFromLastEvent() {
         XCTAssertEqual(rec("SessionStart").status, .idle)
         XCTAssertEqual(rec("UserPromptSubmit").status, .working)
         XCTAssertEqual(rec("PreToolUse").status, .working)
         XCTAssertEqual(rec("PostToolUse").status, .working)
-        XCTAssertEqual(rec("PreCompact").status, .compacting)
+        XCTAssertEqual(rec("PreCompact", at: Self.now).status, .compacting)
         XCTAssertEqual(rec("PermissionRequest").status, .needsPermission)
         // A finished turn isn't waiting on the user for anything.
         XCTAssertEqual(rec("Stop").status, .done)
@@ -75,7 +95,7 @@ final class RunningSessionsTests: XCTestCase {
     func testOnlyActiveSessionsAreListed() {
         let records = [
             rec("UserPromptSubmit", sid: "working"),
-            rec("PreCompact", sid: "compacting"),
+            rec("PreCompact", sid: "compacting", at: Self.now),
             rec("PermissionRequest", sid: "permission"),
             rec("PreToolUse", sid: "question", payload: #","tool_name":"AskUserQuestion""#),
             rec("StopFailure", sid: "error"),

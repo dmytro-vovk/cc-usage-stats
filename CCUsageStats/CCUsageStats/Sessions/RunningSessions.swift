@@ -96,10 +96,18 @@ nonisolated struct SessionRecord: Equatable, Sendable {
         event == "StopFailure" ? StopFailureReason(error: error, message: lastMessage) : nil
     }
 
-    var status: SessionStatus {
+    /// Claude Code fires `PreCompact` for a compaction it precomputes on an
+    /// idle session, and nothing after it. A compaction this old isn't
+    /// running: the turn before it had ended.
+    static let compactingTimeout: Int64 = 600
+
+    var status: SessionStatus { status(now: Int64(Date().timeIntervalSince1970)) }
+
+    func status(now: Int64) -> SessionStatus {
         switch event {
         case "SessionStart": return .idle
-        case "PreCompact": return .compacting
+        case "PreCompact":
+            return updatedAt > 0 && now - updatedAt >= Self.compactingTimeout ? .done : .compacting
         case "PermissionRequest": return .needsPermission
         // The turn finished. Done, unless it ended on a question for the
         // user, or left work running that will wake it again.

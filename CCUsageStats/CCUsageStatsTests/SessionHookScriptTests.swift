@@ -168,6 +168,32 @@ final class SessionHookScriptTests: XCTestCase {
         XCTAssertEqual(try record().status, .needsPermission)
     }
 
+    /// Claude Code precomputes a compaction while a session sits idle: a
+    /// PreCompact with no turn around it and nothing after it. It mustn't
+    /// replace how the turn ended, or the session reads Compacting forever.
+    func testCompactionAfterAFinishedTurnKeepsTheOutcome() throws {
+        for (prior, extra) in [("Stop", ""), ("StopFailure", #","error":"rate_limit""#), ("SessionStart", ""),
+                               ("PermissionRequest", ""),
+                               ("Notification", #","message":"Claude needs your permission","notification_type":"permission_prompt""#)] {
+            try run(payload(prior, extra: extra))
+            try run(payload("PreCompact", extra: #","trigger":"auto""#))
+            XCTAssertEqual(try record().event, prior, "PreCompact after \(prior)")
+            try run(payload("PostCompact", extra: #","trigger":"auto""#))
+            XCTAssertEqual(try record().event, prior, "PostCompact after \(prior)")
+        }
+    }
+
+    /// Compaction inside a turn (or a first event) still shows.
+    func testCompactionMidTurnIsRecorded() throws {
+        try run(payload("PreCompact"))
+        XCTAssertEqual(try record().event, "PreCompact")
+        try run(payload("PreToolUse", extra: #","tool_name":"Bash""#))
+        try run(payload("PreCompact", extra: #","trigger":"auto""#))
+        XCTAssertEqual(try record().status, .compacting)
+        try run(payload("PostCompact", extra: #","trigger":"auto""#))
+        XCTAssertEqual(try record().event, "PostCompact")
+    }
+
     func testBadInputIsIgnoredAndNeverFails() throws {
         XCTAssertEqual(try run(""), 0)
         XCTAssertEqual(try run("not json"), 0)
