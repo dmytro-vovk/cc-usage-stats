@@ -80,8 +80,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
 ### Dropdown
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.20.2">
-  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.20.2" width="280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.20.2-1">
+  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.20.2-1" width="280">
 </picture>
 
 - **Resizable width**: drag either side edge of the panel (280–720 pt,
