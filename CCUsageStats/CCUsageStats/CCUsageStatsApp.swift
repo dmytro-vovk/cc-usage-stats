@@ -40,7 +40,12 @@ struct CCUsageStatsApp: App {
 /// launch finishes (so the URL that launched the app arrives) and again
 /// after, in case SwiftUI claimed the event in between.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationWillFinishLaunching(_ notification: Notification) { claimURLEvents() }
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        claimURLEvents()
+        // Before launch finishes, so a click on an update notification that
+        // launches the app is still delivered (only sets a delegate; no prompt).
+        UpdateNotifier.shared.install()
+    }
     func applicationDidFinishLaunching(_ notification: Notification) { claimURLEvents() }
 
     private func claimURLEvents() {

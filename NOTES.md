@@ -2,6 +2,9 @@
 
 ## Observed, not fixed
 
+- UpdateChecker.swift:161 — notified tag is recorded before UpdateNotifier's permission prompt / `center.add` resolve; a prompt left unanswered at quit, or an `add` failure, loses that release's notification (dropdown link remains; next release re-announces). (Fable P2, v0.20.2 update notification)
+- UpdateChecker.swift:161 — tag is recorded even when `notifier == nil`; only matters for test wiring sharing defaults. (Fable P2)
+
 - CCUsageStats/CCUsageStats/Poller/OAuthUsage.swift:141 — a body with `five_hour: null` and no other usable window returns `.notSubscriber` before absence is recorded, so a stale cached 5h window survives (Codex P2, 2026-11-01).
 - CCUsageStats/CCUsageStats/Core/RateLimits.swift:117 — `lacksFiveHourWindow` is inferred from the cache (`fiveHour == nil && sevenDay != nil`), so a 5h account whose first-ever poll lands in the between-windows gap shows the weekly-led layout until the next window starts (Codex P2, 2026-11-01).
 - Weekly-window sparkline/forecast for accounts with no 5-hour limit: history only records the 5h window (MenuViewModel reloadCache), so these accounts get no sparkline.

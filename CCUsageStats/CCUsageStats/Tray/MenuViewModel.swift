@@ -322,7 +322,6 @@ final class MenuViewModel: ObservableObject {
         codex.start()
         // Verifies (and if needed installs) the session hooks.
         sessions.start()
-        UpdateNotifier.shared.install()
         updates.start()
         // `ccusagestats://` URLs that arrived during launch run now.
         AppURLRouter.shared.attach(self)
