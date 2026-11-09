@@ -1,4 +1,4 @@
-# cc-usage-stats
+# <img src="docs/screenshots/app-icon.png?v=0.21.0" width="40" alt="" align="top"> cc-usage-stats
 
 [![CI](https://github.com/dmytro-vovk/cc-usage-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/dmytro-vovk/cc-usage-stats/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -22,23 +22,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
 ### Menubar
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-dark.png?v=0.20.2">
-  <img alt="menubar gauge" src="docs/screenshots/menubar-light.png?v=0.20.2" width="90">
-</picture>
-&nbsp;&nbsp;&nbsp;&nbsp;
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-outage-dark.png?v=0.20.2">
-  <img alt="menubar outage indicator" src="docs/screenshots/menubar-outage-light.png?v=0.20.2" width="120">
-</picture>
-&nbsp;&nbsp;&nbsp;&nbsp;
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-codex-dark.png?v=0.20.2">
-  <img alt="menubar pill showing Claude and Codex" src="docs/screenshots/menubar-codex-light.png?v=0.20.2" width="183">
-</picture>
-&nbsp;&nbsp;&nbsp;&nbsp;
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menubar-sessions-dark.png?v=0.20.2">
-  <img alt="menubar pill with a session needing permission" src="docs/screenshots/menubar-sessions-light.png?v=0.20.2" width="120">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/what-you-see-dark.png?v=0.21.0">
+  <img alt="the app icon beside the menubar pill in six states: 42% green; 78% orange with an incident badge; 5-hour 88% │ 7-day 91%; Claude 93% │ Codex 61%; a 1:47:12 countdown at the cap with a needs-permission badge; and a weekly-only 64% with a working-session badge" src="docs/screenshots/what-you-see-light.png?v=0.21.0" width="700">
 </picture>
 
 - A gauge icon + percentage rendered on a colour-shifted pill — the
@@ -799,6 +784,8 @@ security delete-identity -c "CCUsageStats Dev"
 ./scripts/build.sh           # builds dist/CCUsageStats.app
 ./scripts/install-dev.sh     # build + copy to ~/Applications + relaunch
 ./scripts/release.sh v0.X.Y  # builds dist/v0.X.Y/{zip,dmg} for a release
+./scripts/render-menubar-shots.sh   # regenerates docs/screenshots/menubar-*.png from the pill renderer
+./scripts/compose-what-you-see.py   # composes the README's icon + pill-states image from them
 ```
 
 **Signing.** `build.sh` signs with the first identity it finds:
@@ -859,9 +846,17 @@ each view model a throwaway `UserDefaults` suite instead of `.standard`.
 Your stored token, menu-bar preferences, `history.jsonl` and
 `~/.claude/settings.json` are never touched.
 
-Screenshots under `docs/screenshots/` are window captures of the real app
-at 2× (`screencapture -o -l <window id>`), light and dark. To capture the
-other appearance without changing the system setting, launch with
+Screenshots under `docs/screenshots/` come from two places. The menu-bar
+pills (`menubar-*.png`, six states), the icon + pill-states composite
+(`what-you-see-*.png`) and the header icon (`app-icon.png`) are generated:
+`scripts/render-menubar-shots.sh` runs `MenuBarScreenshotRenderTests` with
+`CCUS_RENDER_SHOTS` set and writes the pills from the app's own renderer,
+light + dark at 4×, and `scripts/compose-what-you-see.py` (Pillow +
+`rsvg-convert`) lays them out beside the icon from `icon-master.svg`. Edit
+the states in the test; no outage or Codex quota has to be live. The
+dropdown and Settings shots are window captures of the real app at 2×
+(`screencapture -o -l <window id>`), light and dark. To capture the other
+appearance without changing the system setting, launch with
 `open -a CCUsageStats --args -CCUSAppearance light` (or `dark`); without
 the flag the app follows the system. Open what you're capturing with a
 [URL command](#url-commands) — `open "ccusagestats://settings?tab=accounts"`

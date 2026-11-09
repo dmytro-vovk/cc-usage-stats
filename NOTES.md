@@ -2,6 +2,12 @@
 
 ## Observed, not fixed
 
+- scripts/compose-what-you-see.py:2 docstring says "four" pill states; it composes six. (Fable P2, v0.21.0)
+- scripts/compose-what-you-see.py:9, scripts/capture-window.sh:14 need Pillow / pyobjc, which no python3 on PATH has; README.md:788 documents running them bare. (Fable P2)
+- CCUsageStatsTests/MenuBarScreenshotRenderTests.swift:46 with CCUS_RENDER_SHOTS but no CCUS_SHOTS_DIR writes to the test host's cwd and fails; skip message doesn't mention the dir var. (Fable P2)
+- scripts/render-menubar-shots.sh:19 exits 0 if the render test was skipped (stale files look fresh). (Fable P2)
+- README.md:855 describes manual screencapture but not scripts/capture-window.sh, which nothing references. (Fable P2)
+
 - README.md:760 Privacy — says "no third-party servers" but omits the 5-minute status.claude.com poll and the daily api.github.com update check (site/index.html privacy copy now lists both). Not fixed here: README has another session's uncommitted edits.
 
 - UpdateChecker.swift:161 — notified tag is recorded before UpdateNotifier's permission prompt / `center.add` resolve; a prompt left unanswered at quit, or an `add` failure, loses that release's notification (dropdown link remains; next release re-announces). (Fable P2, v0.20.2 update notification)
