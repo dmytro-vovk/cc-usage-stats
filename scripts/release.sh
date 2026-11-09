@@ -90,8 +90,5 @@ if [ "$NOTARIZE" = 1 ]; then
   xcrun stapler staple "$DMG"
 fi
 
-echo "==> Pointing site/ at $VERSION"
-scripts/bump-site-version.sh "$VERSION"
-
 echo "==> Done"
 ls -lh "$ARTIFACTS_DIR"

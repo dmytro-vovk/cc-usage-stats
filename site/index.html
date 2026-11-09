@@ -13,6 +13,9 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://ccusagestats.app/">
 <meta property="og:image" content="https://ccusagestats.app/img/what-you-see-light.png">
+<meta property="og:image:alt" content="The cc-usage-stats menubar pill in six states, from 42% green to a countdown at the cap.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://ccusagestats.app/">
 <link rel="icon" href="img/icon.svg" type="image/svg+xml">
 <link rel="icon" href="img/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
@@ -164,13 +167,14 @@
 
 <section id="privacy" class="section">
   <h2>Privacy</h2>
-  <p>The app polls <code>api.anthropic.com</code> over HTTPS with your token — about once a minute, every ten seconds when you're within 2% of the cap — reads the rate‑limit headers, and keeps the token in your macOS Keychain: never in a file, never logged. Nothing else leaves the machine. There is no telemetry, no analytics and no third‑party server; usage history and session records stay under <code>~/Library/Application Support/cc-usage-stats/</code>, the optional Codex reader works from <code>~/.codex</code>, and the optional MCP server answers only the agent that launched it, over stdio.</p>
+  <p>The app polls <code>api.anthropic.com</code> over HTTPS with your token — about once a minute, every ten seconds when you're within 2% of the cap — reads the rate‑limit headers, and keeps the token in your macOS Keychain: never in a file, never logged. Besides that it asks <code>status.claude.com</code> for the public service status every five minutes and GitHub for the latest release once a day (that one can be switched off); neither request carries your token or any identifier. There is no telemetry and no analytics in the app. Usage history and session records stay under <code>~/Library/Application Support/cc-usage-stats/</code>, the optional Codex reader works from <code>~/.codex</code>, and the optional MCP server answers only the agent that launched it, over stdio.</p>
 </section>
 
 </main>
 
 <footer class="foot">
-  <p>Made by <a href="https://dmytro-vovk.com">Dmytro Vovk</a> · <a href="https://github.com/dmytro-vovk/cc-usage-stats/blob/main/LICENSE">MIT licence</a> · <a href="https://github.com/dmytro-vovk/cc-usage-stats">Source on GitHub</a></p>
+  <p>Made by <a href="https://github.com/dmytro-vovk">Dmytro Vovk</a> · <a href="https://github.com/dmytro-vovk/cc-usage-stats/blob/main/LICENSE">MIT licence</a> · <a href="https://github.com/dmytro-vovk/cc-usage-stats">Source on GitHub</a></p>
+  <p class="fine">This website counts visits with Cloudflare Web Analytics: no cookies, no cross-site tracking.</p>
   <p class="fine">Not affiliated with, endorsed by or sponsored by Anthropic or OpenAI. Claude, Codex and OpenAI are trademarks of their respective owners.</p>
 </footer>
 

@@ -2,6 +2,8 @@
 
 ## Observed, not fixed
 
+- README.md:760 Privacy — says "no third-party servers" but omits the 5-minute status.claude.com poll and the daily api.github.com update check (site/index.html privacy copy now lists both). Not fixed here: README has another session's uncommitted edits.
+
 - UpdateChecker.swift:161 — notified tag is recorded before UpdateNotifier's permission prompt / `center.add` resolve; a prompt left unanswered at quit, or an `add` failure, loses that release's notification (dropdown link remains; next release re-announces). (Fable P2, v0.20.2 update notification)
 - UpdateChecker.swift:161 — tag is recorded even when `notifier == nil`; only matters for test wiring sharing defaults. (Fable P2)
 

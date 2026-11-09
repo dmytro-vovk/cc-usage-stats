@@ -1,0 +1,5 @@
+# Cloudflare Pages project for https://ccusagestats.app — publish with
+# scripts/deploy-site.sh (needs `npx wrangler login` once).
+name = "ccusagestats"
+pages_build_output_dir = "./site"
+compatibility_date = "2026-11-09"
