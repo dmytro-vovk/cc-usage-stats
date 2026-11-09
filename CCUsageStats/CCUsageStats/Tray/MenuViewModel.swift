@@ -221,7 +221,8 @@ final class MenuViewModel: ObservableObject {
         self.updates = updates ?? UpdateChecker(
             client: GitHubReleaseClient(userAgent: "CCUsageStats/\(version ?? "0")"),
             currentVersion: version,
-            defaults: defaults
+            defaults: defaults,
+            notifier: UpdateNotifier.shared
         )
         // Assignments in init skip `didSet`, so loading doesn't write back.
         pillMode = PillMode.read(from: defaults)
@@ -321,6 +322,7 @@ final class MenuViewModel: ObservableObject {
         codex.start()
         // Verifies (and if needed installs) the session hooks.
         sessions.start()
+        UpdateNotifier.shared.install()
         updates.start()
         // `ccusagestats://` URLs that arrived during launch run now.
         AppURLRouter.shared.attach(self)

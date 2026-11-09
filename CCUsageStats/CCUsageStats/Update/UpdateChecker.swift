@@ -14,6 +14,9 @@ import os
 final class UpdateChecker: ObservableObject {
     private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "updates")
     static let enabledKey = "cc-usage-stats.checkForUpdates"
+    /// Tag of the last release a notification was posted for, so each
+    /// release is announced once — not on every daily check or relaunch.
+    static let notifiedTagKey = "cc-usage-stats.notifiedUpdateTag"
 
     static let launchDelay: TimeInterval = 30
     static let dailyInterval: TimeInterval = 24 * 3600
@@ -55,6 +58,7 @@ final class UpdateChecker: ObservableObject {
     private let current: AppVersion?
     private let client: UpdateCheckClient
     private let defaults: UserDefaults
+    private let notifier: UpdateNotifying?
     private let clock: () -> Int64
     private var timer: Timer?
     private var isStarted = false
@@ -63,10 +67,12 @@ final class UpdateChecker: ObservableObject {
         client: UpdateCheckClient,
         currentVersion: String?,
         defaults: UserDefaults = .standard,
+        notifier: UpdateNotifying? = nil,
         clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }
     ) {
         self.client = client
         self.defaults = defaults
+        self.notifier = notifier
         self.clock = clock
         let parsed = currentVersion.flatMap(AppVersion.init)
         self.current = (parsed.map { $0 > AppVersion(major: 0, minor: 0, patch: 0) } ?? false) ? parsed : nil
@@ -152,6 +158,11 @@ final class UpdateChecker: ObservableObject {
             lastCheckFailed = false
             lastCheckRateLimited = false
             available = r.version > current ? r : nil
+            if let r = available, defaults.string(forKey: Self.notifiedTagKey) != r.tag {
+                defaults.set(r.tag, forKey: Self.notifiedTagKey)
+                Self.log.notice("announcing \(r.tag, privacy: .public)")
+                notifier?.notify(r)
+            }
         case .failure, .rateLimited:
             consecutiveFailures += 1
             lastCheckFailed = true

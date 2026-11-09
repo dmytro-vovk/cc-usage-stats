@@ -143,7 +143,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
   up, so the panel never offers an optional upgrade and reports a hard
   failure in the same breath.
 - **Update available: vX.Y.Z** — a link to the release page on GitHub,
-  shown when a newer release is out (see [Update check](#update-check)).
+  shown when a newer release is out, which is also announced once with a
+  macOS notification (see [Update check](#update-check)).
 - With [Codex tracking](#codex-usage) on, a **Codex** section: one bar
   per Codex window (labelled from its length — "5-hour", "Weekly"), and
   the plan and reading age in the header (`prolite · 2m ago`; hover for
@@ -458,11 +459,17 @@ unauthenticated, no cookies or identifiers) and compares its tag with
 the running version (semver; drafts and pre-releases are ignored). When
 the release is newer, the dropdown shows **Update available: vX.Y.Z**,
 which opens the release page; Settings → General adds **Release notes**
-and **Download .dmg** links. Nothing is downloaded or installed
-automatically — install the new version yourself.
+and **Download .dmg** links. Each new release is also announced once
+with a macOS notification ("Update available: vX.Y.Z"); clicking it
+opens the release page. Permission to notify is asked the first time
+there is a release to announce, not at launch; refusing it (or turning
+the app off in System Settings → Notifications) leaves the dropdown and
+Settings links as the only signal. The announced tag is remembered, so
+daily checks and relaunches don't repeat it. Nothing is downloaded or
+installed automatically — install the new version yourself.
 
 - **Off switch:** Settings → General → **Check for updates**. Off means
-  no request at all and hides the row.
+  no request at all, no notification, and hides the row.
 - **Backoff:** a failed check retries after 30 minutes, doubling up to a
   day. GitHub allows 60 unauthenticated requests an hour per IP; when it
   answers with a rate limit, the app waits for GitHub's `Retry-After` /

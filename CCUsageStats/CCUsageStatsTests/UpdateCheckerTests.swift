@@ -186,8 +186,14 @@ final class UpdateCheckerTests: XCTestCase {
                       pageURL: URL(string: "https://github.com/a/b/releases/tag/\(tag)")!, dmgURL: nil)
     }
 
-    private func makeChecker(current: String?, client: StubClient) -> UpdateChecker {
-        UpdateChecker(client: client, currentVersion: current, defaults: defaults, clock: { [unowned self] in self.now })
+    final class SpyNotifier: UpdateNotifying {
+        var posted: [String] = []
+        func notify(_ release: LatestRelease) { posted.append(release.tag) }
+    }
+
+    private func makeChecker(current: String?, client: StubClient, notifier: UpdateNotifying? = nil) -> UpdateChecker {
+        UpdateChecker(client: client, currentVersion: current, defaults: defaults, notifier: notifier,
+                      clock: { [unowned self] in self.now })
     }
 
     // MARK: delays
@@ -360,5 +366,53 @@ final class UpdateCheckerTests: XCTestCase {
         let c = makeChecker(current: "0.18.7", client: StubClient())
         c.enabled = false
         XCTAssertFalse(c.canCheckNow)
+    }
+
+    // MARK: notification
+
+    func testNewerReleasePostsNotificationOnce() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0")), .release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        await c.tickForTest()
+        let posted = spy.posted
+        XCTAssertEqual(posted, ["v0.19.0"], "one notification per release, not one per daily check")
+    }
+
+    /// A relaunch still on the old version must not repeat the notification
+    /// for a release it already announced.
+    func testAnnouncedReleaseIsNotRepeatedAfterRelaunch() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0")), .release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        await makeChecker(current: "0.18.7", client: client, notifier: spy).tickForTest()
+        await makeChecker(current: "0.18.7", client: client, notifier: spy).tickForTest()
+        let posted = spy.posted
+        XCTAssertEqual(posted, ["v0.19.0"])
+    }
+
+    func testEachNewerReleaseIsAnnounced() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0")), .release(release("v0.19.1"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        await c.tickForTest()
+        let posted = spy.posted
+        XCTAssertEqual(posted, ["v0.19.0", "v0.19.1"])
+    }
+
+    func testCurrentOrFailedCheckDoesNotNotify() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7")), .failure, .rateLimited(retryAfter: nil)]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        await c.tickForTest()
+        await c.tickForTest()
+        let posted = spy.posted
+        XCTAssertEqual(posted, [])
     }
 }
