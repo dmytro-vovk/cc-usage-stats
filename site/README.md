@@ -17,13 +17,17 @@ from `gh release view`, commits that if it changed, then deploys — so run
 it after `gh release create`, never before the `.dmg` is uploaded.
 
 The `.app` TLD is on the HSTS preload list, so the site must be served over
-HTTPS; Cloudflare Pages does that by default. `_headers` sets the security
-headers and image caching.
+HTTPS; Cloudflare does that by default. `_headers` sets the security
+headers and image caching; `.assetsignore` keeps this README unpublished.
 
 ## Deploy
 
-Cloudflare Pages, project `ccusagestats` (`wrangler.toml` at the repo root),
-in the account that owns the `ccusagestats.app` zone. Once per machine:
+A Cloudflare Worker with static assets, `ccusagestats` (`wrangler.toml` at the
+repo root): `site/` as-is, no code. It runs in the account that owns the
+`ccusagestats.app` zone and is served only at that custom domain (no
+`workers.dev` address); wrangler created the DNS record and certificate.
+(New Pages projects now delegate to Workers, which is why it isn't Pages.)
+Once per machine:
 
 ```bash
 npx wrangler login
@@ -36,7 +40,6 @@ scripts/deploy-site.sh            # bump the download button, commit, upload
 scripts/deploy-site.sh --dry-run  # show what it would do
 ```
 
-The first deploy creates the project. Then, once: Pages project → Custom
-domains → add `ccusagestats.app` (the zone is on the same account, so DNS
-and the certificate are set up for you), and Metrics → enable Web Analytics
-(cookieless; the page footer says so).
+Analytics: a Cloudflare Web Analytics site for the zone; its cookieless
+beacon is in `index.html` (zone auto-injection doesn't reach Worker-served
+pages, so it's off). Numbers: dashboard → Analytics & Logs → Web Analytics.
