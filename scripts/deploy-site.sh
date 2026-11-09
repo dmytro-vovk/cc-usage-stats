@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publishes site/ to Cloudflare Pages (project "ccusagestats", served at
+# Publishes site/ as the Cloudflare Worker "ccusagestats" (static assets, served at
 # https://ccusagestats.app). First points the download button at the latest
 # *published* GitHub release, so run it after `gh release create`; a changed
 # button is committed before the upload, so what's live is always a commit.
@@ -28,5 +28,4 @@ if ! git diff --quiet -- site/index.html; then
 fi
 echo "==> download button: $(grep -o 'releases/download/[^"]*' site/index.html)"
 if [ "$DRY" = 1 ]; then echo "==> dry run: not uploading"; exit 0; fi
-npx -y wrangler@4 pages deploy site --project-name ccusagestats --branch main \
-  --commit-hash "$(git rev-parse HEAD)" --commit-message "$(git log -1 --format=%s)"
+npx -y wrangler@4 deploy --message "$(git rev-parse --short HEAD) $(git log -1 --format=%s)"
