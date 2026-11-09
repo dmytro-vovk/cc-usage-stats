@@ -6,3 +6,8 @@ compatibility_date = "2026-11-09"
 
 [assets]
 directory = "./site"
+
+# Wrangler creates the DNS record and certificate for the custom domain.
+[[routes]]
+pattern = "ccusagestats.app"
+custom_domain = true
