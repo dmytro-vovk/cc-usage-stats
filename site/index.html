@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cc-usage-stats — How much Claude do I have left?</title>
+<meta name="description" content="A macOS menubar gauge for Claude's 5-hour and 7-day rate limits, live, with alerts before you hit the wall. Free, open source, local-only.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171A26" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="cc-usage-stats — How much Claude do I have left?">
+<meta property="og:description" content="A macOS menubar gauge for Claude's rate limits, with alerts before you hit the wall. Free, MIT, local-only.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ccusagestats.app/">
+<meta property="og:image" content="https://ccusagestats.app/img/what-you-see-light.png">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="icon" href="img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Pill glyphs (drawn here, reused by every pill on the page). The gauge
+     needle reads the pill's --p; the badges are the session and incident
+     marks that sit to the right of the pill in the menubar. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="g-calendar" viewBox="0 0 24 24">
+      <rect x="4" y="5.5" width="16" height="14.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.75"/>
+      <path d="M4 10h16M8.5 3.5v3.5M15.5 3.5v3.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+      <circle cx="8.5" cy="14" r="1.1" fill="currentColor"/><circle cx="12" cy="14" r="1.1" fill="currentColor"/><circle cx="15.5" cy="14" r="1.1" fill="currentColor"/>
+    </symbol>
+    <symbol id="g-terminal" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.75"/>
+      <path d="m7 9.5 3 2.5-3 2.5M12.5 14.5H17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="b-incident" viewBox="0 0 24 24">
+      <path d="M12 3.5 22 20.5H2Z" fill="#FF9500"/>
+      <path d="M12 9.5v5" stroke="#1B1E2A" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.4" r="1.3" fill="#1B1E2A"/>
+    </symbol>
+    <symbol id="b-hand" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10.5" fill="#FF9500"/>
+      <path d="M8.2 12.6V8.4a1 1 0 0 1 2 0v3.1V6.9a1 1 0 0 1 2 0v4.6V7.6a1 1 0 0 1 2 0v4.2V9.3a1 1 0 0 1 2 0v5.2c0 2.3-1.6 3.9-3.9 3.9-1.7 0-2.6-.7-3.4-1.9L7.2 14.3a1 1 0 0 1 1.6-1.2z" fill="#1B1E2A"/>
+    </symbol>
+    <symbol id="b-bolt" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10.5" fill="#0A84FF"/>
+      <path d="M13 5.5 7.5 13h4l-.8 5.5L16.5 11h-4z" fill="#fff"/>
+    </symbol>
+    <symbol id="b-zzz" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10.5" fill="currentColor"/>
+      <path d="M7.5 9.5h4l-4 5h4M14 8h3.5l-3.5 4.5h3.5" fill="none" stroke="var(--bg)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="top">
+  <a class="brand" href="#" aria-label="cc-usage-stats, home">
+    <img src="img/app-icon.png" width="28" height="28" alt="">
+    <span>cc-usage-stats</span>
+  </a>
+  <nav aria-label="Primary">
+    <a href="#see">What you see</a>
+    <a href="#setup">Set up</a>
+    <a href="#privacy">Privacy</a>
+    <a href="https://github.com/dmytro-vovk/cc-usage-stats">GitHub</a>
+  </nav>
+</header>
+
+<main>
+
+<section class="hero">
+  <h1>How much Claude do I have left?</h1>
+  <p class="lede">A gauge in your macOS menubar for the 5‑hour and 7‑day rate limits on your Claude subscription — live, wherever you use Claude — with an alert before you hit the wall.</p>
+
+  <figure class="demo" aria-labelledby="demo-caption">
+    <div class="menubar" aria-hidden="true">
+      <span class="apps"><b>Terminal</b> Shell Edit View Window Help</span>
+      <span class="pill" id="pill" style="--p: 0.42">
+        <span class="band"><svg class="glyph gauge" viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12.4" r="8.3" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6.5" cy="12.4" r="1" fill="currentColor"/><circle cx="8.1" cy="8.5" r="1" fill="currentColor"/><circle cx="12" cy="6.9" r="1" fill="currentColor"/><circle cx="15.9" cy="8.5" r="1" fill="currentColor"/><circle cx="17.5" cy="12.4" r="1" fill="currentColor"/><g class="needle"><line x1="12" y1="12.4" x2="12" y2="8.9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g><circle cx="12" cy="12.4" r="1.5" fill="currentColor"/></svg><span class="pct" id="pct">42%</span></span>
+      </span>
+      <svg class="badge" width="17" height="17"><use href="#b-zzz"/></svg>
+      <span class="clock">Mon 14:52</span>
+    </div>
+    <figcaption id="demo-caption">Green while you have room, orange as the window fills, red at the cap — then a countdown to the reset.</figcaption>
+  </figure>
+
+  <div class="cta">
+    <a class="button primary" id="download" href="https://github.com/dmytro-vovk/cc-usage-stats/releases/download/v0.20.2/CCUsageStats-0.20.2.dmg">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Download <span class="ver">v0.20.2</span> for macOS</span>
+    </a>
+    <a class="button" href="https://github.com/dmytro-vovk/cc-usage-stats">View on GitHub</a>
+  </div>
+  <p class="fine">macOS 13+ · Apple Silicon · signed &amp; notarised · free, MIT · for Claude Pro, Max and Ultra accounts — the ones Claude Code signs in with</p>
+</section>
+
+<section id="see" class="section">
+  <h2>What you see</h2>
+  <p>The pill is the whole interface most of the time. It shifts from green through orange to red as a window fills, splits into bands when a second window gets tight, turns into a countdown at the cap, and grows a badge when status.claude.com reports an incident or a Claude Code session needs you.</p>
+  <ul class="states">
+    <li>
+      <span class="pill" style="--p: 0.42"><span class="band"><svg class="glyph gauge" viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12.4" r="8.3" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6.5" cy="12.4" r="1" fill="currentColor"/><circle cx="8.1" cy="8.5" r="1" fill="currentColor"/><circle cx="12" cy="6.9" r="1" fill="currentColor"/><circle cx="15.9" cy="8.5" r="1" fill="currentColor"/><circle cx="17.5" cy="12.4" r="1" fill="currentColor"/><g class="needle"><line x1="12" y1="12.4" x2="12" y2="8.9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g><circle cx="12" cy="12.4" r="1.5" fill="currentColor"/></svg>42%</span></span>
+      <span class="label">5‑hour session, plenty left</span>
+    </li>
+    <li>
+      <span class="pill" style="--p: 0.78"><span class="band"><svg class="glyph gauge" viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12.4" r="8.3" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6.5" cy="12.4" r="1" fill="currentColor"/><circle cx="8.1" cy="8.5" r="1" fill="currentColor"/><circle cx="12" cy="6.9" r="1" fill="currentColor"/><circle cx="15.9" cy="8.5" r="1" fill="currentColor"/><circle cx="17.5" cy="12.4" r="1" fill="currentColor"/><g class="needle"><line x1="12" y1="12.4" x2="12" y2="8.9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g><circle cx="12" cy="12.4" r="1.5" fill="currentColor"/></svg>78%</span></span>
+      <svg class="badge" width="17" height="17" role="img" aria-label="incident badge"><use href="#b-incident"/></svg>
+      <span class="label">Filling up — and status.claude.com reports an incident</span>
+    </li>
+    <li>
+      <span class="pill"><span class="band" style="--p: 0.88"><svg class="glyph gauge" viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12.4" r="8.3" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6.5" cy="12.4" r="1" fill="currentColor"/><circle cx="8.1" cy="8.5" r="1" fill="currentColor"/><circle cx="12" cy="6.9" r="1" fill="currentColor"/><circle cx="15.9" cy="8.5" r="1" fill="currentColor"/><circle cx="17.5" cy="12.4" r="1" fill="currentColor"/><g class="needle"><line x1="12" y1="12.4" x2="12" y2="8.9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g><circle cx="12" cy="12.4" r="1.5" fill="currentColor"/></svg>88%</span><span class="band" style="--p: 0.91"><svg class="glyph" width="17" height="17"><use href="#g-calendar"/></svg>91%</span></span>
+      <span class="label">Both windows tight: 5‑hour │ 7‑day</span>
+    </li>
+    <li>
+      <span class="pill"><span class="band" style="--p: 0.93"><svg class="glyph gauge" viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12.4" r="8.3" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6.5" cy="12.4" r="1" fill="currentColor"/><circle cx="8.1" cy="8.5" r="1" fill="currentColor"/><circle cx="12" cy="6.9" r="1" fill="currentColor"/><circle cx="15.9" cy="8.5" r="1" fill="currentColor"/><circle cx="17.5" cy="12.4" r="1" fill="currentColor"/><g class="needle"><line x1="12" y1="12.4" x2="12" y2="8.9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g><circle cx="12" cy="12.4" r="1.5" fill="currentColor"/></svg>93%</span><span class="band" style="--p: 0.61"><svg class="glyph" width="17" height="17"><use href="#g-terminal"/></svg>61%</span></span>
+      <span class="label">Claude running hot, Codex has room</span>
+    </li>
+    <li>
+      <span class="pill" style="--p: 1"><span class="band"><svg class="glyph gauge" viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12.4" r="8.3" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6.5" cy="12.4" r="1" fill="currentColor"/><circle cx="8.1" cy="8.5" r="1" fill="currentColor"/><circle cx="12" cy="6.9" r="1" fill="currentColor"/><circle cx="15.9" cy="8.5" r="1" fill="currentColor"/><circle cx="17.5" cy="12.4" r="1" fill="currentColor"/><g class="needle"><line x1="12" y1="12.4" x2="12" y2="8.9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></g><circle cx="12" cy="12.4" r="1.5" fill="currentColor"/></svg>1:47:12</span></span>
+      <svg class="badge" width="17" height="17" role="img" aria-label="a session needs permission"><use href="#b-hand"/></svg>
+      <span class="label">At the cap: a countdown to the reset — and a session needs permission</span>
+    </li>
+    <li>
+      <span class="pill" style="--p: 0.64"><span class="band"><svg class="glyph" width="17" height="17"><use href="#g-calendar"/></svg>64%</span></span>
+      <svg class="badge" width="17" height="17" role="img" aria-label="a session is working"><use href="#b-bolt"/></svg>
+      <span class="label">No 5‑hour limit: the weekly window leads — a session is working</span>
+    </li>
+  </ul>
+
+  <div class="split">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="img/dropdown-dark.png">
+      <img class="shot dropdown" src="img/dropdown-light.png" width="560" height="850" alt="The dropdown: active Claude Code and Codex sessions at the top, then Claude's 5-hour session with a sparkline and forecast, the 7-day window, a per-model weekly window, and a Codex weekly section.">
+    </picture>
+    <ul class="features">
+      <li>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+        <div><strong>Live 5‑hour, 7‑day and per‑model limits.</strong> The same numbers Claude's own Usage screen shows, polled about once a minute — every ten seconds as you near the cap. Connect your account to add the per‑model weekly window.</div>
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15zM10 21h4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <div><strong>Alerts by pace, before 100%.</strong> A sound at the thresholds you pick, and a pill that can colour by burn rate instead of level — so a window you're racing through turns orange while there's still time to slow down.</div>
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="m7 9 3 3-3 3M12 15h5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div><strong>Codex alongside.</strong> Optional: OpenAI Codex rate limits in the same pill and dropdown, read from the Codex CLI's local logs, so you can balance work between the two quotas.</div>
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/><circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.75"/></svg>
+        <div><strong>Session status and an MCP server for agents.</strong> See which Claude Code sessions are working, waiting for input or need permission, right in the menubar. Turn on the read‑only <code>get_usage</code> tool and your agents can check the remaining headroom before a large fan‑out.</div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section id="setup" class="section">
+  <h2>Set up in three steps</h2>
+  <ol class="steps">
+    <li><span>1</span><div>Open the <code>.dmg</code> from the <a href="https://github.com/dmytro-vovk/cc-usage-stats/releases/latest">latest release</a>, drag the app to Applications and launch it. A red triangle appears in the menubar: no token yet.</div></li>
+    <li><span>2</span><div>In a terminal, run <code>claude setup-token</code> and copy the <code>sk-ant-oat01-…</code> value it prints. This token is long‑lived.</div></li>
+    <li><span>3</span><div>Click the triangle → <strong>Set a token…</strong>, paste, <strong>Save &amp; Test</strong>. The gauge takes over. Optionally <strong>Connect Claude account</strong> for the per‑model weekly limit.</div></li>
+  </ol>
+</section>
+
+<section id="privacy" class="section">
+  <h2>Privacy</h2>
+  <p>The app polls <code>api.anthropic.com</code> over HTTPS with your token — about once a minute, every ten seconds when you're within 2% of the cap — reads the rate‑limit headers, and keeps the token in your macOS Keychain: never in a file, never logged. Nothing else leaves the machine. There is no telemetry, no analytics and no third‑party server; usage history and session records stay under <code>~/Library/Application Support/cc-usage-stats/</code>, the optional Codex reader works from <code>~/.codex</code>, and the optional MCP server answers only the agent that launched it, over stdio.</p>
+</section>
+
+</main>
+
+<footer class="foot">
+  <p>Made by <a href="https://dmytro-vovk.com">Dmytro Vovk</a> · <a href="https://github.com/dmytro-vovk/cc-usage-stats/blob/main/LICENSE">MIT licence</a> · <a href="https://github.com/dmytro-vovk/cc-usage-stats">Source on GitHub</a></p>
+  <p class="fine">Not affiliated with, endorsed by or sponsored by Anthropic or OpenAI. Claude, Codex and OpenAI are trademarks of their respective owners.</p>
+</footer>
+
+<script>
+(function () {
+  var pill = document.getElementById('pill'), pct = document.getElementById('pct');
+  if (!pill || !pct) return;
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  // Walks the pill through a session: green with room, orange as it fills,
+  // red at the cap, then the countdown to the reset — the states the real
+  // menubar goes through. Reduced motion: a single static state.
+  var states = [[0.42, '42%'], [0.61, '61%'], [0.78, '78%'], [0.93, '93%'], [1, '1:47:12'], [0.12, '12%']];
+  var i = 0;
+  function show(s) { pill.style.setProperty('--p', s[0]); pct.textContent = s[1]; }
+  show(states[0]);
+  if (reduce.matches) return;
+  var timer = setInterval(function () {
+    if (document.hidden) return;
+    i = (i + 1) % states.length; show(states[i]);
+  }, 2600);
+  reduce.addEventListener && reduce.addEventListener('change', function (e) {
+    if (e.matches) { clearInterval(timer); show(states[0]); }
+  });
+})();
+</script>
+</body>
+</html>

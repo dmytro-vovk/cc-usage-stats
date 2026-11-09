@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- cc-usage-stats app icon. Dial-with-dots-and-needle, the same idiom as
+       the menubar pill's gauge glyph, on the dark squircle. Squircle mask is
+       baked in (legacy macOS convention); rx≈22% approximates Apple's
+       continuous corner. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262B3C"/>
+      <stop offset="1" stop-color="#171A26"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+  </g>
+  <!-- Dial -->
+  <circle cx="512" cy="528" r="330" fill="none" stroke="#F4F1EA" stroke-width="68"/>
+  <!-- Scale dots, 0% → 100%, usage colours -->
+  <circle cx="292" cy="528" r="38" fill="#34C759"/>
+  <circle cx="356.4" cy="372.4" r="38" fill="#34C759"/>
+  <circle cx="512" cy="308" r="38" fill="#FF9500"/>
+  <circle cx="667.6" cy="372.4" r="38" fill="#FF9500"/>
+  <circle cx="732" cy="528" r="38" fill="#FF3B30"/>
+  <!-- Needle at ~67% -->
+  <line x1="512" y1="528" x2="597" y2="381" stroke="#F4F1EA" stroke-width="54" stroke-linecap="round"/>
+  <circle cx="512" cy="528" r="62" fill="#F4F1EA"/>
+  <circle cx="512" cy="528" r="22" fill="#1B1E2A"/>
+</svg>
