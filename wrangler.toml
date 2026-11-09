@@ -3,6 +3,9 @@
 # with scripts/deploy-site.sh; needs `npx wrangler login` once.
 name = "ccusagestats"
 compatibility_date = "2026-11-09"
+# One canonical host: no *.workers.dev address, no preview URLs.
+workers_dev = false
+preview_urls = false
 
 [assets]
 directory = "./site"
