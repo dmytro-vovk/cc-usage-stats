@@ -90,13 +90,10 @@ h2 { font-size: clamp(1.5rem, 4vw, 1.9rem); font-weight: 650; }
 p { margin: 0 0 1em; }
 .fine { color: var(--muted); font-size: 0.875rem; }
 
-/* Layout: one left-aligned column, ~720px of text. */
+/* Layout: one centred column, ~720px of text. */
 .top, main, .foot {
   width: min(100% - 2 * 20px, var(--measure));
   margin-inline: auto;
-}
-@media (min-width: 1000px) {
-  .top, main, .foot { margin-inline: max(20px, calc((100vw - 1040px) / 2)); }
 }
 
 /* Top bar */
