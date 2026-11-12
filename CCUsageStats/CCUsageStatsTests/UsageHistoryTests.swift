@@ -89,4 +89,29 @@ final class UsageHistoryTests: XCTestCase {
         h.append(UsageSample(t: oldReset + 610, p: 0), keepFromEpoch: newReset - 5 * 3600, windowEnd: newReset)
         XCTAssertEqual(h.samples, [UsageSample(t: oldReset + 610, p: 0)])
     }
+
+    // MARK: - another account's window
+
+    func testClearEmptiesMemoryAndFile() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("hist-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let h = UsageHistory(url: url)
+        h.append(UsageSample(t: 10, p: 1), keepFromEpoch: 0, windowEnd: 100)
+        h.append(UsageSample(t: 20, p: 2), keepFromEpoch: 0, windowEnd: 100)
+        h.clear()
+        XCTAssertEqual(h.samples, [])
+        XCTAssertEqual(UsageHistory(url: url).samples, [])
+    }
+
+    /// Two accounts' 5-hour windows overlap in time but end at different
+    /// moments; a window that simply rolled over starts where the old ended.
+    func testOverlappingWindowWithAnotherEndIsADifferentWindow() {
+        let end: Int64 = 100_000
+        XCTAssertFalse(UsageHistory.isDifferentWindow(previousEnd: nil, newEnd: end))
+        XCTAssertFalse(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end))
+        XCTAssertFalse(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + 30), "jitter")
+        XCTAssertTrue(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + 2 * 3600))
+        XCTAssertTrue(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end - 3600))
+        XCTAssertFalse(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + 5 * 3600), "the next window")
+    }
 }

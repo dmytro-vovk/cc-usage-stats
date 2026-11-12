@@ -50,6 +50,10 @@ final class CodexMonitor: ObservableObject {
     private var scanning = false
     private var rescanPending = false
     private var polling = false
+    private var livePollPending = false
+    /// Remembers what each session log held, so an unchanged file is not
+    /// read again on every FSEvents batch.
+    private nonisolated let readerCache = CodexSessionReader.Cache()
     /// Bumped whenever a source is torn down, so a scan or poll that was in
     /// flight at the time can tell its result is no longer wanted. One per
     /// source: stopping live polling must not discard a passive scan.
@@ -193,9 +197,10 @@ final class CodexMonitor: ObservableObject {
         scanning = true
         let gen = passiveGeneration
         let dir = sessionsDirectory
+        let cache = readerCache
         Task.detached(priority: .utility) {
             let exists = FileManager.default.fileExists(atPath: dir.path)
-            let s = CodexSessionReader.latest(in: dir)
+            let s = CodexSessionReader.latest(in: dir, cache: cache)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.scanning = false
@@ -228,14 +233,24 @@ final class CodexMonitor: ObservableObject {
     }
 
     /// One poll at a time, so an older response can't land after a newer one.
+    /// A request arriving mid-poll runs once that poll is done: its answer
+    /// may be discarded (polling was switched off and on again meanwhile),
+    /// and the next timer tick is five minutes away.
     private func pollLive() {
-        guard started, !polling else { return }
+        guard started else { return }
+        if polling { livePollPending = true; return }
         polling = true
         let gen = liveGeneration
         let authURL = authURL
         lastLiveAttempt = Date()
         Task { @MainActor in
-            defer { self.polling = false }
+            defer {
+                self.polling = false
+                if self.livePollPending {
+                    self.livePollPending = false
+                    if self.trackingEnabled, self.livePollingEnabled { self.pollLive() }
+                }
+            }
             let result = await self.liveRead(authURL)
             guard gen == self.liveGeneration, self.started, self.trackingEnabled, self.livePollingEnabled else { return }
             switch result {

@@ -77,4 +77,56 @@ extension CodexSessionReaderTests {
                                (0..<100).map { _ in #"{"type":"x"}"# } + [event("2026-10-06T10:00:00Z", 45)], mtime: Date())
         XCTAssertEqual(CodexSessionReader.latest(inFile: padded, maxRead: 1024)?.windows.first?.usedPercent, 45)
     }
+
+    // MARK: - cache: unchanged logs are not re-read
+
+    private func filler(_ n: Int) -> [String] {
+        (0..<n).map { #"{"timestamp":"2026-10-06T10:00:00Z","type":"response_item","payload":{"n":\#($0),"pad":"\#(String(repeating: "x", count: 200))"}}"# }
+    }
+
+    func testUnchangedFilesAreNotReadAgain() throws {
+        let t0 = Date(timeIntervalSince1970: 1_791_000_000)
+        try write("a/rollout-a.jsonl", filler(50), mtime: t0)
+        try write("a/rollout-b.jsonl", filler(50), mtime: t0.addingTimeInterval(10))
+        let cache = CodexSessionReader.Cache()
+        XCTAssertNil(CodexSessionReader.latest(in: root, cache: cache))
+        let first = cache.bytesRead
+        XCTAssertGreaterThan(first, 0)
+        XCTAssertNil(CodexSessionReader.latest(in: root, cache: cache))
+        XCTAssertEqual(cache.bytesRead, first, "nothing changed, nothing re-read")
+    }
+
+    func testAGrownFileIsReadFromWhereItLeftOff() throws {
+        let t0 = Date(timeIntervalSince1970: 1_791_000_000)
+        let url = try write("a/rollout-a.jsonl", filler(4000), mtime: t0)   // ~1 MB, no reading
+        let cache = CodexSessionReader.Cache()
+        XCTAssertNil(CodexSessionReader.latest(in: root, cache: cache))
+        let first = cache.bytesRead
+
+        let h = try FileHandle(forWritingTo: url)
+        try h.seekToEnd()
+        try h.write(contentsOf: Data((event("2026-10-06T12:00:00Z", 61) + "\n").utf8))
+        try h.close()
+        try FileManager.default.setAttributes([.modificationDate: t0.addingTimeInterval(60)], ofItemAtPath: url.path)
+
+        XCTAssertEqual(CodexSessionReader.latest(in: root, cache: cache)?.windows.first?.usedPercent, 61)
+        XCTAssertLessThan(cache.bytesRead - first, 200_000, "only the new tail (plus overlap) is read")
+
+        // A reading already found survives growth that adds none.
+        let h2 = try FileHandle(forWritingTo: url)
+        try h2.seekToEnd()
+        try h2.write(contentsOf: Data((filler(3).joined(separator: "\n") + "\n").utf8))
+        try h2.close()
+        try FileManager.default.setAttributes([.modificationDate: t0.addingTimeInterval(120)], ofItemAtPath: url.path)
+        XCTAssertEqual(CodexSessionReader.latest(in: root, cache: cache)?.windows.first?.usedPercent, 61)
+    }
+
+    func testATruncatedOrReplacedFileIsReadAfresh() throws {
+        let t0 = Date(timeIntervalSince1970: 1_791_000_000)
+        try write("a/rollout-a.jsonl", filler(20) + [event("2026-10-06T12:00:00Z", 61)], mtime: t0)
+        let cache = CodexSessionReader.Cache()
+        XCTAssertEqual(CodexSessionReader.latest(in: root, cache: cache)?.windows.first?.usedPercent, 61)
+        try write("a/rollout-a.jsonl", [event("2026-10-06T13:00:00Z", 7)], mtime: t0.addingTimeInterval(60))
+        XCTAssertEqual(CodexSessionReader.latest(in: root, cache: cache)?.windows.first?.usedPercent, 7)
+    }
 }

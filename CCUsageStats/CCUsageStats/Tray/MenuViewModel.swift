@@ -162,6 +162,12 @@ final class MenuViewModel: ObservableObject {
     private var alertsHeldUntil: Int64?
     private var wakeObserver: NSObjectProtocol?
     private var history: UsageHistory?
+    /// `resetsAt` of the window the newest history sample belongs to.
+    private var historyWindowEnd: Int64?
+    /// Set by `restartPolling` (the account may have changed): the first
+    /// reading captured after this is checked against `historyWindowEnd`.
+    private var historyCheckAfter: Int64?
+    private var started = false
     /// Last `resetsAt` (5h) for which we already kicked an immediate
     /// refresh once the local clock crossed the boundary. Re-armed every
     /// time a fresh poll advances `resetsAt`.
@@ -254,13 +260,16 @@ final class MenuViewModel: ObservableObject {
     }
 
     func start() {
-        guard poller == nil else { return }
+        // Not `poller == nil`: with no token stored there is no poller, and a
+        // second call would stack another watcher, timer and status poller.
+        guard !started else { return }
         // Test-host app instances must stay inert: `xcodebuild test` launches
         // several of them, and this method starts file watchers, timers and a
         // status-page poller. Paths and Keychain redirect under test, so this
         // is about not doing pointless work (and not hammering
         // status.claude.com from seven processes), not about safety.
         guard !TestEnvironment.isRunningTests else { return }
+        started = true
         // Load history once at startup; it persists across app restarts.
         loadHistory(from: Paths.historyFile)
         // Load any cache from previous run.
@@ -335,6 +344,7 @@ final class MenuViewModel: ObservableObject {
     }
 
     func stop() {
+        started = false
         poller?.stop(); poller = nil
         pollerCancellables.removeAll()
         statusPoller?.stop(); statusPoller = nil
@@ -527,6 +537,8 @@ final class MenuViewModel: ObservableObject {
         // the cache on disk is still the old account's until a poll lands.
         alertLatch = WindowAlertLatch()
         alertsHeldUntil = Int64(Date().timeIntervalSince1970)
+        // Same for the sparkline: checked against the next fresh reading.
+        historyCheckAfter = alertsHeldUntil
         attachPoller(token: loadStoredToken())
     }
 
@@ -617,6 +629,16 @@ final class MenuViewModel: ObservableObject {
 
         // Append a sample to history if we have fresh five-hour data.
         if let cached = newCached, let five = cached.snapshot.fiveHour, let history {
+            // First reading since the token or account changed: if its window
+            // overlaps the one the history was drawn from, that history is
+            // another account's. Mixed, it bends the sparkline and the forecast.
+            if let after = historyCheckAfter, cached.capturedAt > after {
+                historyCheckAfter = nil
+                if UsageHistory.isDifferentWindow(previousEnd: historyWindowEnd, newEnd: five.resetsAt) {
+                    history.clear()
+                }
+            }
+            historyWindowEnd = five.resetsAt
             let sample = UsageSample(t: cached.capturedAt, p: five.usedPercentage)
             // Trim to current 5h window.
             let windowStart = five.resetsAt - 5 * 3600

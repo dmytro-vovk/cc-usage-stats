@@ -51,6 +51,21 @@ final class UsageHistory {
         }
     }
 
+    /// Drops every sample, in memory and on disk.
+    func clear() {
+        samples = []
+        try? Self.rewrite([], to: url)
+    }
+
+    /// True when a window ending at `newEnd` is neither the one that ended
+    /// at `previousEnd` (same end, give or take jitter) nor its successor
+    /// (which starts where that one ended): it overlaps it. Two accounts'
+    /// 5-hour windows do that; one account's never do.
+    nonisolated static func isDifferentWindow(previousEnd: Int64?, newEnd: Int64) -> Bool {
+        guard let previousEnd else { return false }
+        return abs(newEnd - previousEnd) > 60 && newEnd - 5 * 3600 < previousEnd
+    }
+
     // MARK: - File I/O
 
     private static func load(from url: URL) throws -> [UsageSample] {

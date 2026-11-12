@@ -151,4 +151,11 @@ final class PillLayoutTests: XCTestCase {
                        UsageColoring.warningFraction)
         XCTAssertEqual(PillComposer.codexSegment(codex, now: now)?.paintFraction ?? 0, 0.6, accuracy: 1e-9)
     }
+
+    /// Like the model windows: a weekly window past its own reset describes
+    /// a period that has ended and must not claim menubar space.
+    func testExpiredSevenDayDoesNotJoin() {
+        XCTAssertEqual(segments(five: 42, seven: 92, models: [:], now: 999).map(\.kind), [.fiveHour, .sevenDay])
+        XCTAssertEqual(segments(five: 42, seven: 92, models: [:], now: 1_000).map(\.kind), [.fiveHour])
+    }
 }

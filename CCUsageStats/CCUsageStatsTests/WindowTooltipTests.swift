@@ -19,4 +19,12 @@ final class WindowTooltipTests: XCTestCase {
     func testLastUpdated() {
         XCTAssertEqual(WindowTooltip.lastUpdated(secondsAgo: 44), "Last updated 44s ago — click to refresh (⌘R)")
     }
+
+    /// The forecast is measured from the last poll; the tooltip speaks from now.
+    func testForecastIsShortenedByTheAgeOfTheReading() {
+        XCTAssertEqual(WindowTooltip.text(delta: 3600, forecastSecs: 1200, forecastAge: 900),
+                       "Resets in 1h 0m · forecast 100% in 5m")
+        XCTAssertEqual(WindowTooltip.text(delta: 3600, forecastSecs: 1200, forecastAge: 1200), "Resets in 1h 0m")
+        XCTAssertEqual(WindowTooltip.text(delta: 3600, forecastSecs: 1200, forecastAge: 5000), "Resets in 1h 0m")
+    }
 }

@@ -65,7 +65,8 @@ enum PillLayout {
             fraction > promoteThreshold && fraction >= fiveFraction
         }
 
-        if let seven, lead.kind != .sevenDay {
+        // Expired: same rule as the model windows below.
+        if let seven, lead.kind != .sevenDay, seven.resetsAt > now {
             let f = clamp(seven.usedPercentage / 100.0)
             if qualifies(f) {
                 result.append(.init(

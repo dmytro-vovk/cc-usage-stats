@@ -338,7 +338,8 @@ struct MenuBarDropdown: View {
                             windowEnd: five.resetsAt,
                             forecastSecondsToCap: vm.forecastSecondsToCap
                         )
-                    }
+                    },
+                    forecastAge: max(0, now - cached.capturedAt)
                 )
             }
             if weeklyWindows {
@@ -854,6 +855,8 @@ private struct WindowSection: View {
     let windowLength: Int64
     let coloring: UsageColoring
     var sparkline: SparklineData? = nil
+    /// Seconds since the reading the forecast was computed from.
+    var forecastAge: Int64 = 0
     /// Where this window's usage came from, e.g. "Claude Code 93% · Chats 7%".
     var breakdown: String? = nil
     /// 7-day windows: mark the even-pace point on the bar and, when usage
@@ -916,7 +919,8 @@ private struct WindowSection: View {
                 }
             }
             .contentShape(Rectangle())
-            .help(WindowTooltip.text(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap))
+            .help(WindowTooltip.text(delta: delta, forecastSecs: sparkline?.forecastSecondsToCap,
+                                     forecastAge: forecastAge))
         } else {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -933,12 +937,14 @@ private struct WindowSection: View {
 /// Hover text for a window row and the refresh button — the details the
 /// dropdown no longer spends a line on.
 enum WindowTooltip {
-    static func text(delta: Int64, forecastSecs: Int64?) -> String {
+    /// `forecastSecs` counts from the reading it was computed from, which is
+    /// `forecastAge` seconds old; the text counts from now, like `delta`.
+    static func text(delta: Int64, forecastSecs: Int64?, forecastAge: Int64 = 0) -> String {
         guard delta >= 0 else {
             return "Reset \(RelativeTime.format(seconds: -delta)) ago — awaiting fresh data"
         }
         let reset = "Resets in \(RelativeTime.format(seconds: delta))"
-        if let f = forecastSecs, f > 0, f < delta {
+        if let f = forecastSecs.map({ $0 - max(0, forecastAge) }), f > 0, f < delta {
             return "\(reset) · forecast 100% in \(RelativeTime.format(seconds: f))"
         }
         return reset

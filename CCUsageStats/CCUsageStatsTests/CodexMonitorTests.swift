@@ -67,4 +67,42 @@ final class CodexMonitorTests: XCTestCase {
         XCTAssertEqual(failing.liveError, "Codex: auth required")
         XCTAssertNil(failing.snapshot)
     }
+
+    /// Counts live reads and holds the first one until released.
+    private actor SlowFirstRead {
+        private(set) var calls = 0
+        private var release: CheckedContinuation<Void, Never>?
+        private var released = false
+        func enter() async {
+            calls += 1
+            guard calls == 1, !released else { return }
+            await withCheckedContinuation { release = $0 }
+        }
+        func letGo() { released = true; release?.resume(); release = nil }
+    }
+
+    /// Live polling switched off and on again while a poll is in flight: the
+    /// in-flight answer is discarded (it belongs to the old setting), so the
+    /// new request must run after it instead of being dropped for 300 s.
+    func testLivePollRequestedDuringAPollRunsAfterIt() async throws {
+        let d = UserDefaults(suiteName: "CodexMonitorTests-\(UUID().uuidString)")!
+        d.set(true, forKey: CodexMonitor.trackingKey)
+        d.set(true, forKey: CodexMonitor.livePollingKey)
+        let empty = FileManager.default.temporaryDirectory.appendingPathComponent("cm-\(UUID().uuidString)/sessions")
+        let reading = CodexSnapshot(windows: [CodexWindow(usedPercent: 33, windowMinutes: 10080, resetsAt: 9_999_999_999)],
+                                    planType: "prolite", observedAt: 100, source: .appServer)
+        let gate = SlowFirstRead()
+        let m = CodexMonitor(sessionsDirectory: empty, authURL: empty.appendingPathComponent("none.json"), defaults: d,
+                             liveRead: { _ in await gate.enter(); return .success(reading) })
+        m.start()
+        defer { m.stop() }
+        for _ in 0..<100 { if await gate.calls == 1 { break }; try await Task.sleep(nanoseconds: 20_000_000) }
+        m.livePollingEnabled = false
+        m.livePollingEnabled = true
+        await gate.letGo()
+        for _ in 0..<100 where m.snapshot == nil { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertEqual(m.snapshot, reading)
+        let calls = await gate.calls
+        XCTAssertEqual(calls, 2)
+    }
 }
