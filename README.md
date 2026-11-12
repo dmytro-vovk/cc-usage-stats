@@ -250,7 +250,7 @@ left out, and the section disappears when nothing is active:
 | **Needs permission** | Waiting for you to approve a tool (sorted to the top) |
 | **Waiting for input** | Claude asked you a question — `AskUserQuestion`, an MCP server's input prompt, or a reply that ends on a decision for you ("Shall I apply these changes?") (sorted to the top) |
 | **Error** | The last turn failed; hover for why — usage limit reached (with when it resets, from the app's own usage data), can't reach Claude, sign-in or account problem — and Claude Code's message (sorted to the top) |
-| **Working** / **Compacting** | Busy. A compaction Claude Code runs on an idle session in the background doesn't count, and a Compacting that lasts 10 minutes is treated as Done |
+| **Working** / **Compacting** | Busy. A compaction Claude Code runs on an idle session in the background doesn't count (a `/compact` you type there does), and a Compacting that lasts 10 minutes is treated as Done |
 | **In background (N)** | The reply ended, but N background tasks (shell commands, subagents, monitors, workflows) are still running and will wake the session. Dev servers, `--watch` runs and `tail -f`-style followers don't count: they never finish on their own |
 | *Done* (hidden) | The turn finished; nothing is being asked |
 | *Idle* (hidden) | Started, no prompt yet |
@@ -275,7 +275,7 @@ How it works: the app installs a small hook script
 (`~/Library/Application Support/cc-usage-stats/hooks/session-hook.sh`) and
 registers it in `~/.claude/settings.json` for the session events
 (SessionStart, UserPromptSubmit, Pre/PostToolUse, PermissionRequest,
-Notification, Stop, StopFailure, PreCompact, SessionEnd). On each event the
+Notification, Stop, StopFailure, PreCompact, PostCompact, SessionEnd). On each event the
 script records that session's latest state in
 `~/Library/Application Support/cc-usage-stats/sessions/`; the app lists the
 sessions whose `claude` process is still alive and deletes the rest. The

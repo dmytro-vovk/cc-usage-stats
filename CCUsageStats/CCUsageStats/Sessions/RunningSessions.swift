@@ -316,10 +316,11 @@ nonisolated enum RunningSessions {
     static func build(
         _ records: [SessionRecord],
         isAlive: (Int32) -> Bool,
+        now: Int64 = Int64(Date().timeIntervalSince1970),
         title: (SessionRecord) -> String?
     ) -> [RunningSession] {
         records
-            .filter { $0.status.isActive && isAlive($0.pid) }
+            .filter { $0.status(now: now).isActive && isAlive($0.pid) }
             .map { RunningSession(record: $0, title: title($0) ?? fallbackTitle($0)) }
             .sorted {
                 if $0.status.needsAttention != $1.status.needsAttention { return $0.status.needsAttention }

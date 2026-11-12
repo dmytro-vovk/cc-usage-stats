@@ -22,14 +22,17 @@ import Foundation
 /// payload can't impersonate them. Codex sends no `Notification`,
 /// `StopFailure` or `background_tasks`; those parts simply never match.
 nonisolated enum SessionHookScript {
-    /// Bump when `contents` changes; the installer rewrites outdated copies.
-    static let version = 6
+    /// Stamped into the script's header. Bump when `contents` changes, so a
+    /// copy on disk says which script it is; the installer rewrites any copy
+    /// whose text differs.
+    static let version = 7
 
     /// The Claude Code script.
     static let contents = contents(for: .claude)
 
     static func contents(for client: SessionClient) -> String {
         template
+            .replacingOccurrences(of: "__VERSION__", with: String(version))
             .replacingOccurrences(of: "__CLIENT__", with: client.rawValue)
             .replacingOccurrences(of: "__AGENT__", with: client.name)
             .replacingOccurrences(of: "__SETTINGS__", with: client == .claude ? "~/.claude/settings.json" : "Codex's hooks.json")
@@ -37,7 +40,7 @@ nonisolated enum SessionHookScript {
 
     private static let template = #"""
     #!/bin/bash
-    # cc-usage-stats session hook v6 (__CLIENT__)
+    # cc-usage-stats session hook v__VERSION__ (__CLIENT__)
     # Managed by the CCUsageStats menu-bar app, which rewrites this file when
     # its version changes and registers it in __SETTINGS__. Local
     # edits are lost. Records each __AGENT__ session's latest event so the
@@ -60,14 +63,33 @@ nonisolated enum SessionHookScript {
       if [[ $in =~ \"notification_type\":\"idle_prompt\" ]]; then exit 0; fi
       if [[ ! $in =~ \"notification_type\": && $in =~ \"message\":\"Claude\ is\ waiting\ for\ your\ input\" ]]; then exit 0; fi
     fi
-    # Claude Code precomputes a compaction while a session sits idle: a
-    # PreCompact with no turn around it and nothing after it. Once a turn has
-    # ended (or is blocked on the user), compaction doesn't change that.
-    case $event in PreCompact|PostCompact)
-      prev=
-      read -r prev 2>/dev/null < "$dir/$sid.json"
-      if [[ $prev =~ \"hook_event\":\"(Stop|StopFailure|SessionStart|PermissionRequest|Notification)\" ]]; then exit 0; fi
+    # Compaction is judged against the record it would replace. Only a
+    # regular file is read: `read` would block on a FIFO planted there.
+    prev= from=
+    case $event in PreCompact|PostCompact|SessionStart)
+      if [ -f "$dir/$sid.json" ]; then read -r prev 2>/dev/null < "$dir/$sid.json"; fi
     ;; esac
+    ended='"hook_event":"(Stop|StopFailure|SessionStart|PermissionRequest|Notification)"'
+    idle='"compact_from":"idle"'
+    case $event in
+    PreCompact)
+      # Once a turn has ended (or is blocked on the user) a compaction is
+      # either the one Claude Code precomputes while the session sits idle
+      # (nothing follows it, and it changes nothing), or one the user typed
+      # /compact for. Only the second shows, marked as having begun idle.
+      if [[ $prev =~ $ended ]]; then
+        if [[ $in =~ \"trigger\":\"manual\" ]]; then from=idle; else exit 0; fi
+      fi ;;
+    PostCompact)
+      if [[ $prev =~ $ended ]]; then exit 0; fi
+      # The /compact that began on an idle session is over: idle again.
+      if [[ $prev =~ $idle ]]; then event=SessionStart; fi ;;
+    SessionStart)
+      # After a compaction inside a turn Claude Code starts the session
+      # again (source "compact") and carries on with the turn: that is not
+      # a session gone idle.
+      if [[ $in =~ \"source\":\"compact\" && $prev =~ \"hook_event\":\"(PreCompact|PostCompact)\" && ! $prev =~ $idle ]]; then exit 0; fi ;;
+    esac
 
     # A JSON string value, still escaped, so it can be written back verbatim.
     field() {
@@ -112,8 +134,8 @@ nonisolated enum SessionHookScript {
 
     mkdir -p "$dir" 2>/dev/null || exit 0
     tmp="$dir/.$sid.$$.tmp"
-    printf '{"v":1,"client":"__CLIENT__","pid":%d,"session_id":"%s","hook_event":"%s","tool_name":"%s","cwd":"%s","notification_type":"%s","message":"%s","entrypoint":"%s","host_session":"%s","app_bundle":"%s","term_program":"%s","last_message":"%s","error":"%s","background_tasks":%s}\n' \
-      "$PPID" "$sid" "$event" "$tool" "$cwd" "$ntype" "$message" "$entry" "$host" "$bundle" "$term" "$last" "$error" "$tasks" \
+    printf '{"v":1,"client":"__CLIENT__","pid":%d,"session_id":"%s","hook_event":"%s","tool_name":"%s","cwd":"%s","notification_type":"%s","message":"%s","entrypoint":"%s","host_session":"%s","app_bundle":"%s","term_program":"%s","last_message":"%s","error":"%s","compact_from":"%s","background_tasks":%s}\n' \
+      "$PPID" "$sid" "$event" "$tool" "$cwd" "$ntype" "$message" "$entry" "$host" "$bundle" "$term" "$last" "$error" "$from" "$tasks" \
       > "$tmp" 2>/dev/null && mv -f "$tmp" "$dir/$sid.json" 2>/dev/null
     rm -f "$tmp" 2>/dev/null
     exit 0

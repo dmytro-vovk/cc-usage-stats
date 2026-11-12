@@ -93,4 +93,49 @@ final class SessionTrackerTests: XCTestCase {
         tracker().enabled = false
         XCTAssertFalse(tracker().enabled)
     }
+
+    // MARK: - NOTES fixes
+
+    private var me: Int32 { ProcessInfo.processInfo.processIdentifier }
+    private func scan(now: Int64) -> [RunningSession] {
+        SessionTracker.scan(dir: root.appendingPathComponent("sessions"),
+                            titles: DesktopSessionTitles(root: root.appendingPathComponent("titles")),
+                            isClaude: { _ in true }, now: now)
+    }
+
+    /// `now` drives the compacting timeout, not the wall clock.
+    func testScanTimeDrivesTheCompactingTimeout() throws {
+        let t = Date()
+        try writeRecord("c", pid: me, event: "PreCompact", mtime: t)
+        let at = Int64(t.timeIntervalSince1970)
+        XCTAssertEqual(scan(now: at + 10).map(\.id), ["c"])
+        XCTAssertEqual(scan(now: at + SessionRecord.compactingTimeout).map(\.id), [], "timed out: done, so not listed")
+    }
+
+    /// A FIFO planted among the records must not hang the scan.
+    func testScanSkipsAFIFO() throws {
+        try writeRecord("ok", pid: me)
+        XCTAssertEqual(mkfifo(root.appendingPathComponent("sessions/evil.json").path, 0o600), 0)
+        let done = expectation(description: "scan returned")
+        var ids: [String] = []
+        let dir = root.appendingPathComponent("sessions"), titles = root.appendingPathComponent("titles")
+        DispatchQueue.global().async {
+            let list = SessionTracker.scan(dir: dir, titles: DesktopSessionTitles(root: titles), isClaude: { _ in true })
+            DispatchQueue.main.async { ids = list.map(\.id); done.fulfill() }
+        }
+        wait(for: [done], timeout: 10)
+        XCTAssertEqual(ids, ["ok"])
+    }
+
+    /// Temp files a killed hook left behind go once they are old.
+    func testScanRemovesStaleHookTempFiles() throws {
+        let dir = root.appendingPathComponent("sessions")
+        let old = dir.appendingPathComponent(".abc.123.tmp"), fresh = dir.appendingPathComponent(".abc.456.tmp")
+        try "x".write(to: old, atomically: true, encoding: .utf8)
+        try "x".write(to: fresh, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3_600)], ofItemAtPath: old.path)
+        _ = scan(now: Int64(Date().timeIntervalSince1970))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path), "may be mid-write")
+    }
 }

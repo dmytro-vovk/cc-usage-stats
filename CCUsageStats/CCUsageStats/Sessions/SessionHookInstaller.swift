@@ -12,7 +12,7 @@ nonisolated enum SessionHookInstaller {
     /// (docs/superpowers/specs/2026-10-07-running-sessions-design.md).
     static let events = [
         "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest",
-        "Notification", "Stop", "StopFailure", "PreCompact", "SessionEnd",
+        "Notification", "Stop", "StopFailure", "PreCompact", "PostCompact", "SessionEnd",
     ]
 
     /// Codex's events (2026-10-08 spec). No subagent events: rows are

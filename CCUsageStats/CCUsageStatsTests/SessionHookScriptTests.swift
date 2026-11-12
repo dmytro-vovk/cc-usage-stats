@@ -194,6 +194,53 @@ final class SessionHookScriptTests: XCTestCase {
         XCTAssertEqual(try record().event, "PostCompact")
     }
 
+    /// A /compact the user typed on an idle session is real work: it shows,
+    /// and when it is over the session is idle again, not "working".
+    func testManualCompactionOnAnIdleSessionShowsThenReturnsToIdle() throws {
+        try run(payload("Stop"))
+        try run(payload("PreCompact", extra: #","trigger":"manual","custom_instructions":"keep \"trigger\":\"auto\" notes""#))
+        XCTAssertEqual(try record().status, .compacting)
+        try run(payload("PostCompact", extra: #","trigger":"manual""#))
+        XCTAssertEqual(try record().status, .idle)
+        // Without a PostCompact, the restarted session ends it the same way.
+        try run(payload("Stop"))
+        try run(payload("PreCompact", extra: #","trigger":"manual""#))
+        try run(payload("SessionStart", extra: #","source":"compact""#))
+        XCTAssertEqual(try record().status, .idle)
+    }
+
+    /// Compaction inside a turn restarts the session (source "compact") and
+    /// the turn carries on: it must not be filed as idle and vanish.
+    func testSessionRestartAfterMidTurnCompactionIsNotIdle() throws {
+        try run(payload("PreToolUse", extra: #","tool_name":"Bash""#))
+        try run(payload("PreCompact", extra: #","trigger":"auto""#))
+        try run(payload("SessionStart", extra: #","source":"compact""#))
+        XCTAssertEqual(try record().status, .compacting)
+        try run(payload("PostCompact", extra: #","trigger":"auto""#))
+        try run(payload("SessionStart", extra: #","source":"compact""#))
+        XCTAssertEqual(try record().status, .working)
+        // Any other start is still a fresh, idle session.
+        try run(payload("SessionStart", extra: #","source":"resume""#))
+        XCTAssertEqual(try record().status, .idle)
+    }
+
+    /// A FIFO where the record should be must not hang the hook.
+    func testFIFOInPlaceOfTheRecordDoesNotBlock() throws {
+        try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+        XCTAssertEqual(mkfifo(sessionsDir.appendingPathComponent("abc-123.json").path, 0o600), 0)
+        let done = expectation(description: "hook returned")
+        DispatchQueue.global().async {
+            _ = try? self.run(self.payload("PreCompact", extra: #","trigger":"auto""#))
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 10)
+    }
+
+    func testHeaderCarriesTheVersion() {
+        XCTAssertTrue(SessionHookScript.contents.contains("session hook v\(SessionHookScript.version) (claude)"))
+        XCTAssertFalse(SessionHookScript.contents.contains("__VERSION__"))
+    }
+
     func testBadInputIsIgnoredAndNeverFails() throws {
         XCTAssertEqual(try run(""), 0)
         XCTAssertEqual(try run("not json"), 0)

@@ -359,7 +359,18 @@ final class SessionTracker: ObservableObject {
         let fm = FileManager.default
         let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         var records: [SessionRecord] = []
-        for url in files where url.pathExtension == "json" && !url.lastPathComponent.hasPrefix(".") {
+        func isRegularFile(_ url: URL) -> Bool {
+            (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType == .typeRegular
+        }
+        // The hook writes `.<sid>.<pid>.tmp` and renames it; one killed in
+        // between leaves the temp file behind for good.
+        for url in files where url.lastPathComponent.hasPrefix(".") && url.pathExtension == "tmp" {
+            if isRegularFile(url), let m = modificationDate(url), now - Int64(m.timeIntervalSince1970) >= staleAfter {
+                try? fm.removeItem(at: url)
+            }
+        }
+        // Regular files only: reading a FIFO planted here would block the scan.
+        for url in files where url.pathExtension == "json" && !url.lastPathComponent.hasPrefix(".") && isRegularFile(url) {
             // FileManager, not URL.resourceValues: the latter caches per URL,
             // and the re-check before deleting must see the file as it is now.
             let modified = modificationDate(url)
@@ -383,7 +394,7 @@ final class SessionTracker: ObservableObject {
             (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         }
         let codexNames = records.contains { $0.client == .codex } ? (codexTitles?.all() ?? [:]) : [:]
-        return RunningSessions.build(records, isAlive: { _ in true }) { r in
+        return RunningSessions.build(records, isAlive: { _ in true }, now: now) { r in
             r.client == .codex
                 ? codexNames[r.sessionID]
                 : r.hostSessionID.flatMap(titles.title(forHostSession:))
