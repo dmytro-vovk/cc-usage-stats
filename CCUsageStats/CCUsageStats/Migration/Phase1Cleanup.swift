@@ -3,14 +3,32 @@ import Foundation
 enum Phase1Cleanup {
     private static let suffix = " statusline"
 
+    /// Executable names the Phase 1 integration installed itself under.
+    private static let ourExecutables: Set<String> = ["cc-usage-stats", "CCUsageStats"]
+
+    /// True only for `<path to our executable> statusline`. The subcommand
+    /// alone is not enough: other tools use it too (`npx ccusage statusline`).
+    static func isOurCommand(_ cmd: String) -> Bool {
+        guard cmd.hasSuffix(suffix) else { return false }
+        let executable = cmd.dropLast(suffix.count)
+        let name = executable.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? ""
+        return ourExecutables.contains(name)
+    }
+
+    /// The sentinel is written only once the migration has an answer. A
+    /// settings file that can't be parsed or written (caught mid-write by
+    /// Claude Code, say) throws without it, so the next launch tries again.
     static func run(settingsURL: URL, configURL: URL, sentinelURL: URL) throws {
         if FileManager.default.fileExists(atPath: sentinelURL.path) { return }
-        defer { try? touchSentinel(sentinelURL) }
+        try migrate(settingsURL: settingsURL, configURL: configURL)
+        try? touchSentinel(sentinelURL)
+    }
 
+    private static func migrate(settingsURL: URL, configURL: URL) throws {
         guard var dict = try readDictionary(settingsURL) else { return }
         guard let sl = dict["statusLine"] as? [String: Any],
               let cmd = sl["command"] as? String,
-              cmd.hasSuffix(suffix) else {
+              isOurCommand(cmd) else {
             return // not our integration; leave alone
         }
 

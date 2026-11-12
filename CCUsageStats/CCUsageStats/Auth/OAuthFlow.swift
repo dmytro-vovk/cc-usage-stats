@@ -680,9 +680,10 @@ actor OAuthTokenProvider {
         } catch {
             inFlight = nil
             // A 4xx on refresh means the grant is gone for good; anything
-            // else (transport, 5xx) is worth retrying on the next poll.
+            // else (transport, 5xx) is worth retrying on the next poll. So
+            // are 408 and 429: "not now" says nothing about the grant.
             if case OAuthFlow.FlowError.badResponse(let code) = error,
-               (400..<500).contains(code) {
+               (400..<500).contains(code), code != 408, code != 429 {
                 session = nil
                 return .unusable
             }

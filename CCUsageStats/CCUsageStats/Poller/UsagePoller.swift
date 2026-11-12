@@ -230,6 +230,13 @@ final class UsagePoller: ObservableObject {
         case .transient(let msg):
             Self.log.warning("transient: \(msg, privacy: .public)")
             transientFailureCount += 1
+            // A delay longer than any backoff is the at-cap sleep until the
+            // window resets. It was chosen for a poll that succeeded; a
+            // failed one retries at the normal cadence instead of sleeping
+            // through the reset. A 429 backoff (<= maxBackoff) is kept.
+            if currentBackoffSeconds > Self.maxBackoff {
+                currentBackoffSeconds = Self.baseInterval
+            }
             if transientFailureCount >= Self.offlineThreshold {
                 authState = .offline
             }

@@ -133,6 +133,30 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(poller.currentBackoffSeconds, 60)
     }
 
+    /// At cap the next poll is hours away (just before the reset). A failed
+    /// poll must not reuse that delay, or the stale 100% outlives the reset.
+    func testTransientAfterAtCapSleepReturnsToBaseInterval() async {
+        let api = StubAPI()
+        api.queue = [.success(.init(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: 10_000), sevenDay: nil)),
+            .transient("offline")]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 0 })
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 9_970, "sleeps until 30s before the reset")
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 60)
+    }
+
+    /// A 429 backoff is deliberate and must survive a transient failure.
+    func testTransientKeepsRateLimitBackoff() async {
+        let api = StubAPI(); api.queue = [.rateLimited, .rateLimited, .transient("x")]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 1 })
+        await poller.tickForTest()
+        await poller.tickForTest()
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 240)
+    }
+
     // MARK: - Adaptive cadence
 
     func testCadenceBaselineWhenLowUsage() {

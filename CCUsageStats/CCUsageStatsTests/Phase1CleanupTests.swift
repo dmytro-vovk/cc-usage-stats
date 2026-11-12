@@ -73,4 +73,41 @@ final class Phase1CleanupTests: XCTestCase {
         try Phase1Cleanup.run(settingsURL: settings, configURL: config, sentinelURL: sentinel)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
     }
+
+    /// Other tools use the same subcommand name (`npx ccusage statusline`).
+    /// Only a command whose executable is ours may be touched.
+    func testLeavesThirdPartyStatuslineSubcommandAlone() throws {
+        for cmd in ["npx ccusage statusline", "/opt/homebrew/bin/ccusage statusline", "bunx some-tool statusline"] {
+            try? FileManager.default.removeItem(at: sentinel)
+            let original: [String: Any] = ["statusLine": ["command": cmd, "type": "command"]]
+            try JSONSerialization.data(withJSONObject: original).write(to: settings)
+
+            try Phase1Cleanup.run(settingsURL: settings, configURL: config, sentinelURL: sentinel)
+
+            let parsed = try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as! [String: Any]
+            XCTAssertEqual((parsed["statusLine"] as? [String: Any])?["command"] as? String, cmd)
+        }
+    }
+
+    func testRemovesAppBundleStatusline() throws {
+        let original: [String: Any] = ["statusLine": [
+            "command": "/Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats statusline", "type": "command",
+        ]]
+        try JSONSerialization.data(withJSONObject: original).write(to: settings)
+
+        try Phase1Cleanup.run(settingsURL: settings, configURL: config, sentinelURL: sentinel)
+
+        let parsed = try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as! [String: Any]
+        XCTAssertNil(parsed["statusLine"])
+    }
+
+    /// A settings file caught mid-write must not mark the migration done:
+    /// the next launch has to try again.
+    func testUnreadableSettingsLeavesNoSentinel() throws {
+        try Data(#"{"statusLine":{"command":"/path/to/cc-usage-stats statusl"#.utf8).write(to: settings)
+
+        XCTAssertThrowsError(try Phase1Cleanup.run(settingsURL: settings, configURL: config, sentinelURL: sentinel))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sentinel.path))
+    }
 }

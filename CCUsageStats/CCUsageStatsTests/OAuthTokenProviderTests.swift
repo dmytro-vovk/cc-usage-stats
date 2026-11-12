@@ -132,6 +132,30 @@ final class OAuthTokenProviderTests: XCTestCase {
         }
     }
 
+    /// 429 and 408 are 4xx, but they say "not now", not "this grant is dead".
+    /// Classifying them `.unusable` signed the account out on a rate-limit blip.
+    func testRateLimitedOrTimedOutRefreshIsTemporaryAndKeepsTheSession() async {
+        for status in [429, 408] {
+            StubURLProtocol.handler = { _ in (status, Data()) }
+            let provider = OAuthTokenProvider(session: expiringSession(), urlSession: stubbedSession())
+
+            let result = await provider.accessToken(now: 0)
+            guard case .temporarilyUnavailable = result else {
+                XCTFail("expected .temporarilyUnavailable for a \(status) refresh answer, got \(result)")
+                continue
+            }
+
+            // The session survived: the next attempt can still refresh.
+            let body = tokenResponseBody()
+            StubURLProtocol.handler = { _ in (200, body) }
+            let retry = await provider.accessToken(now: 0)
+            guard case .token("fresh") = retry else {
+                XCTFail("expected the retry after a \(status) to refresh, got \(retry)")
+                continue
+            }
+        }
+    }
+
     // MARK: - (c) single-flight
 
     func testConcurrentAccessTokenCallsTriggerExactlyOneRefresh() async {
