@@ -18,6 +18,14 @@ final class AppLinksTests: XCTestCase {
         XCTAssertTrue(AppLinks.releases.absoluteString.hasSuffix("/releases"))
     }
 
+    /// What "Update available" and the update notification open: the site's
+    /// download page, not a GitHub release page.
+    func testWebsiteURLIsTheProjectSite() {
+        XCTAssertEqual(AppLinks.website.scheme, "https")
+        XCTAssertEqual(AppLinks.website.host, "ccusagestats.app")
+        XCTAssertEqual(AppLinks.website.path, "/")
+    }
+
     func testReleasesURLIsBuiltFromTheRepositoryConstant() {
         XCTAssertTrue(AppLinks.releases.absoluteString.hasPrefix(AppLinks.repository))
     }

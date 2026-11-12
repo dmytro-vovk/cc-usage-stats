@@ -62,14 +62,14 @@ nonisolated struct AppVersion: Comparable, Hashable, CustomStringConvertible {
 nonisolated struct LatestRelease: Equatable {
     let tag: String
     let version: AppVersion
-    /// The release page — what the menu opens.
+    /// The release page — Settings' "Release notes" link.
     let pageURL: URL
     /// The `.dmg` asset, when the release has one.
     let dmgURL: URL?
 
     /// `nil` for anything that isn't a usable published release: drafts,
     /// pre-releases, tags that aren't versions, and links that don't point at
-    /// `https://github.com` (the menu opens them, so they must not be able to
+    /// `https://github.com` (Settings opens them, so they must not be able to
     /// point anywhere else).
     static func parse(_ data: Data) -> LatestRelease? {
         struct Asset: Decodable {

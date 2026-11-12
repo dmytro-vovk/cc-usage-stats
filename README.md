@@ -127,7 +127,8 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the reconnect *prompt* above is suppressed whenever one of these is
   up, so the panel never offers an optional upgrade and reports a hard
   failure in the same breath.
-- **Update available: vX.Y.Z** — a link to the release page on GitHub,
+- **Update available: vX.Y.Z** — a link to the download page at
+  [ccusagestats.app](https://ccusagestats.app/),
   shown when a newer release is out, which is also announced once with a
   macOS notification (see [Update check](#update-check)).
 - With [Codex tracking](#codex-usage) on, a **Codex** section: one bar
@@ -443,10 +444,12 @@ for the newest release
 unauthenticated, no cookies or identifiers) and compares its tag with
 the running version (semver; drafts and pre-releases are ignored). When
 the release is newer, the dropdown shows **Update available: vX.Y.Z**,
-which opens the release page; Settings → General adds **Release notes**
-and **Download .dmg** links. Each new release is also announced once
-with a macOS notification ("Update available: vX.Y.Z"); clicking it
-opens the release page. Permission to notify is asked the first time
+which opens the download page at
+[ccusagestats.app](https://ccusagestats.app/); Settings → General adds
+**Release notes** and **Download .dmg** links to the GitHub release.
+Each new release is also announced once with a macOS notification
+("Update available: vX.Y.Z"); clicking it opens the same download
+page. Permission to notify is asked the first time
 there is a release to announce, not at launch; refusing it (or turning
 the app off in System Settings → Notifications) leaves the dropdown and
 Settings links as the only signal. The announced tag is remembered, so
