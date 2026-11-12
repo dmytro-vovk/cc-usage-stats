@@ -5,6 +5,15 @@ cd "$(dirname "$0")/.."
 VERSION="${1:?usage: release.sh <version>  e.g. release.sh v0.1.0}"
 SHORT_VERSION="${VERSION#v}"
 
+# Scratch directories, removed however the script ends.
+SUBMIT_DIR=""
+STAGING=""
+cleanup() {
+  if [ -n "$SUBMIT_DIR" ]; then rm -rf "$SUBMIT_DIR"; fi
+  if [ -n "$STAGING" ]; then rm -rf "$STAGING"; fi
+}
+trap cleanup EXIT
+
 echo "==> Building Release for $VERSION"
 # Pin the version explicitly for release builds; build.sh would otherwise
 # fall back to the latest existing tag (which is the *previous* release
@@ -54,7 +63,6 @@ notarize() {
 if [ "$NOTARIZE" = 1 ]; then
   # Notarize the app, then staple the ticket into it so it opens offline.
   SUBMIT_DIR="$(mktemp -d)"
-  trap 'rm -rf "$SUBMIT_DIR"' EXIT
   ditto -c -k --keepParent "$APP" "$SUBMIT_DIR/CCUsageStats.zip"
   notarize "$SUBMIT_DIR/CCUsageStats.zip"
   xcrun stapler staple "$APP"
@@ -81,7 +89,6 @@ hdiutil create \
     -srcfolder "$STAGING" \
     -ov -format UDZO \
     "$DMG" >/dev/null
-rm -rf "$STAGING"
 if [ -n "$DEVID" ]; then
   codesign --sign "$DEVID" --timestamp "$DMG"
 fi

@@ -26,3 +26,16 @@
 - CCUsageStats/CCUsageStats/Sessions/RunningSessions.swift:107 — `SessionStart` with `source:"compact"` after a mid-turn compaction maps to Idle, hiding a busy session until the next tool event.
 - CCUsageStats/CCUsageStats/Sessions/SessionHookInstaller.swift:13 — Claude's own `PostCompact` event isn't registered (Codex only).
 - CCUsageStats/CCUsageStats/Sessions/SessionHookScript.swift:26 — `version` constant is unused; rewrites rely on full-content comparison only.
+
+### 2026-11-12 source review: left as is
+
+- CCUsageStats/CCUsageStats/Core/CacheStore.swift:72 — `captured_at` is snapshot-wide, so a 5h/7d window only preserved from disk (partial header pair) is re-stamped and `get_usage` reports it as fresh. Needs per-window timestamps (schema change).
+- CCUsageStats/CCUsageStats/Poller/OAuthUsage.swift:35 — a 401 on the usage GET is terminal for a scoped primary with no forced refresh first (deliberate: that is how a revoked grant looks).
+- CCUsageStats/CCUsageStats/Poller/AnthropicAPI.swift:22 — header path still maps every 403 to `.invalidToken` (the OAuth path now treats a non-API 403 as transient).
+- CCUsageStats/CCUsageStats/MCP/ClaudeMCPRegistration.swift:83 — `install` removes then adds; if the add fails the old entry is gone (only `migrate` restores). `childPATH` does not cover a node that lives outside the CLI's own directory and the usual prefixes (nvm with a separate shim).
+- CCUsageStats/CCUsageStats/Codex/CodexMonitor.swift:193 — `isUnderSessions` compares FSEvents paths with the unresolved sessions directory; with `~/.codex` symlinked, passive readings may only move on the 300 s rescan (not confirmed).
+- CCUsageStats/CCUsageStats/Sessions/SessionHookScript.swift:114 — a hook killed between `printf` and `mv` leaves a `.sid.pid.tmp` that nothing cleans up.
+- CCUsageStats/CCUsageStats/MCP/MCPServer.swift:44 — the MCP process reads Codex logs without `CodexSessionReader.Cache` (one read per `get_usage` call).
+- scripts/setup-signing.sh:68 — `security import -A` lets any local process use the dev signing key; not changed, the identity can't be re-created here to test without it.
+- .github/workflows/ci.yml:22,67 — actions pinned by tag, not commit SHA.
+- CCUsageStats/CCUsageStats.xcodeproj/project.pbxproj:339 — project-level and test-target `MACOSX_DEPLOYMENT_TARGET = 26.4` vs the app target's 13.5; scripts and CI override it, a test run from the Xcode GUI does not.

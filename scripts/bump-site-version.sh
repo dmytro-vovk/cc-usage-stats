@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Points site/index.html's download button at a release: the version in the
-# button label and the .dmg asset URL. release.sh calls this; run it by hand
-# after a release made elsewhere.
+# button label and the .dmg asset URL. deploy-site.sh calls this; run it by
+# hand to point the page at another release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION="${1:?usage: bump-site-version.sh vX.Y.Z}"

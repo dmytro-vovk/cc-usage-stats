@@ -10,6 +10,14 @@ cd "$(dirname "$0")/.."
 export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-83517f6e6f8c8c1a4816e6fe9e4613e1}"
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
 
+# The download-button commit below lands on the current branch, and what is
+# live should be what main has.
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$DRY" = 0 ] && [ "$BRANCH" != "main" ]; then
+  echo "!! on '$BRANCH', not main; deploy from main (or pass --dry-run)." >&2
+  exit 1
+fi
+
 if [ -n "$(git status --porcelain -- site wrangler.toml)" ]; then
   echo "!! site/ has uncommitted changes; commit them first so the deploy matches a commit." >&2
   git status --short -- site wrangler.toml >&2
