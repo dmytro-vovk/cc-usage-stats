@@ -10,6 +10,7 @@
 
 - README.md:760 Privacy — says "no third-party servers" but omits the 5-minute status.claude.com poll and the daily api.github.com update check (site/index.html privacy copy now lists both). Not fixed here: README has another session's uncommitted edits.
 
+- CCUsageStats/CCUsageStats/App/AppLinks.swift:9 — "Update available: vN" now opens ccusagestats.app, whose download button is pinned to a tag by scripts/deploy-site.sh; between `gh release create` and the site deploy (or if the deploy is missed) the link serves vN-1. (Codex P2, 2026-11-12)
 - UpdateChecker.swift:161 — notified tag is recorded before UpdateNotifier's permission prompt / `center.add` resolve; a prompt left unanswered at quit, or an `add` failure, loses that release's notification (dropdown link remains; next release re-announces). (Fable P2, v0.20.2 update notification)
 - UpdateChecker.swift:161 — tag is recorded even when `notifier == nil`; only matters for test wiring sharing defaults. (Fable P2)
 
