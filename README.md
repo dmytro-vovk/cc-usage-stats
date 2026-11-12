@@ -120,6 +120,15 @@ work between the two quotas. See [Codex usage](#codex-usage).
   row's tooltip adds `· forecast 100% in Nm` when the slope predicts a
   cap before reset. Dashed vertical gridlines mark each elapsed hour of
   the session (1h–4h, at 20/40/60/80% of the width).
+- For an account with no 5-hour limit (there is no 5-hour row then), the
+  **7-day row gets the sparkline** instead: the same filled-area chart
+  drawn to scale, with the X axis spanning the whole weekly window (window
+  start → reset), a fixed 0–100% Y axis, and a dashed vertical gridline at
+  each day boundary. It is built from one sample every five minutes, and
+  the line starts at the window's left edge the same way — dashed up to
+  the first sample when the app started recording partway through the
+  week. There is no forecast line on it: the weekly row's pace tick and
+  `capacity at …` caption already say where the week is heading.
 - Auth / connectivity / outage rows when relevant
   (`Token rejected`, `Claude account connection expired` with a
   **Reconnect** button, `Offline`, `No subscription rate-limit data`,
