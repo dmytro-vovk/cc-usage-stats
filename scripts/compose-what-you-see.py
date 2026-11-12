@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Composes docs/screenshots/what-you-see-{light,dark}.png: the app icon
-beside the four menu-bar pill states, and docs/screenshots/app-icon.png
+beside the six menu-bar pill states, and docs/screenshots/app-icon.png
 (the README header icon), rendered by
-scripts/render-menubar-shots.sh, with captions. Needs Pillow and
+scripts/render-menubar-shots.sh, with captions. Needs a python3 with Pillow
+(`uv run --with pillow scripts/compose-what-you-see.py`, or a venv) and
 rsvg-convert (brew install librsvg). Run after render-menubar-shots.sh."""
 import subprocess, sys, tempfile
 from pathlib import Path

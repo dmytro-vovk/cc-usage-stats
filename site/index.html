@@ -200,6 +200,40 @@
   });
 })();
 </script>
+<script>
+// The download button is stamped with a release when the site is deployed.
+// If GitHub already has a newer one (the site deploy follows the release),
+// point the button at that instead. Any failure leaves the stamped link.
+(function () {
+  var a = document.getElementById('download');
+  if (!a || !window.fetch) return;
+  var ver = a.querySelector('.ver');
+  function parts(v) { return String(v).replace(/^v/, '').split('.').map(Number); }
+  function newer(x, y) {
+    var p = parts(x), q = parts(y);
+    for (var i = 0; i < 3; i++) {
+      var d = (p[i] || 0) - (q[i] || 0);
+      if (d) return d > 0;
+    }
+    return false;
+  }
+  fetch('https://api.github.com/repos/dmytro-vovk/cc-usage-stats/releases/latest',
+        { headers: { Accept: 'application/vnd.github+json' } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel || rel.draft || rel.prerelease || !/^v\d+\.\d+\.\d+$/.test(rel.tag_name)) return;
+      if (!ver || !newer(rel.tag_name, ver.textContent)) return;
+      var dmg = (rel.assets || []).filter(function (x) {
+        return /\.dmg$/i.test(x.name) &&
+          x.browser_download_url.indexOf('https://github.com/dmytro-vovk/cc-usage-stats/releases/download/') === 0;
+      })[0];
+      if (!dmg) return;
+      a.href = dmg.browser_download_url;
+      ver.textContent = rel.tag_name;
+    })
+    .catch(function () {});
+})();
+</script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "bddeb033b9954a42ba3f56c482f9e364"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>

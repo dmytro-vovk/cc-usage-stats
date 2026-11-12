@@ -4,7 +4,10 @@ import UserNotifications
 /// Announces a newer release. Tests inject a spy.
 @MainActor
 protocol UpdateNotifying: AnyObject {
-    func notify(_ release: LatestRelease)
+    /// Whether the announcement was actually handed to the system. False
+    /// (permission refused or not answered, or the post failed) means it
+    /// has not been made, and the caller may try again later.
+    func notify(_ release: LatestRelease) async -> Bool
 }
 
 /// Posts a macOS notification for a newer release; clicking it opens the
@@ -22,17 +25,21 @@ final class UpdateNotifier: NSObject, UpdateNotifying, UNUserNotificationCenterD
         UNUserNotificationCenter.current().delegate = self
     }
 
-    func notify(_ release: LatestRelease) {
+    func notify(_ release: LatestRelease) async -> Bool {
         let tag = release.tag
-        Task {
-            let center = UNUserNotificationCenter.current()
-            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
-            let content = UNMutableNotificationContent()
-            content.title = "Update available: \(tag)"
-            content.body = "A newer cc-usage-stats is out. Click to open the download page."
-            content.sound = .default
-            let request = UNNotificationRequest(identifier: "update-\(tag)", content: content, trigger: nil)
-            try? await center.add(request)
+        let center = UNUserNotificationCenter.current()
+        guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return false }
+        let content = UNMutableNotificationContent()
+        content.title = "Update available: \(tag)"
+        content.body = "A newer cc-usage-stats is out. Click to open the download page."
+        content.sound = .default
+        // One identifier per tag: posting it again replaces, never stacks.
+        let request = UNNotificationRequest(identifier: "update-\(tag)", content: content, trigger: nil)
+        do {
+            try await center.add(request)
+            return true
+        } catch {
+            return false
         }
     }
 

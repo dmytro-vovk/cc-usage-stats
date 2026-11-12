@@ -7,6 +7,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="${1:-docs/screenshots}"
 mkdir -p "$OUT"
+# The render test skips itself (and xcodebuild still exits 0) when its
+# environment doesn't reach it; files older than this marker were not
+# written by this run.
+MARK="$(mktemp)"
+trap 'rm -f "$MARK"' EXIT
 TEST_RUNNER_CCUS_RENDER_SHOTS=1 TEST_RUNNER_CCUS_SHOTS_DIR="$(cd "$OUT" && pwd)" xcodebuild test \
   -scheme CCUsageStats \
   -destination 'platform=macOS' \
@@ -16,4 +21,10 @@ TEST_RUNNER_CCUS_RENDER_SHOTS=1 TEST_RUNNER_CCUS_SHOTS_DIR="$(cd "$OUT" && pwd)"
   CODE_SIGNING_REQUIRED=NO \
   MACOSX_DEPLOYMENT_TARGET=13.5 \
   -quiet
+STALE="$(find "$OUT" -maxdepth 1 -name 'menubar-*.png' ! -newer "$MARK" | sort)"
+if [ -n "$STALE" ] || ! ls "$OUT"/menubar-*.png >/dev/null 2>&1; then
+  echo "!! the render test did not write these (skipped?):" >&2
+  echo "${STALE:-  (no menubar-*.png at all)}" >&2
+  exit 1
+fi
 ls -la "$OUT"/menubar-*.png

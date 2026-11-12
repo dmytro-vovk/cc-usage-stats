@@ -752,7 +752,11 @@ security delete-identity -c "CCUsageStats Dev"
 - One outbound HTTPS connection per minute to `api.anthropic.com` at
   the baseline cadence; up to once every 10 seconds when within 2% of
   the cap.
-- No telemetry, no analytics, no third-party servers.
+- One request every 5 minutes to `status.claude.com` (Anthropic's public
+  status page) for the incident banner, and one a day to `api.github.com`
+  for the [update check](#update-check). Both are unauthenticated and
+  carry no identifiers.
+- No telemetry, no analytics, no other servers.
 - OAuth token and connected-account session in Keychain only. Never
   logged.
 - Connecting an account opens your default browser to `claude.com` for
@@ -790,7 +794,8 @@ security delete-identity -c "CCUsageStats Dev"
 ./scripts/install-dev.sh     # build + copy to ~/Applications + relaunch
 ./scripts/release.sh v0.X.Y  # builds dist/v0.X.Y/{zip,dmg} for a release
 ./scripts/render-menubar-shots.sh   # regenerates docs/screenshots/menubar-*.png from the pill renderer
-./scripts/compose-what-you-see.py   # composes the README's icon + pill-states image from them
+./scripts/compose-what-you-see.py   # composes the README's icon + pill-states image from them (python3 with Pillow, rsvg-convert)
+./scripts/capture-window.sh <name>  # captures the open dropdown/Settings window to docs/screenshots (python3 with pyobjc Quartz)
 ```
 
 **Signing.** `build.sh` signs with the first identity it finds:
@@ -860,7 +865,8 @@ light + dark at 4×, and `scripts/compose-what-you-see.py` (Pillow +
 `rsvg-convert`) lays them out beside the icon from `icon-master.svg`. Edit
 the states in the test; no outage or Codex quota has to be live. The
 dropdown and Settings shots are window captures of the real app at 2×
-(`screencapture -o -l <window id>`), light and dark. To capture the other
+(`scripts/capture-window.sh <name>`, which finds the window id and runs
+`screencapture -o -l` on it), light and dark. To capture the other
 appearance without changing the system setting, launch with
 `open -a CCUsageStats --args -CCUSAppearance light` (or `dark`); without
 the flag the app follows the system. Open what you're capturing with a

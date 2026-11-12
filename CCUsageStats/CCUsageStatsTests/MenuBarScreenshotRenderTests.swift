@@ -42,10 +42,13 @@ final class MenuBarScreenshotRenderTests: XCTestCase {
     @MainActor
     func testRenderReadmeMenuBarShots() throws {
         guard ProcessInfo.processInfo.environment["CCUS_RENDER_SHOTS"] != nil else {
-            throw XCTSkip("set CCUS_RENDER_SHOTS=1 (scripts/render-menubar-shots.sh) to render")
+            throw XCTSkip("set CCUS_RENDER_SHOTS=1 and CCUS_SHOTS_DIR=<output folder> (scripts/render-menubar-shots.sh does both) to render")
         }
-        let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CCUS_SHOTS_DIR"]
-                      ?? FileManager.default.currentDirectoryPath)
+        // No fallback to the working directory: under xcodebuild that is the
+        // test host's, which is neither writable nor where anyone would look.
+        let dir = URL(fileURLWithPath: try XCTUnwrap(
+            ProcessInfo.processInfo.environment["CCUS_SHOTS_DIR"].flatMap { $0.isEmpty ? nil : $0 },
+            "CCUS_RENDER_SHOTS is set but CCUS_SHOTS_DIR (the output folder) is not"))
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let previous = NSApp.appearance

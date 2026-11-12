@@ -188,7 +188,12 @@ final class UpdateCheckerTests: XCTestCase {
 
     final class SpyNotifier: UpdateNotifying {
         var posted: [String] = []
-        func notify(_ release: LatestRelease) { posted.append(release.tag) }
+        /// What the system would answer: false = refused, unanswered or failed.
+        var succeeds = true
+        func notify(_ release: LatestRelease) async -> Bool {
+            posted.append(release.tag)
+            return succeeds
+        }
     }
 
     private func makeChecker(current: String?, client: StubClient, notifier: UpdateNotifying? = nil) -> UpdateChecker {
@@ -414,5 +419,32 @@ final class UpdateCheckerTests: XCTestCase {
         await c.tickForTest()
         let posted = spy.posted
         XCTAssertEqual(posted, [])
+    }
+
+    /// A notification that never reached the system (permission prompt
+    /// unanswered or refused, post failed) has not announced the release:
+    /// the next check tries again, and stops once one goes through.
+    func testAnnouncementThatWasNotPostedIsRetried() async {
+        let spy = SpyNotifier()
+        spy.succeeds = false
+        let client = StubClient()
+        client.queue = Array(repeating: .release(release("v0.19.0")), count: 3)
+        let checker = makeChecker(current: "0.18.0", client: client, notifier: spy)
+        await checker.tickForTest()
+        XCTAssertNil(defaults.string(forKey: UpdateChecker.notifiedTagKey))
+        spy.succeeds = true
+        await checker.tickForTest()
+        await checker.tickForTest()
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"])
+        XCTAssertEqual(defaults.string(forKey: UpdateChecker.notifiedTagKey), "v0.19.0")
+    }
+
+    /// Without a notifier nothing was announced, so nothing is recorded.
+    func testNoNotifierRecordsNoAnnouncement() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let checker = makeChecker(current: "0.18.0", client: client)
+        await checker.tickForTest()
+        XCTAssertNil(defaults.string(forKey: UpdateChecker.notifiedTagKey))
     }
 }

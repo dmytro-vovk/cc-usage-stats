@@ -140,8 +140,13 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
-    /// For tests — single check without timers.
-    func tickForTest() async { await tick() }
+    /// For tests — single check without timers, and its announcement.
+    func tickForTest() async {
+        await tick()
+        await announcing?.value
+    }
+
+    private var announcing: Task<Void, Never>?
 
     private func tick() async {
         guard enabled, let current, !isChecking else { return }
@@ -158,11 +163,7 @@ final class UpdateChecker: ObservableObject {
             lastCheckFailed = false
             lastCheckRateLimited = false
             available = r.version > current ? r : nil
-            if let r = available, defaults.string(forKey: Self.notifiedTagKey) != r.tag {
-                defaults.set(r.tag, forKey: Self.notifiedTagKey)
-                Self.log.notice("announcing \(r.tag, privacy: .public)")
-                notifier?.notify(r)
-            }
+            if let r = available { announce(r) }
         case .failure, .rateLimited:
             consecutiveFailures += 1
             lastCheckFailed = true
@@ -170,6 +171,23 @@ final class UpdateChecker: ObservableObject {
             Self.log.notice("update check failed (\(self.consecutiveFailures, privacy: .public) in a row)")
         }
         nextDelay = Self.delay(after: result, failures: consecutiveFailures)
+    }
+
+    /// Posts the notification for `r` once. The tag is remembered only when
+    /// the notification was actually posted: a permission prompt left
+    /// unanswered, a refusal or a failed post leaves it to the next check.
+    /// Runs beside the check, not inside it — the first announcement waits
+    /// on the user's answer to the permission prompt.
+    private func announce(_ r: LatestRelease) {
+        guard let notifier, announcing == nil,
+              defaults.string(forKey: Self.notifiedTagKey) != r.tag else { return }
+        Self.log.notice("announcing \(r.tag, privacy: .public)")
+        announcing = Task { @MainActor [weak self] in
+            let posted = await notifier.notify(r)
+            guard let self else { return }
+            if posted { self.defaults.set(r.tag, forKey: Self.notifiedTagKey) }
+            self.announcing = nil
+        }
     }
 
     private func scheduleTimer(after seconds: TimeInterval) {
