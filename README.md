@@ -783,7 +783,7 @@ security delete-identity -c "CCUsageStats Dev"
   agent (they can end up in its transcript).
 - On disk under `~/Library/Application Support/cc-usage-stats/`:
   - `state.json` — latest rate-limit numbers + capture timestamp.
-  - `history.jsonl` — sample log for the sparkline (current 5h window only).
+  - `history.jsonl` — sample log for the sparkline (current 5h window only; for an account with no 5-hour limit, the current weekly window, one sample per five minutes).
   - `v2-migrated` — empty sentinel.
 
 ## Scripts

@@ -131,4 +131,12 @@ final class SparklineViewTests: XCTestCase {
         XCTAssertEqual(s.solid, [only])
         XCTAssertEqual(s.dashedLeadIn?.to, only)
     }
+
+    /// A weekly window gets a line per day, not 167 per hour.
+    func testWeeklyWindowHasDayGridlines() {
+        let start: Int64 = 1_000_000
+        let v = SparklineView(samples: [], windowStart: start, windowEnd: start + 7 * 86_400,
+                              color: .green, forecastSecondsToCap: nil)
+        XCTAssertEqual(v.hourBoundaries(width: 700).count, 6)
+    }
 }

@@ -164,6 +164,8 @@ final class MenuViewModel: ObservableObject {
     private var history: UsageHistory?
     /// `resetsAt` of the window the newest history sample belongs to.
     private var historyWindowEnd: Int64?
+    /// Length of that window: a 5-hour history is not a weekly one.
+    private var historyWindowLength: Int64?
     /// Set by `restartPolling` (the account may have changed): the first
     /// reading captured after this is checked against `historyWindowEnd`.
     private var historyCheckAfter: Int64?
@@ -627,26 +629,31 @@ final class MenuViewModel: ObservableObject {
         cached = newCached
         recomputeFromCachedOnly()
 
-        // Append a sample to history if we have fresh five-hour data.
-        if let cached = newCached, let five = cached.snapshot.fiveHour, let history {
+        // Append a sample to history: the 5-hour window's, or the weekly
+        // window's for an account with no 5-hour limit.
+        if let cached = newCached, let tracked = UsageHistory.tracked(cached.snapshot), let history {
+            let five = tracked.window
+            if let length = historyWindowLength, length != tracked.length { history.clear() }
+            historyWindowLength = tracked.length
             // First reading since the token or account changed: if its window
             // overlaps the one the history was drawn from, that history is
             // another account's. Mixed, it bends the sparkline and the forecast.
             if let after = historyCheckAfter, cached.capturedAt > after {
                 historyCheckAfter = nil
-                if UsageHistory.isDifferentWindow(previousEnd: historyWindowEnd, newEnd: five.resetsAt) {
+                if UsageHistory.isDifferentWindow(previousEnd: historyWindowEnd, newEnd: five.resetsAt, length: tracked.length) {
                     history.clear()
                 }
             }
             historyWindowEnd = five.resetsAt
             let sample = UsageSample(t: cached.capturedAt, p: five.usedPercentage)
-            // Trim to current 5h window.
-            let windowStart = five.resetsAt - 5 * 3600
-            history.append(sample, keepFromEpoch: windowStart, windowEnd: five.resetsAt)
+            // Trim to the current window.
+            let windowStart = five.resetsAt - tracked.length
+            history.append(sample, keepFromEpoch: windowStart, windowEnd: five.resetsAt, minSpacing: tracked.minSpacing)
             historySamples = history.samples
             // Recompute forecast — none for an expired window: there is
             // nothing left to project, and its history is the old window's.
-            if cached.capturedAt < five.resetsAt {
+            // None for the weekly window either: its row has the pace line.
+            if cached.capturedAt < five.resetsAt, cached.snapshot.fiveHour != nil {
                 let m = UsageForecast.slope(samples: historySamples)
                 forecastSecondsToCap = UsageForecast.secondsToCap(
                     currentPercent: five.usedPercentage, slope: m

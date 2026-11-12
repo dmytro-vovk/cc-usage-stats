@@ -28,9 +28,20 @@ final class UsageHistory {
     /// time lands inside the *next* window — the chart then "falls" from it
     /// to 0%. Half-open: the reset second itself is the next window's start.
     /// No default, so no caller can skip the check by accident.
-    func append(_ sample: UsageSample, keepFromEpoch: Int64, windowEnd: Int64) {
+    ///
+    /// `minSpacing`: a sample closer than this to the last one kept is
+    /// skipped — a week at one sample a minute is ten thousand points for a
+    /// line a few hundred pixels wide.
+    func append(_ sample: UsageSample, keepFromEpoch: Int64, windowEnd: Int64, minSpacing: Int64 = 0) {
         guard sample.t < windowEnd else { return }
         let trimmed = samples.filter { $0.t >= keepFromEpoch }
+        if let last = trimmed.last, sample.t > last.t, sample.t - last.t < minSpacing {
+            if trimmed.count != samples.count {
+                samples = trimmed
+                try? Self.rewrite(samples, to: url)
+            }
+            return
+        }
         let didTrim = trimmed.count != samples.count
         // Avoid duplicate timestamps (same captured_at as last sample).
         if let last = trimmed.last, last.t == sample.t {
@@ -61,9 +72,18 @@ final class UsageHistory {
     /// at `previousEnd` (same end, give or take jitter) nor its successor
     /// (which starts where that one ended): it overlaps it. Two accounts'
     /// 5-hour windows do that; one account's never do.
-    nonisolated static func isDifferentWindow(previousEnd: Int64?, newEnd: Int64) -> Bool {
+    nonisolated static func isDifferentWindow(previousEnd: Int64?, newEnd: Int64, length: Int64 = 5 * 3600) -> Bool {
         guard let previousEnd else { return false }
-        return abs(newEnd - previousEnd) > 60 && newEnd - 5 * 3600 < previousEnd
+        return abs(newEnd - previousEnd) > 60 && newEnd - length < previousEnd
+    }
+
+    /// The window the history follows: the 5-hour session, or — for an
+    /// account that has none — the weekly window, thinned to a sample every
+    /// five minutes. nil when there is nothing to chart.
+    nonisolated static func tracked(_ snapshot: RateLimitsSnapshot) -> (window: WindowSnapshot, length: Int64, minSpacing: Int64)? {
+        if let five = snapshot.fiveHour { return (five, UsageColoring.fiveHourLength, 0) }
+        if snapshot.lacksFiveHourWindow, let seven = snapshot.sevenDay { return (seven, UsageColoring.weekLength, 300) }
+        return nil
     }
 
     // MARK: - File I/O

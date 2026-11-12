@@ -114,4 +114,33 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertTrue(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end - 3600))
         XCTAssertFalse(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + 5 * 3600), "the next window")
     }
+
+    // MARK: - weekly history for accounts with no 5-hour limit
+
+    func testTrackedWindowIsFiveHourOrWeeklyWhenThereIsNoFiveHourLimit() {
+        let five = WindowSnapshot(usedPercentage: 10, resetsAt: 20_000), week = WindowSnapshot(usedPercentage: 40, resetsAt: 700_000)
+        XCTAssertEqual(UsageHistory.tracked(.init(fiveHour: five, sevenDay: week))?.length, 5 * 3600)
+        let ultra = UsageHistory.tracked(.init(fiveHour: nil, sevenDay: week, models: [:], fiveHourIsAbsent: true))
+        XCTAssertEqual(ultra?.window, week)
+        XCTAssertEqual(ultra?.length, 7 * 86_400)
+        XCTAssertEqual(ultra?.minSpacing, 300)
+        XCTAssertNil(UsageHistory.tracked(.init(fiveHour: nil, sevenDay: week)), "between two 5-hour windows: nothing to chart")
+    }
+
+    func testMinSpacingThinsSamples() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("hist-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let h = UsageHistory(url: url)
+        for t in stride(from: Int64(0), through: 900, by: 60) {
+            h.append(UsageSample(t: t, p: Double(t)), keepFromEpoch: 0, windowEnd: 10_000, minSpacing: 300)
+        }
+        XCTAssertEqual(h.samples.map(\.t), [0, 300, 600, 900])
+        XCTAssertEqual(UsageHistory(url: url).samples.map(\.t), [0, 300, 600, 900])
+    }
+
+    func testWeeklyWindowsCompareByTheirOwnLength() {
+        let end: Int64 = 1_000_000, week: Int64 = 7 * 86_400
+        XCTAssertTrue(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + 86_400, length: week))
+        XCTAssertFalse(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + week, length: week))
+    }
 }

@@ -349,6 +349,15 @@ struct MenuBarDropdown: View {
                     now: now,
                     windowLength: UsageColoring.weekLength,
                     coloring: vm.coloring,
+                    // With no 5-hour window the history follows this one.
+                    sparkline: cached.snapshot.lacksFiveHourWindow ? cached.snapshot.sevenDay.map { week in
+                        SparklineData(
+                            samples: vm.historySamples,
+                            windowStart: week.resetsAt - UsageColoring.weekLength,
+                            windowEnd: week.resetsAt,
+                            forecastSecondsToCap: nil
+                        )
+                    } : nil,
                     breakdown: UsageShare.caption(cached.snapshot.breakdown),
                     tracksPace: true
                 )

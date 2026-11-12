@@ -90,11 +90,13 @@ struct SparklineView: View {
     /// The window edges themselves are left to the border.
     func hourBoundaries(width: CGFloat) -> [CGFloat] {
         let xRange = max(1.0, Double(windowEnd - windowStart))
+        // Hours for a session window, days for a weekly one.
+        let step: Int64 = windowEnd - windowStart > 2 * 86_400 ? 86_400 : 3_600
         var out: [CGFloat] = []
-        var t = windowStart + 3600
+        var t = windowStart + step
         while t < windowEnd {
             out.append(CGFloat(Double(t - windowStart) / xRange) * width)
-            t += 3600
+            t += step
         }
         return out
     }
