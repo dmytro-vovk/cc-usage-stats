@@ -448,7 +448,7 @@ the running version (semver; drafts and pre-releases are ignored). When
 the release is newer, the dropdown shows **Update available: vX.Y.Z**,
 which opens the download page at
 [ccusagestats.app](https://ccusagestats.app/); Settings → General adds
-**Release notes** and **Download .dmg** links to the GitHub release.
+a **Download from ccusagestats.app** link to the same page.
 Each new release is also announced once with a macOS notification
 ("Update available: vX.Y.Z"); clicking it opens the same download
 page. Permission to notify is asked the first time

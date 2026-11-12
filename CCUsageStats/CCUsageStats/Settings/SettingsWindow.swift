@@ -261,12 +261,7 @@ private struct UpdatesSection: View {
             }
             if updates.enabled, let r = updates.available {
                 LabeledContent("\(r.tag) is out") {
-                    HStack(spacing: 8) {
-                        Link("Release notes", destination: r.pageURL)
-                        if let dmg = r.dmgURL {
-                            Link("Download .dmg", destination: dmg)
-                        }
-                    }
+                    Link("Download from ccusagestats.app", destination: AppLinks.website)
                 }
             }
         } footer: {

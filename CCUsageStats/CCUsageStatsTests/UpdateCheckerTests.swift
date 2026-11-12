@@ -41,26 +41,16 @@ final class AppVersionTests: XCTestCase {
 final class LatestReleaseTests: XCTestCase {
     private func json(_ s: String) -> Data { Data(s.utf8) }
 
-    func testParsesTagPageAndDmg() throws {
+    func testParsesTheTag() throws {
         let r = try XCTUnwrap(LatestRelease.parse(json("""
         {"tag_name":"v0.19.0","html_url":"https://github.com/dmytro-vovk/cc-usage-stats/releases/tag/v0.19.0",
          "draft":false,"prerelease":false,
          "assets":[
-           {"name":"CCUsageStats-v0.19.0.zip","browser_download_url":"https://github.com/x/y/releases/download/v0.19.0/CCUsageStats-v0.19.0.zip"},
            {"name":"CCUsageStats-v0.19.0.dmg","browser_download_url":"https://github.com/x/y/releases/download/v0.19.0/CCUsageStats-v0.19.0.dmg"}
          ]}
         """)))
         XCTAssertEqual(r.tag, "v0.19.0")
         XCTAssertEqual(r.version, AppVersion(major: 0, minor: 19, patch: 0))
-        XCTAssertEqual(r.pageURL.absoluteString, "https://github.com/dmytro-vovk/cc-usage-stats/releases/tag/v0.19.0")
-        XCTAssertEqual(r.dmgURL?.lastPathComponent, "CCUsageStats-v0.19.0.dmg")
-    }
-
-    func testDmgIsOptional() throws {
-        let r = try XCTUnwrap(LatestRelease.parse(json("""
-        {"tag_name":"v1.0.0","html_url":"https://github.com/a/b/releases/tag/v1.0.0","assets":[]}
-        """)))
-        XCTAssertNil(r.dmgURL)
     }
 
     func testRejectsDraftPrereleaseAndBadTag() {
@@ -77,20 +67,15 @@ final class LatestReleaseTests: XCTestCase {
         XCTAssertNil(LatestRelease.parse(json("not json")))
     }
 
-    /// Only GitHub https links are ever opened from the menu.
-    func testRejectsNonGitHubPageURL() {
-        XCTAssertNil(LatestRelease.parse(json("""
-        {"tag_name":"v1.0.0","html_url":"http://github.com/a/b/releases/tag/v1.0.0"}
-        """)))
-        XCTAssertNil(LatestRelease.parse(json("""
-        {"tag_name":"v1.0.0","html_url":"https://evil.example/releases/tag/v1.0.0"}
-        """)))
-        let r = LatestRelease.parse(json("""
-        {"tag_name":"v1.0.0","html_url":"https://github.com/a/b/releases/tag/v1.0.0",
+    /// No URL in the response is used, so none can disqualify (or steer) it:
+    /// the app's links all open the constant `AppLinks.website`.
+    func testURLsInTheResponseAreIgnored() throws {
+        let r = try XCTUnwrap(LatestRelease.parse(json("""
+        {"tag_name":"v1.0.0","html_url":"https://evil.example/releases/tag/v1.0.0",
          "assets":[{"name":"x.dmg","browser_download_url":"https://evil.example/x.dmg"}]}
-        """))
-        XCTAssertNotNil(r)
-        XCTAssertNil(r?.dmgURL, "a dmg link off github.com is dropped, not followed")
+        """)))
+        XCTAssertEqual(r, LatestRelease(tag: "v1.0.0", version: AppVersion(major: 1, minor: 0, patch: 0)))
+        XCTAssertNotNil(LatestRelease.parse(json(#"{"tag_name":"v1.0.0"}"#)))
     }
 }
 
@@ -182,8 +167,7 @@ final class UpdateCheckerTests: XCTestCase {
     }
 
     private func release(_ tag: String) -> LatestRelease {
-        LatestRelease(tag: tag, version: AppVersion(tag)!,
-                      pageURL: URL(string: "https://github.com/a/b/releases/tag/\(tag)")!, dmgURL: nil)
+        LatestRelease(tag: tag, version: AppVersion(tag)!)
     }
 
     final class SpyNotifier: UpdateNotifying {

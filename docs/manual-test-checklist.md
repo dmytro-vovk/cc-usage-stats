@@ -508,7 +508,7 @@ by design.
   `CCUS_RELEASES_URL=file:///tmp/latest.json /Applications/CCUsageStats.app/Contents/MacOS/CCUsageStats`.
   Within ~30 s the dropdown shows **Update available: v99.0.0**; clicking
   it opens https://ccusagestats.app/ in the browser. Settings → General shows
-  "Update available, checked …", **Release notes** and **Download .dmg**.
+  "Update available, checked …", and a **Download from ccusagestats.app** link (the same page).
 - Same file with `"tag_name"` set to the installed version: no row;
   Settings says "Up to date, checked …".
 - Settings → General → turn **Check for updates** off: the dropdown row

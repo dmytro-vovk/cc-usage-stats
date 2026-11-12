@@ -59,44 +59,25 @@ nonisolated struct AppVersion: Comparable, Hashable, CustomStringConvertible {
 }
 
 /// The newest published release, from GitHub's `releases/latest`.
+///
+/// Only its tag: nothing in the app links to GitHub. Every "there is an
+/// update" link opens `AppLinks.website`, a constant, so no URL from the
+/// response is ever followed.
 nonisolated struct LatestRelease: Equatable {
     let tag: String
     let version: AppVersion
-    /// The release page — Settings' "Release notes" link.
-    let pageURL: URL
-    /// The `.dmg` asset, when the release has one.
-    let dmgURL: URL?
 
     /// `nil` for anything that isn't a usable published release: drafts,
-    /// pre-releases, tags that aren't versions, and links that don't point at
-    /// `https://github.com` (Settings opens them, so they must not be able to
-    /// point anywhere else).
+    /// pre-releases and tags that aren't versions.
     static func parse(_ data: Data) -> LatestRelease? {
-        struct Asset: Decodable {
-            let name: String
-            let browser_download_url: String
-        }
         struct Payload: Decodable {
             let tag_name: String
-            let html_url: String
             let draft: Bool?
             let prerelease: Bool?
-            let assets: [Asset]?
         }
         guard let p = try? JSONDecoder().decode(Payload.self, from: data),
               p.draft != true, p.prerelease != true,
-              let version = AppVersion(p.tag_name), version.preRelease.isEmpty,
-              let page = gitHubURL(p.html_url) else { return nil }
-        let dmg = p.assets?
-            .first { $0.name.lowercased().hasSuffix(".dmg") }
-            .flatMap { gitHubURL($0.browser_download_url) }
-        return LatestRelease(tag: p.tag_name, version: version, pageURL: page, dmgURL: dmg)
-    }
-
-    private static func gitHubURL(_ raw: String) -> URL? {
-        guard let url = URL(string: raw), url.scheme == "https", url.host?.lowercased() == "github.com" else {
-            return nil
-        }
-        return url
+              let version = AppVersion(p.tag_name), version.preRelease.isEmpty else { return nil }
+        return LatestRelease(tag: p.tag_name, version: version)
     }
 }
