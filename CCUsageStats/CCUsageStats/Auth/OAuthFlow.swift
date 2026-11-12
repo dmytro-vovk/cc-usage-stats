@@ -673,10 +673,16 @@ actor OAuthTokenProvider {
     }
 
     /// Returns a usable access token, refreshing first when close to expiry.
-    func accessToken(now: Int64 = Int64(Date().timeIntervalSince1970)) async -> TokenResult {
+    ///
+    /// `replacing`: the access token the server just rejected. If that is
+    /// still the current one it is refreshed regardless of its expiry — the
+    /// server can retire a token before our clock says so. If a refresh has
+    /// already replaced it, the newer token is returned as is.
+    func accessToken(now: Int64 = Int64(Date().timeIntervalSince1970), replacing rejected: String? = nil) async -> TokenResult {
         guard let current = session else { return .unusable }
         if let pending = unpersisted { persist(pending.fresh, replacing: pending.previous) }
-        guard current.isExpiring(now: now) else { return .token(current.accessToken) }
+        let mustRefresh = current.isExpiring(now: now) || rejected == current.accessToken
+        guard mustRefresh else { return .token(current.accessToken) }
 
         // Single-flight: two concurrent polls must not both rotate the
         // refresh token, or the second rotation invalidates the first.

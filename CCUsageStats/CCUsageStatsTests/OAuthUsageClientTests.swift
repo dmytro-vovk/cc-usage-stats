@@ -176,4 +176,63 @@ final class OAuthUsageClientTests: XCTestCase {
     private final class CapturedRequest {
         var request: URLRequest?
     }
+
+    // MARK: - 401 on the usage GET
+
+    private func tokenBody(_ access: String) -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            "access_token": access, "refresh_token": "rt2", "expires_in": 3600, "scope": "user:profile",
+        ])
+    }
+
+    /// The server can retire an access token before our clock says it has
+    /// expired. One refresh and one retry, instead of a dead account.
+    func testUnauthorizedOnAValidLookingTokenRefreshesAndRetriesOnce() async throws {
+        let usage = try JSONSerialization.data(withJSONObject: [
+            "five_hour": ["utilization": 42.0, "resets_at": "2026-08-04T12:00:00Z"],
+        ])
+        let refreshed = tokenBody("fresh-access-token")
+        let seen = CapturedRequests()
+        Stub.handler = { req in
+            seen.add(req)
+            if req.url?.absoluteString == OAuthUsageClient.endpoint {
+                let fresh = req.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-access-token"
+                return fresh ? (200, usage) : (401, Data())
+            }
+            return (200, refreshed)
+        }
+        let result = await client(session: liveSession()).fetchRateLimits()
+        guard case .success(let snap) = result else { return XCTFail("got \(result)") }
+        XCTAssertEqual(snap.fiveHour?.usedPercentage, 42)
+        XCTAssertEqual(seen.urls.filter { $0 == OAuthUsageClient.endpoint }.count, 2)
+        XCTAssertEqual(seen.urls.count, 3, "usage, refresh, usage")
+    }
+
+    /// A revoked grant: the refresh is refused too, and that is the verdict.
+    func testUnauthorizedWithARefusedRefreshIsADeadGrant() async {
+        Stub.handler = { req in
+            req.url?.absoluteString == OAuthUsageClient.endpoint ? (401, Data()) : (400, Data())
+        }
+        let result = await client(session: liveSession()).fetchRateLimits()
+        XCTAssertEqual(result, .insufficientScope)
+    }
+
+    /// Still refused with a fresh token: an invalid token, after one retry only.
+    func testUnauthorizedTwiceIsInvalidTokenWithoutLooping() async {
+        let refreshed = tokenBody("fresh-access-token")
+        Stub.handler = { req in
+            req.url?.absoluteString == OAuthUsageClient.endpoint ? (401, Data()) : (200, refreshed)
+        }
+        let result = await client(session: liveSession()).fetchRateLimits()
+        XCTAssertEqual(result, .invalidToken)
+        XCTAssertEqual(Stub.requestCount, 3)
+    }
+}
+
+/// Thread-safe list of the URLs a stubbed session was asked for.
+final class CapturedRequests: @unchecked Sendable {
+    private let lock = NSLock()
+    private var all: [String] = []
+    func add(_ r: URLRequest) { lock.lock(); all.append(r.url?.absoluteString ?? ""); lock.unlock() }
+    var urls: [String] { lock.lock(); defer { lock.unlock() }; return all }
 }

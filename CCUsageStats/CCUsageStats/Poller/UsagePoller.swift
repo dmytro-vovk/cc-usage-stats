@@ -219,7 +219,14 @@ final class UsagePoller: ObservableObject {
             // header client never does. Treat as non-fatal.
             needsReauthorization = true
 
-        case .notSubscriber:
+        case .notSubscriber(let fiveHourIsAbsent):
+            // The body named no usable window but did say there is no 5-hour
+            // limit: the cached 5-hour window must not outlive that.
+            if fiveHourIsAbsent {
+                try? CacheStore.update(
+                    at: cacheURL, with: RateLimitsSnapshot(fiveHour: nil, sevenDay: nil, fiveHourIsAbsent: true),
+                    now: clock())
+            }
             // Surface the state but keep polling. A missing rate-limit
             // header on a single response can be transient (brief Anthropic
             // hiccup, etc.). When headers return on a later poll the

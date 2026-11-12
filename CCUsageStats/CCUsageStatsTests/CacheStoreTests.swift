@@ -282,4 +282,58 @@ final class CacheStoreTests: XCTestCase {
         ), now: 2)
         XCTAssertEqual(try CacheStore.read(at: tmpFile)?.snapshot.breakdown, [])
     }
+
+    // MARK: - what each window's reading is worth
+
+    private func w(_ p: Double, _ r: Int64 = 9_000) -> WindowSnapshot { WindowSnapshot(usedPercentage: p, resetsAt: r) }
+    private func scratch() -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    /// A poll that reports only one window keeps the other from disk — with
+    /// the time it was last reported, not the time of this poll.
+    func testWindowOnlyCarriedOverKeepsItsOwnCaptureTime() throws {
+        let url = scratch()
+        try CacheStore.update(at: url, with: .init(fiveHour: w(10), sevenDay: w(50)), now: 1_000)
+        try CacheStore.update(at: url, with: .init(fiveHour: w(12), sevenDay: nil), now: 2_000)
+        try CacheStore.update(at: url, with: .init(fiveHour: w(14), sevenDay: nil), now: 3_000)
+        var state = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(state.capturedAt, 3_000)
+        XCTAssertEqual(state.capturedAt(of: CachedState.fiveHourKey), 3_000)
+        XCTAssertEqual(state.capturedAt(of: CachedState.sevenDayKey), 1_000)
+        XCTAssertEqual(state.snapshot.sevenDay?.usedPercentage, 50)
+        // Reported again: fresh again, and nothing extra in the file.
+        try CacheStore.update(at: url, with: .init(fiveHour: w(15), sevenDay: w(51)), now: 4_000)
+        state = try XCTUnwrap(CacheStore.read(at: url))
+        XCTAssertEqual(state.capturedAt(of: CachedState.sevenDayKey), 4_000)
+        XCTAssertEqual(state.windowCapturedAt, [:])
+    }
+
+    /// "No 5-hour limit" is what the source said, not what the cache happens
+    /// to hold: an account polled between two windows still has one.
+    func testNoFiveHourLimitIsRememberedNotInferred() throws {
+        let gap = scratch()
+        try CacheStore.update(at: gap, with: .init(fiveHour: nil, sevenDay: w(50), models: [:]), now: 1_000)
+        XCTAssertEqual(try CacheStore.read(at: gap)?.snapshot.lacksFiveHourWindow, false, "first poll in the gap")
+
+        let ultra = scratch()
+        try CacheStore.update(at: ultra, with: .init(fiveHour: nil, sevenDay: w(50), models: [:], fiveHourIsAbsent: true), now: 1_000)
+        XCTAssertEqual(try CacheStore.read(at: ultra)?.snapshot.lacksFiveHourWindow, true)
+        // A later poll with no opinion keeps it; a 5-hour window ends it.
+        try CacheStore.update(at: ultra, with: .init(fiveHour: nil, sevenDay: w(51)), now: 2_000)
+        XCTAssertEqual(try CacheStore.read(at: ultra)?.snapshot.lacksFiveHourWindow, true)
+        try CacheStore.update(at: ultra, with: .init(fiveHour: w(5), sevenDay: w(51)), now: 3_000)
+        XCTAssertEqual(try CacheStore.read(at: ultra)?.snapshot.lacksFiveHourWindow, false)
+        try CacheStore.update(at: ultra, with: .init(fiveHour: nil, sevenDay: nil), now: 4_000)
+        XCTAssertEqual(try CacheStore.read(at: ultra)?.snapshot.fiveHour?.usedPercentage, 5)
+    }
+
+    /// Files from before the flag: weekly-only meant "no 5-hour limit".
+    func testLegacyFileWithoutTheFlagIsReadAsBefore() throws {
+        let url = scratch()
+        try Data(#"{"captured_at":1000,"seven_day":{"used_percentage":50,"resets_at":9000}}"#.utf8).write(to: url)
+        XCTAssertEqual(try CacheStore.read(at: url)?.snapshot.lacksFiveHourWindow, true)
+    }
 }

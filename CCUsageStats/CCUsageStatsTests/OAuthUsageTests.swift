@@ -289,4 +289,12 @@ final class OAuthUsageTests: XCTestCase {
         ]
         XCTAssertEqual(UsageShare.caption(rows), "Claude Code 51% · Chats 49%")
     }
+
+    /// Nothing usable, but an explicit `"five_hour": null`: still not a
+    /// subscriber's reading, and the absence is reported with it.
+    func testNullFiveHourAloneIsNotSubscriberCarryingTheAbsence() {
+        XCTAssertEqual(OAuthUsage.parse(status: 200, body: body(#"{"five_hour":null,"seven_day":null}"#)),
+                       .notSubscriber(fiveHourIsAbsent: true))
+        XCTAssertEqual(OAuthUsage.parse(status: 200, body: body(#"{}"#)), .notSubscriber(fiveHourIsAbsent: false))
+    }
 }

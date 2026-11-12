@@ -78,9 +78,14 @@ final class AnthropicAPITests: XCTestCase {
     }
 
     func test403YieldsInvalidToken() {
-        let result = AnthropicAPI.parse(status: 403, headers: [:], body: Data())
-        if case .invalidToken = result { return }
-        XCTFail()
+        let api = Data(#"{"type":"error","error":{"type":"permission_error","message":"x"}}"#.utf8)
+        guard case .invalidToken = AnthropicAPI.parse(status: 403, headers: [:], body: api) else { return XCTFail() }
+        // A 403 from a WAF or proxy in front of the API is not a verdict.
+        for raw in ["", "<html>blocked</html>", #"{"message":"blocked"}"#] {
+            guard case .transient = AnthropicAPI.parse(status: 403, headers: [:], body: Data(raw.utf8)) else {
+                return XCTFail(raw)
+            }
+        }
     }
 
     func test429YieldsRateLimited() {

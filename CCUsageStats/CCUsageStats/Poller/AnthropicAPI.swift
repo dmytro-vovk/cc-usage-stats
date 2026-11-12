@@ -12,15 +12,23 @@ enum AnthropicAPI {
         /// refused. Distinct from `.invalidToken` because the same token
         /// still works on the response-header path.
         case insufficientScope
-        case notSubscriber
+        /// A 200 with no usable window. `fiveHourIsAbsent`: the body still
+        /// said outright that the account has no 5-hour limit, so a cached
+        /// 5-hour window is no longer true.
+        case notSubscriber(fiveHourIsAbsent: Bool)
+        static var notSubscriber: Result { .notSubscriber(fiveHourIsAbsent: false) }
         case rateLimited
         case transient(String) // network, malformed body, 5xx, 4xx other
     }
 
     static func parse(status: Int, headers: [String: String], body: Data) -> Result {
         switch status {
-        case 401, 403:
+        case 401:
             return .invalidToken
+        case 403:
+            // Same rule as the usage endpoint: only the API's own error
+            // envelope is a verdict on the token.
+            return isAPIError(body) ? .invalidToken : .transient("forbidden (not an API error)")
         case 429:
             return .rateLimited
         case 200:
@@ -46,6 +54,13 @@ enum AnthropicAPI {
         let noFiveHeaders = lc["anthropic-ratelimit-unified-5h-utilization"] == nil
             && lc["anthropic-ratelimit-unified-5h-reset"] == nil
         return RateLimitsSnapshot(fiveHour: five, sevenDay: seven, fiveHourIsAbsent: seven != nil && noFiveHeaders)
+    }
+
+    /// `{"type":"error","error":{…}}` — what the API itself answers with, as
+    /// opposed to a page or JSON from a WAF, proxy or VPN block in front of it.
+    static func isAPIError(_ body: Data) -> Bool {
+        let envelope = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        return envelope?["type"] as? String == "error" && envelope?["error"] is [String: Any]
     }
 
     private static func window(headers: [String: String], suffix: String) -> WindowSnapshot? {

@@ -19,19 +19,29 @@ struct OAuthUsageClient: AnthropicAPIClient {
     }
 
     func fetchRateLimits() async -> AnthropicAPI.Result {
+        let (first, token) = await fetch(replacing: nil)
+        // A 401 on a token we believed valid: the server may have retired it
+        // early. Refresh once and ask again. A grant that is really gone
+        // fails that refresh with a 4xx (`.insufficientScope`), or the fresh
+        // token is refused too — either way still a dead grant.
+        guard first == .invalidToken, let token else { return first }
+        return await fetch(replacing: token).result
+    }
+
+    private func fetch(replacing rejected: String?) async -> (result: AnthropicAPI.Result, token: String?) {
         let token: String
-        switch await provider.accessToken() {
+        switch await provider.accessToken(replacing: rejected) {
         case .token(let t):
             token = t
         case .unusable:
             // No session, or the grant is permanently gone. The caller
             // treats this as "fall back to headers and ask for a reconnect".
-            return .insufficientScope
+            return (.insufficientScope, nil)
         case .temporarilyUnavailable(let why):
             // Offline or a 5xx on refresh. Must stay transient so the
             // offline detector still counts it and the UI does not tell the
             // user to reauthorize over a dropped Wi-Fi connection.
-            return .transient("token refresh: \(why)")
+            return (.transient("token refresh: \(why)"), nil)
         }
 
         var req = URLRequest(url: URL(string: Self.endpoint)!)
@@ -48,15 +58,17 @@ struct OAuthUsageClient: AnthropicAPIClient {
         do {
             let (data, resp) = try await session.data(for: req)
             guard let http = resp as? HTTPURLResponse else {
-                return .transient("no http response")
+                return (.transient("no http response"), nil)
             }
             // Key names and percentages only (see `windowSummary`), so
             // `.public` exposes nothing sensitive.
             let summary = OAuthUsage.windowSummary(data)
             Self.log.notice("usage \(http.statusCode): \(summary, privacy: .public)")
-            return OAuthUsage.parse(status: http.statusCode, body: data)
+            // Only a 401 says "this token": a 403 is about scope or policy.
+            let result = OAuthUsage.parse(status: http.statusCode, body: data)
+            return (result, http.statusCode == 401 ? token : nil)
         } catch {
-            return .transient(error.localizedDescription)
+            return (.transient(error.localizedDescription), nil)
         }
     }
 }

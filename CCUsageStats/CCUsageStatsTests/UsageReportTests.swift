@@ -180,4 +180,23 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual((r["claude"] as? [String: Any])?["captured_at"] as? Int64, now - 5)
         XCTAssertEqual((r["codex"] as? [String: Any])?["available"] as? Bool, false)
     }
+
+    /// A window the last poll did not report says how old it really is.
+    func testWindowCarriedOverReportsItsOwnAge() throws {
+        let state = CachedState(
+            capturedAt: 10_000,
+            snapshot: .init(fiveHour: WindowSnapshot(usedPercentage: 40, resetsAt: 20_000),
+                            sevenDay: WindowSnapshot(usedPercentage: 60, resetsAt: 500_000)),
+            windowCapturedAt: [CachedState.sevenDayKey: 4_000])
+        let report = UsageReport.build(state: state, history: [], codex: nil, now: 10_060, timeZone: TimeZone(identifier: "UTC")!)
+        let claude = try XCTUnwrap(report["claude"] as? [String: Any])
+        XCTAssertEqual(claude["stale"] as? Bool, false)
+        let windows = try XCTUnwrap(claude["windows"] as? [[String: Any]])
+        let five = try XCTUnwrap(windows.first { $0["id"] as? String == "five_hour" })
+        let week = try XCTUnwrap(windows.first { $0["id"] as? String == "seven_day" })
+        XCTAssertNil(five["age_seconds"], "read by the last poll: the section's freshness applies")
+        XCTAssertEqual(week["captured_at"] as? Int64, 4_000)
+        XCTAssertEqual(week["age_seconds"] as? Int64, 6_060)
+        XCTAssertEqual(week["stale"] as? Bool, true)
+    }
 }

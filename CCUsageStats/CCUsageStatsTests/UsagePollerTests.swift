@@ -626,4 +626,21 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertTrue(uri.hasSuffix(LoopbackRedirectListener.callbackPath),
                       "the redirect path must match the only path the listener accepts")
     }
+
+    func testNotSubscriberSayingNoFiveHourLimitClearsTheCachedWindow() async throws {
+        let api = StubAPI()
+        api.queue = [.success(.init(fiveHour: WindowSnapshot(usedPercentage: 42, resetsAt: 5_000),
+                                    sevenDay: WindowSnapshot(usedPercentage: 18, resetsAt: 9_000))),
+                     .notSubscriber(fiveHourIsAbsent: false),
+                     .notSubscriber(fiveHourIsAbsent: true)]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 1000 })
+        await poller.tickForTest()
+        await poller.tickForTest()
+        XCTAssertNotNil(try CacheStore.read(at: tmpStateFile)?.snapshot.fiveHour, "no opinion: the window stays")
+        await poller.tickForTest()
+        let cached = try CacheStore.read(at: tmpStateFile)
+        XCTAssertNil(cached?.snapshot.fiveHour)
+        XCTAssertEqual(cached?.snapshot.sevenDay?.usedPercentage, 18)
+        XCTAssertEqual(poller.authState, .notSubscriber)
+    }
 }

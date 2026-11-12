@@ -31,7 +31,8 @@ enum OAuthUsage {
         switch status {
         case 200:
             if let snap = parseBody(body) { return .success(snap) }
-            return .notSubscriber
+            let obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+            return .notSubscriber(fiveHourIsAbsent: obj?["five_hour"] is NSNull)
         case 401:
             return .invalidToken
         case 403:
@@ -42,9 +43,7 @@ enum OAuthUsage {
             // front of it (WAF challenge, proxy, VPN or geo block) is some
             // other page or JSON and says nothing about the grant: treating
             // it as `.invalidToken` signed the account out.
-            let envelope = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
-            let isAPIError = envelope?["type"] as? String == "error" && envelope?["error"] is [String: Any]
-            return isAPIError ? .invalidToken : .transient("forbidden (not an API error)")
+            return AnthropicAPI.isAPIError(body) ? .invalidToken : .transient("forbidden (not an API error)")
         case 429:
             return .rateLimited
         case 500...599:

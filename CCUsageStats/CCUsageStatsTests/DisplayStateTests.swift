@@ -119,4 +119,15 @@ final class DisplayStateTests: XCTestCase {
         XCTAssertNil(s.utilizationFraction)
         XCTAssertFalse(s.hasFiveHourData)
     }
+
+    /// The pill is stale when the reading it shows is old, however recently
+    /// the file was written for another window.
+    func testStalenessFollowsTheShownWindowsOwnCaptureTime() {
+        let five = WindowSnapshot(usedPercentage: 40, resetsAt: 99_999)
+        let state = CachedState(capturedAt: 10_000, snapshot: .init(fiveHour: five, sevenDay: nil),
+                                windowCapturedAt: [CachedState.fiveHourKey: 10_000 - 3_600])
+        XCTAssertTrue(DisplayState.compute(now: 10_010, cached: state).isStale)
+        let fresh = CachedState(capturedAt: 10_000, snapshot: .init(fiveHour: five, sevenDay: nil))
+        XCTAssertFalse(DisplayState.compute(now: 10_010, cached: fresh).isStale)
+    }
 }

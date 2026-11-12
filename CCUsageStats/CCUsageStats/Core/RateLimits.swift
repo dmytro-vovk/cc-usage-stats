@@ -71,8 +71,8 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
     /// accounts: `"five_hour": null` on every poll), as opposed to a nil
     /// `fiveHour` that only means "this response carried no usable 5h
     /// window" (e.g. the gap between one window's reset and the next). Only
-    /// the first clears a cached 5h window. Not persisted: like
-    /// `modelsAreAuthoritative`, it describes a freshly parsed snapshot.
+    /// the first clears a cached 5h window. Persisted (`five_hour_absent`),
+    /// merged by `CacheStore.update`: it stays until a 5-hour window shows up.
     let fiveHourIsAbsent: Bool
 
     /// Header-path shape: two windows, and no opinion about model windows.
@@ -112,9 +112,11 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         return nil
     }
 
-    /// A weekly window but no 5-hour one: the account has no session limit,
-    /// so 5-hour rows, sparklines and announcements have nothing to show.
-    var lacksFiveHourWindow: Bool { fiveHour == nil && sevenDay != nil }
+    /// The account has no session limit, so 5-hour rows, sparklines and
+    /// announcements have nothing to show. A fact the source stated
+    /// (`fiveHourIsAbsent`), not "no 5-hour window right now": an account
+    /// polled between two windows still has one coming.
+    var lacksFiveHourWindow: Bool { fiveHour == nil && sevenDay != nil && fiveHourIsAbsent }
 
     /// When a usage limit hit now lifts: the latest reset among the capped
     /// windows (every one has to reset). A per-model window is its own quota,
@@ -141,6 +143,7 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         case sevenDay = "seven_day"
         case models = "model_windows"
         case breakdown = "weekly_breakdown"
+        case fiveHourIsAbsent = "five_hour_absent"
     }
 
     init(from decoder: Decoder) throws {
@@ -163,13 +166,17 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         // through `update` would otherwise clear the rows it just read back.
         // Pinned by `testDecodingDerivesAuthorityFromWhetherModelsWerePersisted`.
         modelsAreAuthoritative = !decodedModels.isEmpty
-        fiveHourIsAbsent = false
+        // Files written before the flag existed inferred it from the
+        // windows present; keep reading them that way.
+        let stored = try c.decodeIfPresent(Bool.self, forKey: .fiveHourIsAbsent)
+        fiveHourIsAbsent = fiveHour == nil && (stored ?? (sevenDay != nil))
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(fiveHour, forKey: .fiveHour)
         try c.encodeIfPresent(sevenDay, forKey: .sevenDay)
+        try c.encode(fiveHourIsAbsent, forKey: .fiveHourIsAbsent)
         if !models.isEmpty { try c.encode(models, forKey: .models) }
         if !breakdown.isEmpty { try c.encode(breakdown, forKey: .breakdown) }
     }

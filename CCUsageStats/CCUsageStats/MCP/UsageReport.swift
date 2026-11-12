@@ -68,10 +68,11 @@ enum UsageReport {
                     w["forecast_cap_at_local"] = clock.local(capAt)
                 }
             }
-            windows.append(w)
+            windows.append(ownAge(w, state: state, key: CachedState.fiveHourKey, now: now, clock: clock))
         }
         if let week = snap.sevenDay {
-            windows.append(weekly(id: "seven_day", label: UsageWindows.label(for: "seven_day"), week, now: now, clock: clock))
+            let w = weekly(id: "seven_day", label: UsageWindows.label(for: "seven_day"), week, now: now, clock: clock)
+            windows.append(ownAge(w, state: state, key: CachedState.sevenDayKey, now: now, clock: clock))
         }
         for key in UsageWindows.orderedModelKeys(snap.models) {
             if let w = snap.models[key] {
@@ -113,6 +114,15 @@ enum UsageReport {
     }
 
     // MARK: - Pieces
+
+    /// A window the latest poll did not report is older than the section's
+    /// `captured_at`: it then carries its own freshness fields, which
+    /// override the section's for that window.
+    private static func ownAge(_ window: [String: Any], state: CachedState, key: String, now: Int64, clock: Clock) -> [String: Any] {
+        let at = state.capturedAt(of: key)
+        guard at < state.capturedAt else { return window }
+        return window.merging(freshness(capturedAt: at, key: "captured_at", now: now, clock: clock)) { _, own in own }
+    }
 
     private static func freshness(capturedAt: Int64, key: String, now: Int64, clock: Clock) -> [String: Any] {
         let age = max(0, now - capturedAt)

@@ -17,7 +17,9 @@ struct DisplayState: Equatable {
         }
         let pct = Int(five.usedPercentage.rounded())
         let fraction = max(0.0, min(1.0, five.usedPercentage / 100.0))
-        let stale = (now - cached.capturedAt) > staleThresholdSeconds
+        // The age of the reading shown, not of the file: a window only
+        // carried over from disk is as old as when it was last reported.
+        let stale = (now - cached.primaryCapturedAt) > staleThresholdSeconds
 
         // At cap, swap the percentage for a live countdown to reset. The
         // gauge icon's 100%-needle position + red gradient still conveys
