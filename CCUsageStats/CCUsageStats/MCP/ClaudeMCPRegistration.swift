@@ -138,6 +138,17 @@ nonisolated enum ClaudeMCPRegistration {
         )
     }
 
+    /// PATH for the child. A GUI app's PATH is the bare system one, and an
+    /// npm-installed `claude` is a `#!/usr/bin/env node` script: put the
+    /// CLI's own directory (where its node usually lives) and the usual
+    /// install prefixes ahead of what we inherited.
+    static func childPATH(cli: String, inherited: String?) -> String {
+        var seen = Set<String>()
+        let dirs = [(cli as NSString).deletingLastPathComponent, "/opt/homebrew/bin", "/usr/local/bin"]
+            + (inherited ?? "/usr/bin:/bin").split(separator: ":").map(String.init)
+        return dirs.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: ":")
+    }
+
     /// Runs `cli` with a hard deadline. Output is drained on its own thread
     /// so a chatty child can't block on a full pipe, and on timeout the
     /// child is killed (TERM, then KILL) and we stop waiting for EOF — a
@@ -146,6 +157,9 @@ nonisolated enum ClaudeMCPRegistration {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: cli)
         p.arguments = args
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = childPATH(cli: cli, inherited: environment["PATH"])
+        p.environment = environment
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe

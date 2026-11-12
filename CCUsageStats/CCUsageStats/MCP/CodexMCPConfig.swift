@@ -11,7 +11,7 @@ nonisolated enum CodexMCPConfig {
     static let serverName = "cc-usage-stats"
 
     static var defaultURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/config.toml")
+Paths.liveCodexHome.appendingPathComponent("config.toml")
     }
 
     enum ConfigError: Error, Equatable, CustomStringConvertible {
@@ -38,7 +38,7 @@ nonisolated enum CodexMCPConfig {
         try validate(text)
         let stripped = uninstalling(from: text)
         if stripped.isEmpty { return block(command: command) }
-        return stripped + (stripped.hasSuffix("\n") ? "\n" : "\n\n") + block(command: command)
+        return stripped + (endsWithNewline(stripped) ? "\n" : "\n\n") + block(command: command)
     }
 
     static func uninstalling(from text: String) -> String {
@@ -46,9 +46,13 @@ nonisolated enum CodexMCPConfig {
         let ours = ownLineMask(lines)
         guard ours.contains(true) else { return text }
         var out = zip(lines, ours).filter { !$0.1 }.map(\.0).joined(separator: "\n")
-        if text.hasSuffix("\n"), !out.isEmpty, !out.hasSuffix("\n") { out += "\n" }
+        if endsWithNewline(text), !out.isEmpty, !endsWithNewline(out) { out += "\n" }
         return out
     }
+
+    /// Byte-level: in a CRLF file "\r\n" is one Character, which
+    /// `hasSuffix("\n")` does not match.
+    private static func endsWithNewline(_ s: String) -> Bool { s.utf8.last == UInt8(ascii: "\n") }
 
     static func isInstalled(command: String, in text: String) -> Bool {
         let lines = text.components(separatedBy: "\n")
@@ -63,9 +67,9 @@ nonisolated enum CodexMCPConfig {
         var command: String?
         scan(lines) { i, table, isHeader in
             guard command == nil, !isHeader, table.map({ $0.count == 2 && isOwnTable($0) }) == true else { return }
-            let t = stripComment(lines[i]).trimmingCharacters(in: .whitespaces)
+            let t = stripComment(lines[i]).trimmingCharacters(in: .whitespacesAndNewlines)
             guard let eq = t.firstIndex(of: "="), keySegments(t[..<eq]) == ["command"] else { return }
-            command = basicString(t[t.index(after: eq)...].trimmingCharacters(in: .whitespaces))
+            command = basicString(t[t.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return command
     }
@@ -131,7 +135,8 @@ nonisolated enum CodexMCPConfig {
     /// Key segments of a header line (`[a."b.c"]` → `["a", "b.c"]`), nil
     /// for any other line.
     private static func header(_ line: String) -> [String]? {
-        let t = stripComment(line).trimmingCharacters(in: .whitespaces)
+        // Newlines too: lines are split on "\n", so a CRLF file leaves "\r".
+        let t = stripComment(line).trimmingCharacters(in: .whitespacesAndNewlines)
         guard t.hasPrefix("[") else { return nil }
         let open = t.hasPrefix("[[") ? 2 : 1
         let close = open == 2 ? "]]" : "]"
@@ -251,10 +256,27 @@ nonisolated enum CodexMCPConfig {
         return multi
     }
 
-    /// True for every line of our block(s).
+    /// True for every line of our block(s). Comment lines that close a
+    /// block (and whatever blank lines follow them) are not ours: a comment
+    /// above the next table is the user's note about that table.
     private static func ownLineMask(_ lines: [String]) -> [Bool] {
         var mask = Array(repeating: false, count: lines.count)
         scan(lines) { i, table, _ in mask[i] = table.map(isOwnTable) ?? false }
+        var end = lines.count - 1
+        while end >= 0 {
+            guard mask[end] else { end -= 1; continue }
+            var start = end
+            while start > 0, mask[start - 1] { start -= 1 }
+            var firstComment: Int?
+            var t = end
+            while t >= start {
+                let s = lines[t].trimmingCharacters(in: .whitespacesAndNewlines)
+                if s.hasPrefix("#") { firstComment = t } else if !s.isEmpty { break }
+                t -= 1
+            }
+            if let firstComment { for k in firstComment...end { mask[k] = false } }
+            end = start - 1
+        }
         return mask
     }
 
@@ -265,7 +287,7 @@ nonisolated enum CodexMCPConfig {
         let lines = text.components(separatedBy: "\n")
         scan(lines) { i, table, isHeader in
             guard !isHeader else { return }
-            let t = lines[i].trimmingCharacters(in: .whitespaces)
+            let t = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
             guard !t.hasPrefix("#"), let eq = t.firstIndex(of: "=") else { return }
             let key = keySegments(t[..<eq])
             if table == nil, key.first == "mcp_servers" { bad = true }
@@ -283,7 +305,8 @@ nonisolated enum CodexMCPConfig {
             guard let updated = try transform(text) else { return }
             if let original { try backUpOnce(original, beside: url) }
             let staged = try stage(updated, beside: url)
-            guard (try? read(url))?.0 == original else {
+            // A failed re-read is a change too; see SessionHookInstaller.update.
+            guard let current = try? read(url), current.0 == original else {
                 try? FileManager.default.removeItem(at: staged)
                 continue
             }
@@ -325,7 +348,7 @@ nonisolated enum CodexMCPConfig {
     /// Creates `url` with `mode` from the first byte: the config can hold
     /// MCP servers' env secrets, so it must never sit world-readable under
     /// the umask while being written.
-    private static func createExclusive(_ url: URL, _ data: Data, mode: mode_t) throws {
+    static func createExclusive(_ url: URL, _ data: Data, mode: mode_t) throws {
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode)
         guard fd >= 0 else { throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path]) }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)

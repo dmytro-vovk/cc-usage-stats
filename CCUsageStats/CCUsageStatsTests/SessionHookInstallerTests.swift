@@ -201,4 +201,67 @@ final class SessionHookInstallerTests: XCTestCase {
         XCTAssertEqual(try SessionHookInstaller.ensureInstalled(settingsURL: settings, scriptURL: script), .updatedScript)
         XCTAssertEqual(try String(contentsOf: script, encoding: .utf8), SessionHookScript.contents)
     }
+
+    // MARK: - 2026-11-12 review fixes
+
+    /// A group of the user's with an empty hook list is theirs: dropping it
+    /// shifts every group after it (Codex keys trust by position).
+    func testUninstallKeepsGroupsThatHeldNothingOfOurs() {
+        let settings: [String: Any] = ["hooks": ["Stop": [
+            ["matcher": "x", "hooks": [[String: Any]]()],
+            ["hooks": [["type": "command", "command": command, "timeout": 10]]],
+        ]]]
+        let out = SessionHookInstaller.uninstalling(from: settings)
+        let stop = (out["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]]
+        XCTAssertEqual(stop?.count, 1)
+        XCTAssertEqual(stop?.first?["matcher"] as? String, "x")
+    }
+
+    func testCodexUninstallThatWouldMoveTheirHooksIsRefused() throws {
+        let hooks = dir.appendingPathComponent("hooks.json")
+        let script = dir.appendingPathComponent("cc-usage-stats/hooks/codex-session-hook.sh")
+        let cmd = SessionHookInstaller.command(for: script)
+        let oursFirst: [String: Any] = ["hooks": ["Stop": [
+            ["hooks": [["type": "command", "command": cmd, "timeout": 3]]],
+            ["hooks": [["type": "command", "command": "/their.sh"]]],
+        ]]]
+        let original = try JSONSerialization.data(withJSONObject: oursFirst)
+        try original.write(to: hooks)
+        XCTAssertThrowsError(try SessionHookInstaller.uninstall(settingsURL: hooks, client: .codex)) {
+            XCTAssertEqual($0 as? SessionHookInstaller.InstallError, .wouldMoveCodexHooksOnRemoval)
+        }
+        XCTAssertEqual(try Data(contentsOf: hooks), original)
+
+        // Ours as the trailing group: nothing of theirs moves, so it goes.
+        let oursLast: [String: Any] = ["hooks": ["Stop": [
+            ["hooks": [["type": "command", "command": "/their.sh"]]],
+            ["hooks": [["type": "command", "command": cmd, "timeout": 3]]],
+        ]]]
+        try JSONSerialization.data(withJSONObject: oursLast).write(to: hooks)
+        try SessionHookInstaller.uninstall(settingsURL: hooks, client: .codex)
+        XCTAssertFalse(try String(contentsOf: hooks, encoding: .utf8).contains("codex-session-hook.sh"))
+    }
+
+    func testFileCreatedUnreadableMidUpdateIsNotOverwritten() throws {
+        let settings = dir.appendingPathComponent("settings.json")
+        let partial = Data(#"{"hooks": {"Sto"#.utf8)
+        XCTAssertThrowsError(try SessionHookInstaller.update(settings) { _ in
+            try? partial.write(to: settings)
+            return ["ours": 1]
+        })
+        XCTAssertEqual(try Data(contentsOf: settings), partial)
+    }
+
+    func testBackupAndRewriteAreNeverWiderThanTheOriginal() throws {
+        let settings = dir.appendingPathComponent("settings.json")
+        try "{}".write(to: settings, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settings.path)
+        try SessionHookInstaller.ensureInstalled(
+            settingsURL: settings, scriptURL: dir.appendingPathComponent("cc-usage-stats/hooks/session-hook.sh"))
+        func mode(_ url: URL) throws -> Int {
+            (try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue ?? -1
+        }
+        XCTAssertEqual(try mode(settings), 0o600)
+        XCTAssertEqual(try mode(settings.appendingPathExtension("cc-usage-stats.bak")), 0o600)
+    }
 }

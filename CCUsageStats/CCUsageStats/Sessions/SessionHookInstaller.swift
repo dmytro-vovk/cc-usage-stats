@@ -61,8 +61,12 @@ nonisolated enum SessionHookInstaller {
         /// Fixing our entries would shift one of the user's Codex hooks to
         /// another position, and Codex keys trust by position.
         case wouldMoveCodexHooks
+        /// The same, for removing them: a group of the user's sits after ours.
+        case wouldMoveCodexHooksOnRemoval
         var description: String {
             switch self {
+            case .wouldMoveCodexHooksOnRemoval:
+                return "hooks.json has your own hook groups after the cc-usage-stats hook; removing it would shift them and make Codex ask you to trust your hooks again. Remove the cc-usage-stats entries by hand, or move them to the end of each event and switch this off again. Left untouched."
             case .wouldMoveCodexHooks:
                 return "hooks.json has the cc-usage-stats hook inside or ahead of your own hook groups; repairing it would make Codex ask you to trust your hooks again. Move it into a group of its own at the end of each event, or remove it, then Repair. Left untouched."
             case .unreadableSettings(let path): return "Couldn't read \(path); left it untouched."
@@ -207,6 +211,8 @@ nonisolated enum SessionHookInstaller {
             let kept: [[String: Any]] = groups.compactMap { group in
                 guard let entries = group["hooks"] as? [[String: Any]] else { return group }
                 let remaining = entries.filter { !isOurs($0, client: client) }
+                // A group that held nothing of ours is the user's, even empty.
+                if remaining.count == entries.count { return group }
                 if remaining.isEmpty { return nil }
                 var g = group
                 g["hooks"] = remaining
@@ -242,7 +248,11 @@ nonisolated enum SessionHookInstaller {
     static func uninstall(settingsURL: URL, client: SessionClient = .claude) throws {
         try update(settingsURL) { settings in
             let out = uninstalling(from: settings, client: client)
-            return NSDictionary(dictionary: out).isEqual(to: settings) ? nil : out
+            if NSDictionary(dictionary: out).isEqual(to: settings) { return nil }
+            if client == .codex, theirPositions(settings, client: client) != theirPositions(out, client: client) {
+                throw InstallError.wouldMoveCodexHooksOnRemoval
+            }
+            return out
         }
     }
 
@@ -262,7 +272,7 @@ nonisolated enum SessionHookInstaller {
     /// between our read and our write (Claude Code, a dotfiles sync), start
     /// over from the new contents rather than overwrite them.
     /// `transform` returns nil when there is nothing to write.
-    private static func update(_ link: URL, _ transform: ([String: Any]) throws -> [String: Any]?) throws {
+    static func update(_ link: URL, _ transform: ([String: Any]) throws -> [String: Any]?) throws {
         // Resolved once, so every step sees the same file even if the link moves.
         let url = link.resolvingSymlinksInPath()
         for _ in 0..<3 {
@@ -275,7 +285,10 @@ nonisolated enum SessionHookInstaller {
             // rename. It can't be closed entirely: Claude Code has no lock
             // protocol for settings.json.
             let staged = try stage(updated, beside: url)
-            guard (try? read(url))?.0 == original else {
+            // A re-read that fails is a change too (the file appeared, or
+            // is mid-write): `try?` alone would compare nil with a nil
+            // `original` and let the swap through.
+            guard let current = try? read(url), current.0 == original else {
                 try? FileManager.default.removeItem(at: staged)
                 continue
             }
@@ -313,8 +326,8 @@ nonisolated enum SessionHookInstaller {
     private static func backUpOnce(_ data: Data, beside url: URL) throws {
         let backup = url.appendingPathExtension("cc-usage-stats.bak")
         guard !FileManager.default.fileExists(atPath: backup.path) else { return }
-        try data.write(to: backup, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backup.path)
+        // Private from the first byte: settings can hold `env` secrets.
+        try CodexMCPConfig.createExclusive(backup, data, mode: 0o600)
     }
 
     /// Writes the new contents to a temp file next to `url` with the
@@ -327,8 +340,9 @@ nonisolated enum SessionHookInstaller {
         let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] ?? 0o600
         let staged = url.deletingLastPathComponent()
             .appendingPathComponent(".\(url.lastPathComponent).cc-usage-stats.\(ProcessInfo.processInfo.processIdentifier).tmp")
-        try (data + Data("\n".utf8)).write(to: staged)
-        try FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: staged.path)
+        try? FileManager.default.removeItem(at: staged)  // a leftover from a crashed run
+        try CodexMCPConfig.createExclusive(staged, data + Data("\n".utf8),
+                                           mode: mode_t((perms as? NSNumber)?.uint16Value ?? 0o600))
         return staged
     }
 }

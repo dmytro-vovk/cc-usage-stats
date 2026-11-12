@@ -7,7 +7,7 @@ import Foundation
 /// their tails, widening a read only when a tail holds no reading.
 nonisolated enum CodexSessionReader {
     static var defaultDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions", isDirectory: true)
+Paths.liveCodexHome.appendingPathComponent("sessions", isDirectory: true)
     }
 
     static let initialTailBytes = 256 * 1024

@@ -67,4 +67,13 @@ final class ClaudeMCPRegistrationTests: XCTestCase {
         XCTAssertEqual(forked.status, 0)
         XCTAssertLessThan(Date().timeIntervalSince(t1), 5)
     }
+
+    /// An npm-installed `claude` is `#!/usr/bin/env node`: under a GUI app's
+    /// bare PATH it can't find node next to itself.
+    func testChildPATHPutsTheCLIsOwnDirectoryAndUsualPrefixesFirst() {
+        let path = ClaudeMCPRegistration.childPATH(cli: "/opt/homebrew/bin/claude", inherited: "/usr/bin:/bin")
+        XCTAssertEqual(path, "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+        XCTAssertEqual(ClaudeMCPRegistration.childPATH(cli: "/Users/u/.nvm/v22/bin/claude", inherited: nil),
+                       "/Users/u/.nvm/v22/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+    }
 }

@@ -178,4 +178,50 @@ final class CodexMCPConfigTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), text)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.appendingPathExtension("cc-usage-stats.bak").path))
     }
+
+    // MARK: - 2026-11-12 review fixes
+
+    /// A comment (or commented-out table) sitting above the next table is
+    /// the user's note about that table, not part of our block.
+    func testUninstallKeepsACommentLeadingTheNextTable() throws {
+        let text = CodexMCPConfig.block(command: bin) + "\n# my servers\n# [mcp_servers.old]\n[mcp_servers.other]\ncommand = \"x\"\n"
+        XCTAssertTrue(CodexMCPConfig.isInstalled(command: bin, in: text))
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: text),
+                       "# my servers\n# [mcp_servers.old]\n[mcp_servers.other]\ncommand = \"x\"\n")
+        // A trailing comment with nothing after it is kept as well.
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: CodexMCPConfig.block(command: bin) + "# note\n"), "# note\n")
+    }
+
+    /// CRLF files: "\r" is not in `.whitespaces`, so headers went unseen and
+    /// every later table looked like part of our block.
+    func testCRLFHeadersAreRecognised() throws {
+        let theirsCRLF = "model = \"gpt-5\"\r\n\r\n[mcp_servers.other]\r\ncommand = \"x\"\r\n"
+        let installed = try CodexMCPConfig.installing(command: bin, into: theirsCRLF)
+        XCTAssertTrue(CodexMCPConfig.isInstalled(command: bin, in: installed))
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: installed), theirsCRLF)
+
+        let oursFirst = "[mcp_servers.cc-usage-stats]\r\ncommand = \"\(bin)\"\r\nargs = [\"--mcp-server\"]\r\n\r\n[mcp_servers.other]\r\ncommand = \"x\"\r\n"
+        XCTAssertEqual(CodexMCPConfig.registeredCommand(in: oursFirst), bin)
+        XCTAssertEqual(CodexMCPConfig.uninstalling(from: oursFirst), "[mcp_servers.other]\r\ncommand = \"x\"\r\n")
+    }
+
+    /// The file appearing, half-written, between our read and the swap is a
+    /// change like any other: it must not be replaced.
+    func testFileCreatedUnreadableMidUpdateIsNotOverwritten() throws {
+        let config = dir.appendingPathComponent("config.toml")
+        let garbage = Data([0xFF, 0xFE, 0xFD])
+        XCTAssertThrowsError(try CodexMCPConfig.update(config) { _ in
+            try? garbage.write(to: config)
+            return "ours\n"
+        })
+        XCTAssertEqual(try Data(contentsOf: config), garbage)
+    }
+
+    func testDefaultLocationsFollowCodexHome() {
+        let old = ProcessInfo.processInfo.environment["CODEX_HOME"]
+        setenv("CODEX_HOME", "/tmp/elsewhere-codex", 1)
+        defer { if let old { setenv("CODEX_HOME", old, 1) } else { unsetenv("CODEX_HOME") } }
+        XCTAssertEqual(CodexMCPConfig.defaultURL.path, "/tmp/elsewhere-codex/config.toml")
+        XCTAssertEqual(CodexSessionReader.defaultDirectory.path, "/tmp/elsewhere-codex/sessions")
+    }
 }
