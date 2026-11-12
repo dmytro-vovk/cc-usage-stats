@@ -147,6 +147,19 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(poller.currentBackoffSeconds, 60)
     }
 
+    /// Same when the reset is near and the sleep is shorter than any backoff.
+    func testTransientAfterAShortAtCapSleepReturnsToBaseInterval() async {
+        let api = StubAPI()
+        api.queue = [.success(.init(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: 330), sevenDay: nil)),
+            .transient("offline")]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 0 })
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 300)
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 60)
+    }
+
     /// A 429 backoff is deliberate and must survive a transient failure.
     func testTransientKeepsRateLimitBackoff() async {
         let api = StubAPI(); api.queue = [.rateLimited, .rateLimited, .transient("x")]

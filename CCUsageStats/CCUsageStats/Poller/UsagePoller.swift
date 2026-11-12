@@ -25,6 +25,9 @@ final class UsagePoller: ObservableObject {
     @Published private(set) var needsReauthorization = false
     private(set) var transientFailureCount = 0
     private(set) var currentBackoffSeconds: TimeInterval = 60
+    /// True while `currentBackoffSeconds` is the at-cap sleep until the
+    /// window resets, rather than the base cadence or a 429 backoff.
+    private var sleepingUntilReset = false
 
     private var timer: Timer?
     private static let baseInterval: TimeInterval = 60
@@ -205,6 +208,7 @@ final class UsagePoller: ObservableObject {
             authState = .ok
             transientFailureCount = 0
             currentBackoffSeconds = Self.nextDelayAfterSuccess(snapshot: snapshot, now: clock())
+            sleepingUntilReset = (snapshot.fiveHour?.usedPercentage ?? 0) >= 100
 
         case .invalidToken:
             authState = .invalidToken
@@ -225,17 +229,23 @@ final class UsagePoller: ObservableObject {
             currentBackoffSeconds = Self.baseInterval
 
         case .rateLimited:
+            // From the at-cap sleep, back off from the base, not from hours.
+            if sleepingUntilReset {
+                sleepingUntilReset = false
+                currentBackoffSeconds = Self.baseInterval
+            }
             currentBackoffSeconds = min(Self.maxBackoff, currentBackoffSeconds * 2)
 
         case .transient(let msg):
             Self.log.warning("transient: \(msg, privacy: .public)")
             transientFailureCount += 1
-            // A delay longer than any backoff is the at-cap sleep until the
-            // window resets. It was chosen for a poll that succeeded; a
-            // failed one retries at the normal cadence instead of sleeping
-            // through the reset. A 429 backoff (<= maxBackoff) is kept.
-            if currentBackoffSeconds > Self.maxBackoff {
-                currentBackoffSeconds = Self.baseInterval
+            // The at-cap sleep until the window resets was chosen for a
+            // poll that succeeded; a failed one retries at the normal
+            // cadence instead of sleeping through the reset. A 429 backoff
+            // is kept.
+            if sleepingUntilReset {
+                sleepingUntilReset = false
+                currentBackoffSeconds = min(currentBackoffSeconds, Self.baseInterval)
             }
             if transientFailureCount >= Self.offlineThreshold {
                 authState = .offline

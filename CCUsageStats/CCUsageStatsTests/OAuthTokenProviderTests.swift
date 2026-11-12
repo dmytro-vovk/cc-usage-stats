@@ -205,6 +205,18 @@ final class OAuthTokenProviderTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.requestCount, 1, "the retry persists; it does not refresh again")
     }
 
+    func testStoreReplaceIsConditionalOnTheStoredRefreshToken() throws {
+        let a = expiringSession()
+        let fresh = OAuthSession(accessToken: "f", refreshToken: "fresh-refresh", expiresAt: 9, scopes: ["user:profile"])
+        XCTAssertEqual(try OAuthSessionStore.replace(fresh, ifStoredRefreshTokenIs: a.refreshToken), .unreadable)
+        try OAuthSessionStore.write(a)
+        XCTAssertEqual(try OAuthSessionStore.replace(fresh, ifStoredRefreshTokenIs: "someone-else"), .holdsAnother(isFresh: false))
+        XCTAssertEqual(OAuthSessionStore.read()?.refreshToken, a.refreshToken)
+        XCTAssertEqual(try OAuthSessionStore.replace(fresh, ifStoredRefreshTokenIs: a.refreshToken), .replaced)
+        XCTAssertEqual(try OAuthSessionStore.replace(fresh, ifStoredRefreshTokenIs: a.refreshToken), .holdsAnother(isFresh: true))
+        XCTAssertEqual(OAuthSessionStore.read()?.refreshToken, "fresh-refresh")
+    }
+
     // MARK: - (c) single-flight
 
     func testConcurrentAccessTokenCallsTriggerExactlyOneRefresh() async {

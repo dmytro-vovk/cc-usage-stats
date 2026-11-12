@@ -152,7 +152,39 @@ nonisolated enum OAuthSessionStore {
         return try? JSONDecoder().decode(OAuthSession.self, from: data)
     }
 
+    /// Serialises every change to the item within this process, so
+    /// `replace` can compare and write as one step against a concurrent
+    /// `write` (a new account being connected) or `delete`.
+    private static let lock = NSLock()
+
+    enum ReplaceOutcome: Equatable {
+        case replaced
+        /// The item could not be read (locked Keychain) or is gone.
+        case unreadable
+        /// The item holds some other session; `isFresh` when it is already
+        /// the one being written.
+        case holdsAnother(isFresh: Bool)
+    }
+
+    /// Writes `fresh` only if the stored session still has `refreshToken`.
+    static func replace(_ fresh: OAuthSession, ifStoredRefreshTokenIs refreshToken: String) throws -> ReplaceOutcome {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let stored = read() else { return .unreadable }
+        guard stored.refreshToken == refreshToken else {
+            return .holdsAnother(isFresh: stored.refreshToken == fresh.refreshToken)
+        }
+        try writeLocked(fresh)
+        return .replaced
+    }
+
     static func write(_ session: OAuthSession) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try writeLocked(session)
+    }
+
+    private static func writeLocked(_ session: OAuthSession) throws {
         let data = try JSONEncoder().encode(session)
         let updateStatus = SecItemUpdate(
             baseQuery as CFDictionary,
@@ -172,6 +204,8 @@ nonisolated enum OAuthSessionStore {
     }
 
     static func delete() throws {
+        lock.lock()
+        defer { lock.unlock() }
         let status = SecItemDelete(baseQuery as CFDictionary)
         if status == errSecItemNotFound { return }
         guard status == errSecSuccess else {

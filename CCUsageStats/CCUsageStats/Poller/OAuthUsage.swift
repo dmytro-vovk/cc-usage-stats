@@ -37,11 +37,13 @@ enum OAuthUsage {
         case 403:
             let text = String(data: body, encoding: .utf8) ?? ""
             if text.contains("user:profile") { return .insufficientScope }
-            // Only the API's own JSON error is a verdict on the token. A 403
-            // from something in front of it (WAF challenge, VPN or geo
-            // block) is an HTML or empty page and says nothing about the
-            // grant: treating it as `.invalidToken` signed the account out.
-            let isAPIError = (try? JSONSerialization.jsonObject(with: body)) is [String: Any]
+            // Only the API's own error envelope (`{"type":"error","error":
+            // {…}}`) is a verdict on the token. A 403 from something in
+            // front of it (WAF challenge, proxy, VPN or geo block) is some
+            // other page or JSON and says nothing about the grant: treating
+            // it as `.invalidToken` signed the account out.
+            let envelope = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+            let isAPIError = envelope?["type"] as? String == "error" && envelope?["error"] is [String: Any]
             return isAPIError ? .invalidToken : .transient("forbidden (not an API error)")
         case 429:
             return .rateLimited

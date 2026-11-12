@@ -721,21 +721,21 @@ actor OAuthTokenProvider {
     /// invalidated, so it is retried on every later call rather than left
     /// until the next rotation.
     private func persist(_ fresh: OAuthSession, replacing previous: OAuthSession) {
-        guard let stored = OAuthSessionStore.read() else {
-            // Unreadable right now (locked Keychain), or disconnected.
-            unpersisted = (fresh, previous)
-            return
-        }
-        guard stored.refreshToken == previous.refreshToken else {
-            if stored.refreshToken != fresh.refreshToken {
-                OAuthFlow.log.notice("stored OAuth session changed during refresh; not overwriting it")
-            }
-            unpersisted = nil
-            return
-        }
         do {
-            try OAuthSessionStore.write(fresh)
-            unpersisted = nil
+            // Compare and write are one step under the store's lock: a new
+            // account written in between cannot be overwritten.
+            switch try OAuthSessionStore.replace(fresh, ifStoredRefreshTokenIs: previous.refreshToken) {
+            case .replaced:
+                unpersisted = nil
+            case .unreadable:
+                // Locked Keychain right now, or disconnected.
+                unpersisted = (fresh, previous)
+            case .holdsAnother(let isFresh):
+                if !isFresh {
+                    OAuthFlow.log.notice("stored OAuth session changed during refresh; not overwriting it")
+                }
+                unpersisted = nil
+            }
         } catch {
             unpersisted = (fresh, previous)
             OAuthFlow.log.error("failed to persist rotated OAuth session: \(String(describing: error), privacy: .public)")
