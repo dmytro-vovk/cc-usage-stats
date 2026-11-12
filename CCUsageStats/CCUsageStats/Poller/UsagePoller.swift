@@ -245,7 +245,7 @@ final class UsagePoller: ObservableObject {
             // is kept.
             if sleepingUntilReset {
                 sleepingUntilReset = false
-                currentBackoffSeconds = min(currentBackoffSeconds, Self.baseInterval)
+                currentBackoffSeconds = Self.baseInterval
             }
             if transientFailureCount >= Self.offlineThreshold {
                 authState = .offline

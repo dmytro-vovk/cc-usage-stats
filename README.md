@@ -335,8 +335,10 @@ toggle off removes our trust records along with the hooks. Trust covers the hook
 updates don't need re-trusting. Codex keys trust by a hook's position in
 `hooks.json`: ours always go *after* your groups, and the app refuses (and
 tells you why) to rewrite a file where fixing ours would move one of
-yours. Turning the toggle off can shift your groups that came after ours;
-Codex then asks you to trust those again.
+yours. The same goes for turning the toggle off: if you added groups after
+ours, removing ours would shift them and Codex would ask you to trust them
+again, so the app leaves the file alone and says so — remove our entries by
+hand, or move them to the end of each event and switch it off again.
 
 Codex 0.149 fires no hook when you interrupt a turn (Esc), so an
 interrupted session shows Working until its next event.
@@ -657,7 +659,7 @@ Polling cadence is adaptive:
 | --- | --- |
 | 0–98% | 60s |
 | >98% & <100% | 10s (tight tracking near the cap) |
-| 100% | sleep until 30s before the window resets (≥10s minimum) |
+| 100% | sleep until 30s before the window resets (≥10s minimum); a failed poll goes back to 60s |
 | 429 | exponential backoff 60→120→240→…→cap 600s |
 | Wake from sleep | immediate refresh (no delay) |
 
