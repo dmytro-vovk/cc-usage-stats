@@ -63,11 +63,16 @@ struct MCPServer {
         guard let msg = obj as? [String: Any] else {
             return Self.encode(error: -32600, message: "Invalid Request", id: NSNull())
         }
-        // No method: a response to something we never sent. No id: a notification.
-        guard let method = msg["method"] as? String, let id = msg["id"] else { return nil }
+        // No id: a notification, never answered. A result or error: a
+        // response to something we never sent.
+        guard let id = msg["id"], msg["result"] == nil, msg["error"] == nil else { return nil }
         // MCP request ids are strings or numbers, never null.
         guard id is String || (id is NSNumber && CFGetTypeID(id as CFTypeRef) != CFBooleanGetTypeID()) else {
             return Self.encode(error: -32600, message: "Invalid Request: id must be a string or number", id: NSNull())
+        }
+        // An id without a usable method is a request someone is waiting on.
+        guard let method = msg["method"] as? String else {
+            return Self.encode(error: -32600, message: "Invalid Request: method must be a string", id: id)
         }
         let params = msg["params"] as? [String: Any] ?? [:]
 
@@ -93,7 +98,7 @@ struct MCPServer {
             ]]], id: id)
         case "tools/call":
             guard params["name"] as? String == Self.toolName else {
-                return Self.encode(result: Self.toolResult("Unknown tool: \(params["name"] ?? "")", isError: true), id: id)
+                return Self.encode(error: -32602, message: "Unknown tool: \(params["name"] ?? "")", id: id)
             }
             guard let text = Self.jsonText(usage()) else {
                 return Self.encode(result: Self.toolResult("Couldn't encode the usage report.", isError: true), id: id)

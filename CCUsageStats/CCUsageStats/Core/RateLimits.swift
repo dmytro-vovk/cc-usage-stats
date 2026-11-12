@@ -124,7 +124,10 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         let text = message?.lowercased() ?? ""
         let named = models.filter { key, _ in
             let model = key.hasPrefix("seven_day_") ? String(key.dropFirst("seven_day_".count)) : key
-            return !model.isEmpty && text.range(of: #"\b"# + NSRegularExpression.escapedPattern(for: model) + #"\b"#,
+            // The key slugs a multi-word name with "_" ("opus_4"); the
+            // message writes it with a space or a hyphen ("Opus 4").
+            let words = model.split(separator: "_").map { NSRegularExpression.escapedPattern(for: String($0)) }
+            return !words.isEmpty && text.range(of: #"\b"# + words.joined(separator: #"[\s_-]+"#) + #"\b"#,
                                                 options: .regularExpression) != nil
         }
         return ([fiveHour, sevenDay].compactMap { $0 } + Array(named.values))

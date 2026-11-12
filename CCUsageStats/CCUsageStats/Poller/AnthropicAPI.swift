@@ -52,7 +52,7 @@ enum AnthropicAPI {
         let utilKey = "anthropic-ratelimit-unified-\(suffix)-utilization"
         let resetKey = "anthropic-ratelimit-unified-\(suffix)-reset"
         guard let utilStr = headers[utilKey],
-              let util = Double(utilStr),
+              let util = Double(utilStr), util.isFinite,
               let resetStr = headers[resetKey],
               let reset = Int64(resetStr) else {
             return nil

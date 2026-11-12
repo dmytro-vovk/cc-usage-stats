@@ -94,4 +94,18 @@ final class AnthropicAPITests: XCTestCase {
         if case .transient = result { return }
         XCTFail()
     }
+
+    /// `Double("nan")` and `Double("inf")` parse. A non-finite utilization is
+    /// a malformed header, not a reading: downstream `Int(x.rounded())` traps.
+    func testNonFiniteUtilizationIsNotAWindow() {
+        for bad in ["nan", "inf", "-inf", "NaN", "infinity"] {
+            var headers = validHeaders
+            headers["anthropic-ratelimit-unified-5h-utilization"] = bad
+            guard case let .success(snap) = AnthropicAPI.parse(status: 200, headers: headers, body: okBody) else {
+                XCTFail("the 7d window alone is still a reading (\(bad))"); continue
+            }
+            XCTAssertNil(snap.fiveHour, bad)
+            XCTAssertNotNil(snap.sevenDay, bad)
+        }
+    }
 }

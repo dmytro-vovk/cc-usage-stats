@@ -84,11 +84,25 @@ final class MCPServerTests: XCTestCase {
         XCTAssertEqual((r["result"] as? [String: Any])?["isError"] as? Bool, false)
     }
 
-    func testUnknownToolIsAToolError() throws {
+    /// MCP: an unknown tool is a protocol error (-32602), not a tool result.
+    func testUnknownToolIsInvalidParams() throws {
         let r = try reply(#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"rm_rf"}}"#)
-        let result = try XCTUnwrap(r["result"] as? [String: Any])
-        XCTAssertEqual(result["isError"] as? Bool, true)
+        XCTAssertNil(r["result"])
+        XCTAssertEqual((r["error"] as? [String: Any])?["code"] as? Int, -32602)
+        XCTAssertEqual(r["id"] as? Int, 5)
         XCTAssertEqual(calls, 0)
+    }
+
+    /// An id makes it a request; without a usable method it is an invalid
+    /// one, and the caller is waiting for an answer.
+    func testRequestWithoutAUsableMethodIsInvalidRequest() throws {
+        for line in [#"{"jsonrpc":"2.0","id":7}"#, #"{"jsonrpc":"2.0","id":7,"method":42}"#] {
+            let r = try reply(line)
+            XCTAssertEqual((r["error"] as? [String: Any])?["code"] as? Int, -32600, line)
+            XCTAssertEqual(r["id"] as? Int, 7, line)
+        }
+        XCTAssertNil(server.handle(line: #"{"jsonrpc":"2.0","id":9,"error":{"code":1,"message":"x"}}"#), "a client's error response")
+        XCTAssertNil(server.handle(line: #"{"jsonrpc":"2.0","method":42}"#), "no id: nothing to answer")
     }
 
     func testUnknownMethodIsMethodNotFound() throws {

@@ -195,6 +195,12 @@ final class StopStatesTests: XCTestCase {
                                         models: ["seven_day_fable": w(100, 7_000), "seven_day_opus": w(100, 8_000)])
         XCTAssertEqual(models.limitResetsAt(now: 1_000, message: fable), 7_000)
         XCTAssertEqual(models.limitResetsAt(now: 1_000, message: "API Error: Rate limit reached"), 2_000)
+        // A multi-word model name is slugged with "_" in the key, while the
+        // message spells it with a space (or a hyphen).
+        let multi = RateLimitsSnapshot(fiveHour: w(10, 2_000), sevenDay: nil, models: ["seven_day_opus_4": w(100, 8_000)])
+        XCTAssertEqual(multi.limitResetsAt(now: 1_000, message: "You've reached your Opus 4 limit."), 8_000)
+        XCTAssertEqual(multi.limitResetsAt(now: 1_000, message: "You've reached your opus-4 limit."), 8_000)
+        XCTAssertNil(multi.limitResetsAt(now: 1_000, message: "You've reached your Opus 41 limit."))
         XCTAssertNil(RateLimitsSnapshot(fiveHour: w(10, 2_000), sevenDay: nil, models: ["seven_day_opus": w(100, 8_000)])
             .limitResetsAt(now: 1_000, message: fable), "another model's cap says nothing about this one")
     }
