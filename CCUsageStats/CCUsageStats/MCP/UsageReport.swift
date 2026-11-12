@@ -11,12 +11,14 @@ enum UsageReport {
     /// Says what `projected_cap_at` is. Agents took it for the reset.
     static let paceNote = "projected_cap_at is when used_percent would reach 100% at the average rate so far this window. It is not a reset: the window resets at resets_at."
 
+    /// `codexCache`: kept by a long-lived caller (the MCP server) so Codex's
+    /// session logs are only re-read when they changed.
     static func load(stateURL: URL, historyURL: URL, codexDirectory: URL, now: Int64,
-                     timeZone: TimeZone = .current) -> [String: Any] {
+                     timeZone: TimeZone = .current, codexCache: CodexSessionReader.Cache? = nil) -> [String: Any] {
         build(
             state: try? CacheStore.read(at: stateURL),
             history: readHistory(historyURL),
-            codex: CodexSessionReader.latest(in: codexDirectory),
+            codex: CodexSessionReader.latest(in: codexDirectory, cache: codexCache),
             now: now,
             timeZone: timeZone
         )

@@ -42,7 +42,7 @@ final class UsageMCPSettings: ObservableObject {
                        : "claude mcp remove --scope user \(ClaudeMCPRegistration.serverName)")
             }
             if on {
-                try ClaudeMCPRegistration.install(cli: cli, binary: binary, run: { try ClaudeMCPRegistration.liveRun($0, $1) })
+                try ClaudeMCPRegistration.install(cli: cli, binary: binary, claudeJSON: try? Data(contentsOf: ClaudeMCPRegistration.claudeJSONURL), run: { try ClaudeMCPRegistration.liveRun($0, $1) })
             } else {
                 try ClaudeMCPRegistration.uninstall(cli: cli, run: { try ClaudeMCPRegistration.liveRun($0, $1) })
             }

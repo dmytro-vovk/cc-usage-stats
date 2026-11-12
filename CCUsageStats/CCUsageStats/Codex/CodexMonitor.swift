@@ -185,9 +185,13 @@ final class CodexMonitor: ObservableObject {
     /// FSEvents reports directories, with a trailing slash. A sessions folder
     /// created after launch is caught by the periodic rescan instead: matching
     /// `~/.codex/` itself would fire on every SQLite write.
+    ///
+    /// FSEvents reports real paths: with `~/.codex` (or `sessions`) a
+    /// symlink, as dotfile setups have it, the path as configured never
+    /// matches, so the resolved one is accepted too.
     nonisolated func isUnderSessions(_ path: String) -> Bool {
-        let root = sessionsDirectory.standardizedFileURL.path
-        return path == root || path.hasPrefix(root + "/")
+        let roots = Set([sessionsDirectory.standardizedFileURL.path, sessionsDirectory.resolvingSymlinksInPath().path])
+        return roots.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
     /// One read at a time; a change arriving mid-read schedules one more.

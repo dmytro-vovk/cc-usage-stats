@@ -80,12 +80,34 @@ nonisolated enum ClaudeMCPRegistration {
         return found
     }
 
-    static func install(cli: String, binary: String, run: Runner) throws {
+    /// The entry currently registered under our name, as the JSON
+    /// `claude mcp add-json` takes — whatever shape the user gave it.
+    static func registeredEntryJSON(claudeJSON: Data?) -> String? {
+        guard let claudeJSON,
+              let root = try? JSONSerialization.jsonObject(with: claudeJSON) as? [String: Any],
+              let entry = (root["mcpServers"] as? [String: Any])?[serverName] as? [String: Any],
+              let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// `claudeJSON`: `~/.claude.json` as it is now. With it, an entry that
+    /// was registered before is put back if the new one can't be added —
+    /// remove-then-add would otherwise leave the user with none.
+    static func install(cli: String, binary: String, claudeJSON: Data? = nil, run: Runner) throws {
+        let previous = registeredEntryJSON(claudeJSON: claudeJSON)
         // add-json refuses an existing name, so replace: remove (fails
         // harmlessly when absent), then add.
         _ = try run(cli, removeArguments)
         let (status, output) = try run(cli, addArguments(binary: binary))
-        guard status == 0 else { throw RegistrationError.cliFailed(output) }
+        guard status != 0 else { return }
+        if let previous {
+            let restored = (try? run(cli, ["mcp", "add-json", "--scope", "user", serverName, previous]))?.status == 0
+            if !restored {
+                throw RegistrationError.cliFailed("\(output); restoring the previous entry failed too")
+            }
+        }
+        throw RegistrationError.cliFailed(output)
     }
 
     /// True when the user registered a copy's bundle executable — what this
@@ -149,6 +171,23 @@ nonisolated enum ClaudeMCPRegistration {
         return dirs.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: ":")
     }
 
+    static let loginShell = "/bin/zsh"
+
+    /// The PATH a terminal would have, asked of a login shell once. nil
+    /// when it can't be had.
+    static let loginShellPATH: String? = {
+        guard let out = try? liveRun(loginShell, ["-lc", #"printf '\n%s' "$PATH""#], timeout: 5), out.status == 0 else { return nil }
+        return parseLoginShellPATH(out.output)
+    }()
+
+    /// The last line of the shell's output (rc files may print before it),
+    /// when it looks like a PATH.
+    static func parseLoginShellPATH(_ output: String) -> String? {
+        guard let last = output.split(separator: "\n", omittingEmptySubsequences: true).last.map(String.init),
+              last.hasPrefix("/"), !last.contains(" ") || last.contains(":") else { return nil }
+        return last
+    }
+
     /// Runs `cli` with a hard deadline. Output is drained on its own thread
     /// so a chatty child can't block on a full pipe, and on timeout the
     /// child is killed (TERM, then KILL) and we stop waiting for EOF — a
@@ -158,7 +197,11 @@ nonisolated enum ClaudeMCPRegistration {
         p.executableURL = URL(fileURLWithPath: cli)
         p.arguments = args
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = childPATH(cli: cli, inherited: environment["PATH"])
+        // The login shell's PATH last, for a node kept somewhere else (nvm,
+        // asdf). Not for the login shell itself: that is how it is asked.
+        let inherited = [environment["PATH"], cli == loginShell ? nil : loginShellPATH]
+            .compactMap { $0 }.joined(separator: ":")
+        environment["PATH"] = childPATH(cli: cli, inherited: inherited.isEmpty ? nil : inherited)
         p.environment = environment
         let pipe = Pipe()
         p.standardOutput = pipe

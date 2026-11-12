@@ -76,4 +76,32 @@ final class ClaudeMCPRegistrationTests: XCTestCase {
         XCTAssertEqual(ClaudeMCPRegistration.childPATH(cli: "/Users/u/.nvm/v22/bin/claude", inherited: nil),
                        "/Users/u/.nvm/v22/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
     }
+
+    /// Replacing an entry is remove-then-add; when the add fails the entry
+    /// that was there goes back, in the shape the user had it.
+    func testFailedInstallPutsThePreviousEntryBack() throws {
+        let json = Data(#"{"mcpServers":{"cc-usage-stats":{"type":"stdio","command":"/old/bin","args":["--mcp-server"],"env":{"A":"1"}}}}"#.utf8)
+        var runs: [[String]] = []
+        XCTAssertThrowsError(try ClaudeMCPRegistration.install(cli: "/c", binary: bin, claudeJSON: json) { _, args in
+            runs.append(args)
+            let isNew = args[1] == "add-json" && args.last?.contains("/old/bin") == false
+            return (isNew ? 1 : 0, "boom")
+        })
+        XCTAssertEqual(runs.map { $0[1] }, ["remove", "add-json", "add-json"])
+        let restored = try XCTUnwrap(runs.last?.last)
+        XCTAssertTrue(restored.contains(#""command":"/old/bin""#) && restored.contains(#""env":{"A":"1"}"#), restored)
+        // Nothing was registered before: nothing to put back.
+        runs = []
+        XCTAssertThrowsError(try ClaudeMCPRegistration.install(cli: "/c", binary: bin, claudeJSON: Data("{}".utf8)) { _, args in
+            runs.append(args)
+            return (args[1] == "add-json" ? 1 : 0, "boom")
+        })
+        XCTAssertEqual(runs.map { $0[1] }, ["remove", "add-json"])
+    }
+
+    func testLoginShellPATHIsTheLastLineWhenItLooksLikeOne() {
+        XCTAssertEqual(ClaudeMCPRegistration.parseLoginShellPATH("motd from an rc file\n/Users/u/.nvm/bin:/usr/bin"), "/Users/u/.nvm/bin:/usr/bin")
+        XCTAssertNil(ClaudeMCPRegistration.parseLoginShellPATH("command not found"))
+        XCTAssertNil(ClaudeMCPRegistration.parseLoginShellPATH(""))
+    }
 }

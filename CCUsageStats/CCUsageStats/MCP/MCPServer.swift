@@ -37,12 +37,14 @@ struct MCPServer {
     /// Serves stdin until EOF.
     static func runStdio() -> Never {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let codexCache = CodexSessionReader.Cache()
         let server = MCPServer(version: version) {
             UsageReport.load(
                 stateURL: Paths.liveAppSupportDir.appendingPathComponent("state.json"),
                 historyURL: Paths.liveAppSupportDir.appendingPathComponent("history.jsonl"),
                 codexDirectory: CodexSessionReader.defaultDirectory,
-                now: Int64(Date().timeIntervalSince1970)
+                now: Int64(Date().timeIntervalSince1970),
+                codexCache: codexCache
             )
         }
         while let line = readLine(strippingNewline: true) {

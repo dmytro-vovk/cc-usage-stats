@@ -105,4 +105,18 @@ final class CodexMonitorTests: XCTestCase {
         let calls = await gate.calls
         XCTAssertEqual(calls, 2)
     }
+
+    /// FSEvents reports resolved paths; `~/.codex` is a symlink in dotfile setups.
+    func testEventsUnderASymlinkedCodexHomeCount() throws {
+        let base = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("cm-\(UUID().uuidString)")
+        let real = base.appendingPathComponent("dotfiles/codex/sessions")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let link = base.appendingPathComponent(".codex")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: base.appendingPathComponent("dotfiles/codex"))
+        let m = CodexMonitor(sessionsDirectory: link.appendingPathComponent("sessions"), authURL: link.appendingPathComponent("auth.json"))
+        XCTAssertTrue(m.isUnderSessions(real.path + "/2026/11/12/"))
+        XCTAssertTrue(m.isUnderSessions(link.path + "/sessions/"))
+        XCTAssertFalse(m.isUnderSessions(base.appendingPathComponent("dotfiles/codex/sqlite").path + "/"))
+    }
 }
