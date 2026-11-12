@@ -231,8 +231,9 @@ toolbar tabs:
   Both; Show active Claude Code sessions (with the hook status); Show
   active Codex sessions (hook status and whether Codex trusts them); Usage
   MCP server for Claude Code / Codex (see [Usage MCP server](#usage-mcp-server));
-  Check for updates (status, **Check now**, and release-notes / `.dmg`
-  links when a newer release is out — see [Update check](#update-check)).
+  Check for updates (status, **Check now**, and a **Download from
+  ccusagestats.app** link when a newer release is out — see
+  [Update check](#update-check)).
 - **Accounts** — *Claude*: connection status, **Connect / Reconnect
   account** (browser OAuth, see below), **Set / Change token…** (the
   paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
@@ -357,7 +358,9 @@ interrupted session shows Working until its next event.
 Optional, off by default: **Settings → Accounts → Track Codex usage**.
 
 - **Passive (default).** The Codex CLI writes every session to
-  `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, and each turn logs the
+  `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (under `$CODEX_HOME`
+  instead of `~/.codex` when that is set, here and for `config.toml`
+  below), and each turn logs the
   account's rate limits. The app watches that folder (FSEvents) and shows
   the newest reading. Local and read-only — no credentials, no network.
   Only the main `codex` limit is shown; per-model Codex limits are not.
@@ -404,7 +407,10 @@ a large fan-out.
   `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace`
   (on-pace percent, ahead or not, projected time at 100% — which is not
   the reset), the 5-hour `forecast_seconds_to_cap`, plus `as_of`,
-  `age_seconds` and `stale` (older than 15 minutes) per source. Every time
+  `age_seconds` and `stale` (older than 15 minutes) per source. A Claude
+  window the latest poll did not report (it was carried over from an
+  earlier one) carries its own `captured_at`, `age_seconds` and `stale`,
+  which override the source's for that window. Every time
   comes as epoch seconds, UTC `*_iso` and `*_local` — your wall time with
   the weekday spelled out (`Monday 2026-10-19 11:00 BST`), so agents quote
   the day instead of working it out. A window whose reset has passed
@@ -463,8 +469,11 @@ Each new release is also announced once with a macOS notification
 page. Permission to notify is asked the first time
 there is a release to announce, not at launch; refusing it (or turning
 the app off in System Settings → Notifications) leaves the dropdown and
-Settings links as the only signal. The announced tag is remembered, so
-daily checks and relaunches don't repeat it. Nothing is downloaded or
+Settings links as the only signal. Once the notification has actually
+been posted its tag is remembered, so daily checks and relaunches don't
+repeat it; one that never went out (the permission prompt left
+unanswered, or refused) is tried again on later checks, which is silent
+while permission stays off. Nothing is downloaded or
 installed automatically — install the new version yourself.
 
 - **Off switch:** Settings → General → **Check for updates**. Off means
@@ -605,12 +614,14 @@ does renew it automatically, in the background, shortly before the
 access token expires, writing the rotated session back to the
 `oauth-session` Keychain item. Refreshes are serialized so two polls
 can't rotate the same grant twice; a refresh that fails on a network
-error or a 5xx is retried on the next poll, while an outright rejection
-retires the connection as described in
-[Connect Claude account](#connect-claude-account). A usage request
-rejected outright retires it the same way — that is the path a revoked
-grant takes, since revoking does not wait for the access token's own
-expiry and so never gets as far as a refresh.
+error, a 5xx, a timeout (408) or a rate limit (429) is retried on the next
+poll, while an outright rejection retires the connection as described in
+[Connect Claude account](#connect-claude-account). A usage request the
+server answers with a 401 gets one more chance: the app refreshes the
+token once and asks again, since the server can retire an access token
+before its stated expiry. A revoked grant fails that refresh too (or the
+fresh token is refused as well), and that retires the connection the same
+way — without waiting for the access token's own expiry.
 
 The app never reads Claude Code's Keychain on a timer: every probe
 happens under an explicit click, so the macOS access prompt only ever
@@ -680,7 +691,9 @@ account `oauth-token`). It is never logged or written outside Keychain.
 
 Sample history is appended to
 `~/Library/Application Support/cc-usage-stats/history.jsonl` and trimmed
-to the current 5-hour window. It survives app restarts so the chart
+to the current 5-hour window — or, for an account with no 5-hour limit,
+to the current weekly window, at one sample every five minutes. It
+survives app restarts so the chart
 isn't blank after relaunch. Polls taken after a window has reset — while
 the API has not yet started the next one — are not recorded: they would
 carry the expired window's percentage into the next window's chart.
@@ -703,8 +716,10 @@ threading. Apple Silicon — `scripts/build.sh` produces an arm64-only binary.
 ```
 
 Builds a Release `.app` into `dist/`, copies it to `~/Applications/`,
-and launches it. Or grab a pre-built `.dmg` / `.zip` from the
-[Releases page](https://github.com/dmytro-vovk/cc-usage-stats/releases)
+and launches it. Or download the signed, notarized `.dmg` of the latest
+release from [ccusagestats.app](https://ccusagestats.app/) (every
+release, with a `.zip` as well, is on the
+[Releases page](https://github.com/dmytro-vovk/cc-usage-stats/releases))
 and drop the `.app` into `/Applications/`.
 
 On first launch the menubar shows a red ⚠︎ triangle (no token yet).
@@ -743,6 +758,12 @@ security delete-generic-password -s cc-usage-stats -a oauth-session
 # Remove the session hooks first: turn off Settings → General → Show
 # active Claude Code sessions (or delete the entries whose command ends in
 # session-hook.sh from ~/.claude/settings.json)
+
+# Same for Codex, if you turned it on: turn off Settings → General → Show
+# active Codex sessions, which removes the hooks and Codex's trust records
+# for them (or delete the entries whose command ends in
+# codex-session-hook.sh from ~/.codex/hooks.json, and their
+# [hooks.state."…"] tables from ~/.codex/config.toml)
 
 # Unregister the usage MCP server first: turn off Settings → General →
 # Usage MCP server (or: claude mcp remove --scope user cc-usage-stats, and
