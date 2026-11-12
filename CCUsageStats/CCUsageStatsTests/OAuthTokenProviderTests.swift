@@ -156,6 +156,55 @@ final class OAuthTokenProviderTests: XCTestCase {
         }
     }
 
+    // MARK: - persisting the rotated session
+
+    func testRotatedSessionReplacesTheOneItWasRefreshedFrom() async throws {
+        try OAuthSessionStore.write(expiringSession())
+        let body = tokenResponseBody()
+        StubURLProtocol.handler = { _ in (200, body) }
+        let provider = OAuthTokenProvider(session: expiringSession(), urlSession: stubbedSession())
+
+        _ = await provider.accessToken(now: 0)
+
+        XCTAssertEqual(OAuthSessionStore.read()?.refreshToken, "fresh-refresh")
+    }
+
+    /// The user connected another account while this provider's refresh was
+    /// in flight: the stored session is no longer the one being rotated and
+    /// must not be overwritten with the old account's.
+    func testRefreshDoesNotOverwriteAnotherAccountsSession() async throws {
+        try OAuthSessionStore.write(
+            OAuthSession(accessToken: "b", refreshToken: "account-b", expiresAt: 9_999, scopes: ["user:profile"]))
+        let body = tokenResponseBody()
+        StubURLProtocol.handler = { _ in (200, body) }
+        let provider = OAuthTokenProvider(session: expiringSession(), urlSession: stubbedSession())
+
+        let result = await provider.accessToken(now: 0)
+
+        guard case .token("fresh") = result else { return XCTFail("refresh itself still succeeds, got \(result)") }
+        XCTAssertEqual(OAuthSessionStore.read()?.refreshToken, "account-b")
+    }
+
+    /// A rotation that couldn't be persisted (Keychain unreadable at that
+    /// moment) is retried on the next call instead of leaving the
+    /// invalidated refresh token on disk until the next rotation.
+    func testUnpersistedRotationIsRetriedOnTheNextCall() async throws {
+        // Nothing readable in the store: the first persist can't confirm
+        // what it would replace, so it holds the session back.
+        let body = tokenResponseBody()
+        StubURLProtocol.handler = { _ in (200, body) }
+        let provider = OAuthTokenProvider(session: expiringSession(), urlSession: stubbedSession())
+        _ = await provider.accessToken(now: 0)
+        XCTAssertNil(OAuthSessionStore.read())
+
+        // The store is readable again and still holds the old session.
+        try OAuthSessionStore.write(expiringSession())
+        _ = await provider.accessToken(now: 0)
+
+        XCTAssertEqual(OAuthSessionStore.read()?.refreshToken, "fresh-refresh")
+        XCTAssertEqual(StubURLProtocol.requestCount, 1, "the retry persists; it does not refresh again")
+    }
+
     // MARK: - (c) single-flight
 
     func testConcurrentAccessTokenCallsTriggerExactlyOneRefresh() async {

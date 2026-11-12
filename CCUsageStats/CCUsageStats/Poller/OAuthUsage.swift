@@ -36,7 +36,13 @@ enum OAuthUsage {
             return .invalidToken
         case 403:
             let text = String(data: body, encoding: .utf8) ?? ""
-            return text.contains("user:profile") ? .insufficientScope : .invalidToken
+            if text.contains("user:profile") { return .insufficientScope }
+            // Only the API's own JSON error is a verdict on the token. A 403
+            // from something in front of it (WAF challenge, VPN or geo
+            // block) is an HTML or empty page and says nothing about the
+            // grant: treating it as `.invalidToken` signed the account out.
+            let isAPIError = (try? JSONSerialization.jsonObject(with: body)) is [String: Any]
+            return isAPIError ? .invalidToken : .transient("forbidden (not an API error)")
         case 429:
             return .rateLimited
         case 500...599:

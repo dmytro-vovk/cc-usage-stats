@@ -197,6 +197,9 @@ enum OAuthFlow {
 
         let listener = try await LoopbackRedirectListener.start()
         defer { listener.stop() }
+        // Anything else that hits the port during the wait — any page in
+        // the browser can — is answered 404 instead of ending the flow.
+        listener.expect(state: state)
         let redirectURI = redirectURI(port: listener.port)
 
         // Binding ignores cancellation; don't open a browser for an
@@ -379,6 +382,9 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
     /// anything would otherwise leak an `NWConnection` for the process's
     /// remaining lifetime.
     private var openConnections: [ObjectIdentifier: NWConnection] = [:]
+    /// Both guarded by `stateLock` too.
+    private var expectedState: String?
+    private var stopped = false
     let port: UInt16
 
     /// Binds an ephemeral port on loopback only. `requiredLocalEndpoint`
@@ -523,8 +529,22 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
         }
     }
 
+    /// With this set, only a callback carrying `state` ends the wait; one
+    /// with any other state is a stray probe and gets the 404.
+    func expect(state: String) {
+        stateLock.lock()
+        expectedState = state
+        stateLock.unlock()
+    }
+
     private func handle(_ conn: NWConnection) {
         stateLock.lock()
+        // A connection handed over after `stop()` would never be cancelled.
+        guard !stopped else {
+            stateLock.unlock()
+            conn.cancel()
+            return
+        }
         openConnections[ObjectIdentifier(conn)] = conn
         stateLock.unlock()
         conn.start(queue: .main)
@@ -555,6 +575,9 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
 
     private func respond(_ conn: NWConnection, buffer: Data) {
         let request = String(data: buffer, encoding: .utf8) ?? ""
+        stateLock.lock()
+        let expectedState = expectedState
+        stateLock.unlock()
 
         let parsed: Callback? = {
             guard let line = request.split(separator: "\r\n").first,
@@ -566,6 +589,7 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
             let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
             let error = comps.queryItems?.first(where: { $0.name == "error" })?.value
             guard code != nil || error != nil else { return nil }
+            if let expectedState, state != expectedState { return nil }
             return Callback(code: code, state: state, error: error)
         }()
 
@@ -614,6 +638,7 @@ nonisolated final class LoopbackRedirectListener: @unchecked Sendable {
         // its response send completion hasn't run yet) so none outlive the
         // flow.
         stateLock.lock()
+        stopped = true
         let toCancel = Array(openConnections.values)
         openConnections.removeAll()
         stateLock.unlock()
@@ -638,6 +663,8 @@ actor OAuthTokenProvider {
 
     private var session: OAuthSession?
     private var inFlight: Task<OAuthSession, Error>?
+    /// A rotated session not yet on disk, with the one it replaces.
+    private var unpersisted: (fresh: OAuthSession, previous: OAuthSession)?
     private let urlSession: URLSession
 
     init(session: OAuthSession?, urlSession: URLSession = .shared) {
@@ -648,6 +675,7 @@ actor OAuthTokenProvider {
     /// Returns a usable access token, refreshing first when close to expiry.
     func accessToken(now: Int64 = Int64(Date().timeIntervalSince1970)) async -> TokenResult {
         guard let current = session else { return .unusable }
+        if let pending = unpersisted { persist(pending.fresh, replacing: pending.previous) }
         guard current.isExpiring(now: now) else { return .token(current.accessToken) }
 
         // Single-flight: two concurrent polls must not both rotate the
@@ -659,16 +687,7 @@ actor OAuthTokenProvider {
 
         let task = Task { () throws -> OAuthSession in
             let fresh = try await OAuthFlow.refresh(current, session: urlSession, now: now)
-            do {
-                try OAuthSessionStore.write(fresh)
-            } catch {
-                // The in-memory refresh still succeeded and must not fail
-                // because of this — but if disk still holds the old refresh
-                // token, the next launch reads a grant the server has
-                // already invalidated and silently drops out of the OAuth
-                // path. Surface it so that's diagnosable.
-                OAuthFlow.log.error("failed to persist rotated OAuth session: \(String(describing: error), privacy: .public)")
-            }
+            persist(fresh, replacing: current)
             return fresh
         }
         inFlight = task
@@ -688,6 +707,38 @@ actor OAuthTokenProvider {
                 return .unusable
             }
             return .temporarilyUnavailable(String(describing: error))
+        }
+    }
+
+    /// Writes a rotated session over the one it was refreshed from — and
+    /// only over that one. If the store now holds a different session, the
+    /// user connected another account while the refresh was in flight, and
+    /// this provider's poller has been replaced: overwriting would put the
+    /// old account back on the next launch.
+    ///
+    /// A failure never fails the refresh (the in-memory session is good),
+    /// but disk then still holds a refresh token the server has already
+    /// invalidated, so it is retried on every later call rather than left
+    /// until the next rotation.
+    private func persist(_ fresh: OAuthSession, replacing previous: OAuthSession) {
+        guard let stored = OAuthSessionStore.read() else {
+            // Unreadable right now (locked Keychain), or disconnected.
+            unpersisted = (fresh, previous)
+            return
+        }
+        guard stored.refreshToken == previous.refreshToken else {
+            if stored.refreshToken != fresh.refreshToken {
+                OAuthFlow.log.notice("stored OAuth session changed during refresh; not overwriting it")
+            }
+            unpersisted = nil
+            return
+        }
+        do {
+            try OAuthSessionStore.write(fresh)
+            unpersisted = nil
+        } catch {
+            unpersisted = (fresh, previous)
+            OAuthFlow.log.error("failed to persist rotated OAuth session: \(String(describing: error), privacy: .public)")
         }
     }
 

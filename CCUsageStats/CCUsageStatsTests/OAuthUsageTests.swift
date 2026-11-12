@@ -107,6 +107,19 @@ final class OAuthUsageTests: XCTestCase {
         XCTFail("expected .invalidToken, got \(result)")
     }
 
+    /// A 403 that isn't the API's own JSON error comes from something in
+    /// front of it (a WAF challenge, a VPN or geo block). It says nothing
+    /// about the grant, so it must not sign the account out.
+    func test403ThatIsNotAnAPIErrorIsTransient() {
+        for raw in ["<html><body>Access denied</body></html>", "", "Forbidden"] {
+            let result = OAuthUsage.parse(status: 403, body: body(raw))
+            guard case .transient = result else {
+                XCTFail("expected .transient for a non-API 403 body \(raw.debugDescription), got \(result)")
+                continue
+            }
+        }
+    }
+
     func test401YieldsInvalidToken() {
         let result = OAuthUsage.parse(status: 401, body: Data())
         if case .invalidToken = result { return }

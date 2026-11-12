@@ -272,4 +272,31 @@ final class LoopbackRedirectListenerTests: XCTestCase {
         XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Sign-in was not completed"))
         _ = try await waitTask.value
     }
+
+    // MARK: - a callback carrying someone else's state is a stray probe
+
+    /// Any page open in the browser can fire a GET at the loopback port. With
+    /// the expected state known, a callback that doesn't carry it must not
+    /// end the wait (and so abort the sign-in with a state mismatch).
+    func testCallbackWithTheWrongStateDoesNotEndTheWait() async throws {
+        let listener = try await LoopbackRedirectListener.start()
+        defer { listener.stop() }
+        listener.expect(state: "good")
+        let port = listener.port
+
+        let flag = ResolvedFlag()
+        let waitTask = observedWaitTask(listener, timeout: 5, flag: flag)
+
+        let stray = URL(string: "http://127.0.0.1:\(port)/callback?code=x&state=bad")!
+        let (_, strayResponse) = try await URLSession.shared.data(from: stray)
+        XCTAssertEqual((strayResponse as? HTTPURLResponse)?.statusCode, 404)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let resolvedEarly = await flag.isResolved
+        XCTAssertFalse(resolvedEarly, "a callback with the wrong state ended the wait")
+
+        _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/callback?code=A&state=good")!)
+        let callback = try await waitTask.value
+        XCTAssertEqual(callback.code, "A")
+        XCTAssertEqual(callback.state, "good")
+    }
 }
