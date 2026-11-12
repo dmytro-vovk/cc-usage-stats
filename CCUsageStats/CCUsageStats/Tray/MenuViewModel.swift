@@ -164,8 +164,9 @@ final class MenuViewModel: ObservableObject {
     private var history: UsageHistory?
     /// `resetsAt` of the window the newest history sample belongs to.
     private var historyWindowEnd: Int64?
-    /// Length of that window: a 5-hour history is not a weekly one.
-    private var historyWindowLength: Int64?
+    /// Length of the window `history.jsonl` was recorded for, persisted so a
+    /// relaunch still knows what the file holds.
+    static let historyWindowLengthKey = "cc-usage-stats.historyWindowLength"
     /// Set by `restartPolling` (the account may have changed): the first
     /// reading captured after this is checked against `historyWindowEnd`.
     private var historyCheckAfter: Int64?
@@ -633,8 +634,9 @@ final class MenuViewModel: ObservableObject {
         // window's for an account with no 5-hour limit.
         if let cached = newCached, let tracked = UsageHistory.tracked(cached.snapshot), let history {
             let five = tracked.window
-            if let length = historyWindowLength, length != tracked.length { history.clear() }
-            historyWindowLength = tracked.length
+            let stored = (defaults.object(forKey: Self.historyWindowLengthKey) as? NSNumber)?.int64Value
+            if !UsageHistory.continues(storedLength: stored, length: tracked.length) { history.clear() }
+            if stored != tracked.length { defaults.set(tracked.length, forKey: Self.historyWindowLengthKey) }
             // First reading since the token or account changed: if its window
             // overlaps the one the history was drawn from, that history is
             // another account's. Mixed, it bends the sparkline and the forecast.
@@ -645,7 +647,9 @@ final class MenuViewModel: ObservableObject {
                 }
             }
             historyWindowEnd = five.resetsAt
-            let sample = UsageSample(t: cached.capturedAt, p: five.usedPercentage)
+            // Stamped with when this window was last reported: one only
+            // carried over from disk must not look like a fresh reading.
+            let sample = UsageSample(t: cached.capturedAt(of: tracked.key), p: five.usedPercentage)
             // Trim to the current window.
             let windowStart = five.resetsAt - tracked.length
             history.append(sample, keepFromEpoch: windowStart, windowEnd: five.resetsAt, minSpacing: tracked.minSpacing)

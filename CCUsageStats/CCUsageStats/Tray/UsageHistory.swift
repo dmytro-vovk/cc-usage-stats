@@ -80,10 +80,20 @@ final class UsageHistory {
     /// The window the history follows: the 5-hour session, or — for an
     /// account that has none — the weekly window, thinned to a sample every
     /// five minutes. nil when there is nothing to chart.
-    nonisolated static func tracked(_ snapshot: RateLimitsSnapshot) -> (window: WindowSnapshot, length: Int64, minSpacing: Int64)? {
-        if let five = snapshot.fiveHour { return (five, UsageColoring.fiveHourLength, 0) }
-        if snapshot.lacksFiveHourWindow, let seven = snapshot.sevenDay { return (seven, UsageColoring.weekLength, 300) }
+    nonisolated static func tracked(_ snapshot: RateLimitsSnapshot)
+        -> (window: WindowSnapshot, key: String, length: Int64, minSpacing: Int64)? {
+        if let five = snapshot.fiveHour { return (five, CachedState.fiveHourKey, UsageColoring.fiveHourLength, 0) }
+        if snapshot.lacksFiveHourWindow, let seven = snapshot.sevenDay {
+            return (seven, CachedState.sevenDayKey, UsageColoring.weekLength, 300)
+        }
         return nil
+    }
+
+    /// Whether history kept for a window `stored` seconds long (nil: a file
+    /// from before weekly history existed, so a 5-hour one) can be continued
+    /// for a window of `length`. A 5-hour history is not a weekly one.
+    nonisolated static func continues(storedLength stored: Int64?, length: Int64) -> Bool {
+        (stored ?? UsageColoring.fiveHourLength) == length
     }
 
     // MARK: - File I/O

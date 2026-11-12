@@ -143,4 +143,19 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertTrue(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + 86_400, length: week))
         XCTAssertFalse(UsageHistory.isDifferentWindow(previousEnd: end, newEnd: end + week, length: week))
     }
+
+    /// A file from before weekly history existed holds 5-hour samples.
+    func testLegacyHistoryIsFiveHourHistory() {
+        XCTAssertTrue(UsageHistory.continues(storedLength: nil, length: 5 * 3600))
+        XCTAssertFalse(UsageHistory.continues(storedLength: nil, length: 7 * 86_400))
+        XCTAssertTrue(UsageHistory.continues(storedLength: 7 * 86_400, length: 7 * 86_400))
+        XCTAssertFalse(UsageHistory.continues(storedLength: 7 * 86_400, length: 5 * 3600))
+    }
+
+    func testTrackedWindowNamesItsCacheKey() {
+        let week = WindowSnapshot(usedPercentage: 40, resetsAt: 700_000)
+        XCTAssertEqual(UsageHistory.tracked(.init(fiveHour: week, sevenDay: nil))?.key, CachedState.fiveHourKey)
+        XCTAssertEqual(UsageHistory.tracked(.init(fiveHour: nil, sevenDay: week, models: [:], fiveHourIsAbsent: true))?.key,
+                       CachedState.sevenDayKey)
+    }
 }

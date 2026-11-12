@@ -164,10 +164,16 @@ nonisolated enum ClaudeMCPRegistration {
     /// npm-installed `claude` is a `#!/usr/bin/env node` script: put the
     /// CLI's own directory (where its node usually lives) and the usual
     /// install prefixes ahead of what we inherited.
-    static func childPATH(cli: String, inherited: String?) -> String {
+    ///
+    /// `loginShell`: the PATH a terminal has. It goes right after the CLI's
+    /// directory and before the fallback prefixes, so the node the user's
+    /// shell would pick (nvm, asdf) wins over a Homebrew one that happens to
+    /// be installed as well.
+    static func childPATH(cli: String, inherited: String?, loginShell: String? = nil) -> String {
         var seen = Set<String>()
-        let dirs = [(cli as NSString).deletingLastPathComponent, "/opt/homebrew/bin", "/usr/local/bin"]
-            + (inherited ?? "/usr/bin:/bin").split(separator: ":").map(String.init)
+        func split(_ s: String?) -> [String] { (s ?? "").split(separator: ":").map(String.init) }
+        let dirs = [(cli as NSString).deletingLastPathComponent] + split(loginShell)
+            + ["/opt/homebrew/bin", "/usr/local/bin"] + split(inherited ?? "/usr/bin:/bin")
         return dirs.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: ":")
     }
 
@@ -197,11 +203,9 @@ nonisolated enum ClaudeMCPRegistration {
         p.executableURL = URL(fileURLWithPath: cli)
         p.arguments = args
         var environment = ProcessInfo.processInfo.environment
-        // The login shell's PATH last, for a node kept somewhere else (nvm,
-        // asdf). Not for the login shell itself: that is how it is asked.
-        let inherited = [environment["PATH"], cli == loginShell ? nil : loginShellPATH]
-            .compactMap { $0 }.joined(separator: ":")
-        environment["PATH"] = childPATH(cli: cli, inherited: inherited.isEmpty ? nil : inherited)
+        // Not for the login shell itself: that is how its PATH is asked.
+        environment["PATH"] = childPATH(cli: cli, inherited: environment["PATH"],
+                                        loginShell: cli == loginShell ? nil : loginShellPATH)
         p.environment = environment
         let pipe = Pipe()
         p.standardOutput = pipe

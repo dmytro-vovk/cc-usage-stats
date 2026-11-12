@@ -104,4 +104,11 @@ final class ClaudeMCPRegistrationTests: XCTestCase {
         XCTAssertNil(ClaudeMCPRegistration.parseLoginShellPATH("command not found"))
         XCTAssertNil(ClaudeMCPRegistration.parseLoginShellPATH(""))
     }
+
+    /// The node a terminal would run wins over a Homebrew one that is also installed.
+    func testLoginShellPATHComesBeforeTheFallbackPrefixes() {
+        let path = ClaudeMCPRegistration.childPATH(cli: "/Users/u/.local/bin/claude", inherited: "/usr/bin:/bin",
+                                                   loginShell: "/Users/u/.nvm/v22/bin:/opt/homebrew/bin:/usr/bin")
+        XCTAssertEqual(path, "/Users/u/.local/bin:/Users/u/.nvm/v22/bin:/opt/homebrew/bin:/usr/bin:/usr/local/bin:/bin")
+    }
 }

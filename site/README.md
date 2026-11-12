@@ -15,6 +15,11 @@ The download button names and links the latest published release;
 `scripts/deploy-site.sh` rewrites it (via `scripts/bump-site-version.sh`)
 from `gh release view`, commits that if it changed, then deploys — so run
 it after `gh release create`, never before the `.dmg` is uploaded.
+Between a release and that deploy the page corrects itself: a script at
+the end of `index.html` asks `api.github.com` for the latest release and,
+when it is newer than the stamped one, points the button at its `.dmg`.
+Any failure (offline, rate limit, an asset not on this repository's
+release URL) leaves the stamped link as it is.
 
 The `.app` TLD is on the HSTS preload list, so the site must be served over
 HTTPS; Cloudflare does that by default. `_headers` sets the security
