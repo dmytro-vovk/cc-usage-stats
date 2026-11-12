@@ -144,7 +144,7 @@ work between the two quotas. See [Codex usage](#codex-usage).
 - The **No token set** / **Token rejected** rows offer the one-click
   Keychain import plus **Set a token…**, which opens Settings on the
   Accounts tab.
-- Footer: **⚙ Settings…** (⌘,) + version label + **Quit**. All settings
+- Footer: **⚙ Settings…** (⌘,) + version label (opens [ccusagestats.app](https://ccusagestats.app/)) + **Quit**. All settings
   live in the [Settings window](#settings-window); the dropdown shows
   data only.
 

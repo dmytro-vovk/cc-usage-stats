@@ -2,14 +2,10 @@ import Foundation
 
 /// Outbound links to the project's own pages.
 enum AppLinks {
-    static let repository = "https://github.com/dmytro-vovk/cc-usage-stats"
-
     /// The project site, whose download button points at the latest release.
-    /// "Update available" and the update notification open this.
+    /// Everything in the dropdown that leads out opens this: the footer's
+    /// version label, "Update available" and the update notification. Not a
+    /// per-version page: builds that don't go through `scripts/build.sh`
+    /// report 0.0.0, which has none.
     nonisolated static let website = URL(string: "https://ccusagestats.app/")!
-
-    /// The releases *index*, deliberately not the running version's own tag
-    /// page: builds that don't go through `scripts/build.sh` report 0.0.0,
-    /// which has no tag and would 404. The index is correct for every build.
-    static let releases = URL(string: "\(repository)/releases")!
 }
