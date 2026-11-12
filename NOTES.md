@@ -8,4 +8,3 @@
 - CCUsageStats/CCUsageStats/Core/RateLimits.swift (`primaryWindow`) — a 5-hour account polled between two windows with no cached 5-hour window still leads the menubar pill with the weekly percentage (the dropdown now shows the 5-hour row as "Not yet observed").
 - Whether Claude Code fires `PostCompact` after the compaction it precomputes on an idle session was not observed live; the hook ignores it there either way (previous record is a finished turn).
 - scripts/setup-signing.sh:68 — `security import -A` lets any local process use the dev signing key. Not changed: testing a narrower import means re-creating the identity, which needs the login password at `security add-trusted-cert`.
-- site/index.html — the download button asks api.github.com for the latest release from the visitor's browser (so it can't lag the app's update link); not yet deployed, goes out with the next `scripts/deploy-site.sh`.
