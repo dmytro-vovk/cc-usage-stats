@@ -113,15 +113,10 @@ final class GeminiMonitor: ObservableObject {
             switch result {
             case .success(let s):
                 self.lastError = nil
-                let url = self.storeURL
-                // Off the main actor: a slow disk must not stall the menu.
-                await Task.detached(priority: .utility) { try? GeminiStore.write(s, to: url) }.value
-                // Tracking may have been switched off (and the file removed)
-                // while the write was in flight.
-                guard gen == self.generation, self.trackingEnabled else {
-                    GeminiStore.clear(at: url)
-                    return
-                }
+                // A few hundred bytes, written here with no suspension point,
+                // so tracking can't be switched off (and the file removed)
+                // between this check and the write.
+                try? GeminiStore.write(s, to: self.storeURL)
                 self.publish(s)
             case .failure(let e):
                 self.lastError = e.message

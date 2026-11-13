@@ -14,8 +14,10 @@ cap) — the same meter Claude Code's own `/usage` panel shows — right
 here in the menubar, without opening Claude Code.
 
 Optionally tracks **OpenAI Codex** rate limits too — read from the Codex
-CLI's local session logs, with opt-in live polling through the Codex CLI — so you can balance
-work between the two quotas. See [Codex usage](#codex-usage).
+CLI's local session logs, with opt-in live polling through the Codex CLI — and
+**Gemini** quota from Google's Antigravity CLI, so you can balance work
+between the quotas. See [Codex usage](#codex-usage) and
+[Gemini usage](#gemini-usage).
 
 ## What you see
 
@@ -61,6 +63,10 @@ work between the two quotas. See [Codex usage](#codex-usage).
   (one band with a `terminal` icon and the highest Codex window %), or
   **Both** (a Codex band appended to the Claude pill). In **Both**, a
   Claude token problem still shows as the warning triangle alone.
+- With [Gemini tracking](#gemini-usage) on, **Add a Gemini band** (same
+  setting) appends a `sparkle` band with the fullest Gemini quota group's
+  % to whichever pill you picked. It is left out while Claude has a token
+  problem or no reading yet, so the triangle stays visible.
 
 ### Dropdown
 
@@ -71,7 +77,7 @@ work between the two quotas. See [Codex usage](#codex-usage).
 
 - **Resizable width**: drag either side edge of the panel (280–720 pt,
   320 by default; remembered across opens and launches). From about 550 pt the content reflows into two
-  columns — Claude beside Codex, or with Codex tracking off, the 5-hour
+  columns — Claude beside Codex and Gemini, or with both tracked agents off, the 5-hour
   window beside the weekly ones (one column when the account has no
   5-hour limit) — and session titles get the extra room.
   Height still follows the content.
@@ -146,6 +152,10 @@ work between the two quotas. See [Codex usage](#codex-usage).
   the source: `session log`, `app-server`, or `live` for the endpoint
   fallback). Reset times are row tooltips, as
   for Claude.
+- With [Gemini tracking](#gemini-usage) on, a **Gemini** section below
+  it: one bar per quota group ("Gemini Models", "Claude and GPT models"),
+  with the even-pace mark on weekly ones and the reading age in the
+  header. If the last read failed, why is shown in red under the bars.
 - At the very top, your *active* Claude Code (and, opt-in, Codex) sessions — a status icon, the
   title and the time since their last event (hover for the status in
   words and the folder). Click one to open it. Hidden when nothing is
@@ -192,7 +202,8 @@ With Codex tracking on, warnings and **Limit reached** also fire for Codex
 windows — the 5-hour rule for its 5-hour window, the weekly rule for its
 weekly one (same sounds). Resets stay Claude-only: a Codex reset is only
 noticed when the next Codex session writes a log line, so a sound would
-arrive at an arbitrary later time.
+arrive at an arbitrary later time. Gemini quota groups (with Gemini
+tracking on) follow the weekly rule the same way, once per window.
 
 ### Colour by pace
 
@@ -204,8 +215,8 @@ orange; below, green. A fast week warns early (60% two days in is 2.1×),
 and a window that is high only because it is nearly over doesn't (82% with
 half a day left is under 1×). Under 50% stays green, and from 90% — or for
 a reading whose window has already reset — the colour follows usage
-alone. Applies to the dropdown bars, every menubar band, and Codex
-windows; the gauge needle always shows the absolute level.
+alone. Applies to the dropdown bars, every menubar band, and Codex and
+Gemini windows; the gauge needle always shows the absolute level.
 
 ### Settings window
 
@@ -228,7 +239,7 @@ windows; the gauge needle always shows the absolute level.
 toolbar tabs:
 
 - **General** — Launch at login; Menu-bar pill shows Claude / Codex /
-  Both; Show active Claude Code sessions (with the hook status); Show
+  Both, and **Add a Gemini band** while Gemini tracking is on; Show active Claude Code sessions (with the hook status); Show
   active Codex sessions (hook status and whether Codex trusts them); Usage
   MCP server for Claude Code / Codex (see [Usage MCP server](#usage-mcp-server));
   Check for updates (status, **Check now**, and a **Download from
@@ -238,6 +249,8 @@ toolbar tabs:
   account** (browser OAuth, see below), **Set / Change token…** (the
   paste sheet, see below). *Codex*: **Track Codex usage**, the sessions
   folder, plan, last seen, and the opt-in **Live polling** toggle.
+  *Gemini*: **Track Gemini usage**, last read, the last error, and
+  **Read now**.
 - **Alerts** — *Warnings*: per-window rules for **5-hour session**,
   **Weekly** and **Per-model weekly** (on/off + 1–99%) and the warning
   sound. *Resets*: **Announce resets** and the reset sound. *Colours*:
@@ -391,6 +404,26 @@ Optional, off by default: **Settings → Accounts → Track Codex usage**.
   [app-server spec](docs/superpowers/specs/2026-10-08-codex-app-server-design.md),
   [original spec](docs/superpowers/specs/2026-10-07-settings-window-and-codex-usage-design.md).
 
+### Gemini usage
+
+Optional, off by default: **Settings → Accounts → Track Gemini usage**.
+For Gemini used as an agent through Google's **Antigravity CLI** (`agy`).
+
+- **How it reads.** Every 5 minutes, on wake and when you click **Read
+  now**, the app runs `agy -p /usage --output-format json` and shows each
+  quota group it reports — today a weekly **Gemini Models** group (Gemini
+  Flash and Pro share one limit) and a weekly **Claude and GPT models**
+  group. `agy` answers `/usage` without starting an agent turn, so a read
+  spends none of your quota; it takes about 3 seconds. `agy` reports what
+  is *left*; the app shows it as used, like the other windows.
+- **Signed in as `agy` is.** The app keeps no Google credentials: `agy`
+  uses its own sign-in. The CLI is looked for in `/opt/homebrew/bin`,
+  `/usr/local/bin`, `~/.local/bin`, then your login shell's `PATH`. If it
+  can't be found or answers with an error (not signed in, say), that
+  message is shown in Settings and the dropdown, and the last good
+  reading stays up with its age.
+- **AI credits** (`agy`'s `/credits`) are not shown.
+
 ### Usage MCP server
 
 Optional, off by default: **Settings → General → Usage MCP server for
@@ -402,8 +435,10 @@ a large fan-out.
 
 - **What it returns.** One JSON object: for Claude (5-hour when the
   account has one, weekly, each
-  per-model weekly window) and Codex (each window of the newest reading —
-  session log, app-server or endpoint, named in `source`):
+  per-model weekly window), Codex (each window of the newest reading —
+  session log, app-server or endpoint, named in `source`) and Gemini
+  (each quota group from the app's last `agy /usage` read, with its
+  `group`; `available: false` while Gemini tracking is off):
   `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace`
   (on-pace percent, ahead or not, projected time at 100% — which is not
   the reset), the 5-hour `forecast_seconds_to_cap`, plus `as_of`,
@@ -418,8 +453,8 @@ a large fan-out.
 - **How it runs.** The agent launches
   `~/Library/Application Support/cc-usage-stats/bin/ccusagestats --mcp-server`
   — a symlink every launch of the app repoints at the running copy's
-  `Contents/MacOS/CCUsageStats` — a stdio MCP server that reads `state.json`, `history.jsonl` and
-  `~/.codex/sessions`, and exits when the agent does. No port, no network,
+  `Contents/MacOS/CCUsageStats` — a stdio MCP server that reads `state.json`, `history.jsonl`,
+  `gemini.json` and `~/.codex/sessions`, and exits when the agent does. No port, no network,
   no Keychain; it works whether or not the menu-bar app is running (stale
   data is marked as such).
 - **Registration.** Claude Code: `claude mcp add-json --scope user
@@ -498,7 +533,7 @@ Shortcuts' *Open URLs*) or scripts:
 
 | URL | Does |
 |---|---|
-| `ccusagestats://refresh` | Polls now: Claude usage, Codex, the status page |
+| `ccusagestats://refresh` | Polls now: Claude usage, Codex, Gemini, the status page |
 | `ccusagestats://settings?tab=general` | Opens Settings on **General** (also `accounts`, `alerts`; no `tab` = General) |
 
 ```bash
@@ -807,6 +842,9 @@ security delete-identity -c "CCUsageStats Dev"
   any `codex` run does. The app itself writes nothing there. Only if the
   CLI can't answer does the app send one request to `chatgpt.com` with
   the CLI's existing sign-in, read-only.
+- Gemini tracking (off by default) runs the Antigravity CLI
+  (`agy -p /usage`) every 5 minutes; `agy` contacts Google with its own
+  sign-in. The app sends nothing else and stores only the quota reading.
 - The usage MCP server (off by default) only reads local files and
   answers the agent that launched it over stdio; it opens no port and
   makes no requests. What an agent does with the numbers is up to the
@@ -814,6 +852,8 @@ security delete-identity -c "CCUsageStats Dev"
 - On disk under `~/Library/Application Support/cc-usage-stats/`:
   - `state.json` — latest rate-limit numbers + capture timestamp.
   - `history.jsonl` — sample log for the sparkline (current 5h window only; for an account with no 5-hour limit, the current weekly window, one sample per five minutes).
+  - `gemini.json` — the last Gemini quota reading, for the MCP server
+    (removed when Gemini tracking is switched off).
   - `v2-migrated` — empty sentinel.
 
 ## Scripts

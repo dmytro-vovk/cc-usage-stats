@@ -379,6 +379,22 @@ by design.
 - Tracking OFF: Codex section and band disappear; pill falls back to
   Claude.
 
+### 15a. Gemini usage
+
+- Accounts → **Track Gemini usage** ON (with `agy` installed and signed
+  in). Within ~3s the dropdown gains a **Gemini** section (one bar per
+  quota group, `N ago` in the header) and Accounts → **Last read** shows
+  an age; `~/Library/Application Support/cc-usage-stats/gemini.json`
+  exists. The numbers match `agy -p /usage` (used = 100 − remaining).
+- `get_usage` (MCP) has a `gemini` section with `available: true`, one
+  window per group (`gemini-weekly`, `3p-weekly`) with `pace`.
+- General → **Add a Gemini band** ON: a `sparkle` band joins the pill in
+  each pill mode; with no Claude token, only the red triangle.
+- With `agy` renamed away (or signed out): **Read now** shows the error
+  in red in Accounts and the dropdown; the last reading stays.
+- Tracking OFF: Gemini section and band disappear, `gemini.json` is
+  removed, and `get_usage` reports `gemini.available: false`.
+
 ### 16. Running sessions
 
 - First launch with tracking on (default): `~/.claude/settings.json` gains

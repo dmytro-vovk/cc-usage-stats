@@ -30,19 +30,9 @@ nonisolated struct GeminiBucket: Codable, Equatable, Sendable {
     func hasReset(now: Int64) -> Bool { now >= resetsAt }
 
     func effectivePercent(now: Int64) -> Double { hasReset(now: now) ? 0 : usedPercent }
-
-    /// Same window as `other`. `agy` recomputes an untouched bucket's reset
-    /// as "a week from now" on every call, so reset times seconds apart are
-    /// one window; a new window starts days later.
-    func sameWindow(as other: GeminiBucket) -> Bool {
-        id == other.id && abs(resetsAt - other.resetsAt) < GeminiSnapshot.resetJitter
-    }
 }
 
 nonisolated struct GeminiSnapshot: Codable, Equatable, Sendable {
-    /// Reset times closer than this are the same window (see `sameWindow`).
-    static let resetJitter: Int64 = 3_600
-
     /// In the order `agy` lists them.
     let buckets: [GeminiBucket]
     /// Epoch seconds of the read.
@@ -54,14 +44,20 @@ nonisolated struct GeminiSnapshot: Codable, Equatable, Sendable {
     }
 
     /// Thresholds crossed upward between two reads, per bucket and window.
+    ///
+    /// Reset times can't tell windows apart: `agy` recomputes an untouched
+    /// bucket's reset as "a week from now" on every call, so it drifts by
+    /// however long the Mac slept. The previous reading is the same window
+    /// as long as its reset hadn't passed when the current one was taken.
     static func crossings(
         previous: GeminiSnapshot?, current: GeminiSnapshot?, now: Int64,
         thresholds: (GeminiBucket) -> [Int]
     ) -> [(bucket: GeminiBucket, thresholds: [Int])] {
         guard let previous, let current else { return [] }
         return current.buckets.compactMap { cur in
-            guard !cur.hasReset(now: now), let prev = previous.buckets.first(where: { $0.sameWindow(as: cur) })
-            else { return nil }
+            guard !cur.hasReset(now: now), let prev = previous.buckets.first(where: {
+                $0.id == cur.id && !$0.hasReset(now: current.observedAt)
+            }) else { return nil }
             let crossed = thresholds(cur).filter { prev.usedPercent < Double($0) && cur.usedPercent >= Double($0) }
             return crossed.isEmpty ? nil : (cur, crossed)
         }
@@ -69,15 +65,18 @@ nonisolated struct GeminiSnapshot: Codable, Equatable, Sendable {
 }
 
 /// Remembers which thresholds already sounded for a bucket's window, so a
-/// reading that bounces around a threshold sounds once per window.
+/// reading that bounces around a threshold sounds once per window. A
+/// window lasts until the latest reset time seen for it (see `crossings`
+/// on why reset times drift).
 nonisolated struct GeminiAlertLatch {
-    private var fired: [(bucket: GeminiBucket, threshold: Int)] = []
+    private var fired: [String: (resetsAt: Int64, thresholds: Set<Int>)] = [:]
 
-    mutating func admit(_ thresholds: [Int], bucket: GeminiBucket) -> [Int] {
-        let new = thresholds.filter { t in !fired.contains { $0.threshold == t && $0.bucket.sameWindow(as: bucket) } }
-        fired += new.map { (bucket, $0) }
-        // Old windows can't match again; keep the list from growing for ever.
-        if fired.count > 64 { fired.removeFirst(fired.count - 64) }
+    mutating func admit(_ thresholds: [Int], bucket: GeminiBucket, now: Int64) -> [Int] {
+        var entry: (resetsAt: Int64, thresholds: Set<Int>) =
+            fired[bucket.id].flatMap { $0.resetsAt > now ? $0 : nil } ?? (resetsAt: bucket.resetsAt, thresholds: [])
+        entry.resetsAt = max(entry.resetsAt, bucket.resetsAt)
+        let new = thresholds.filter { entry.thresholds.insert($0).inserted }
+        fired[bucket.id] = entry
         return new
     }
 }
@@ -118,8 +117,11 @@ nonisolated enum GeminiUsageParser {
                       remaining.isFinite, remaining >= 0, remaining <= 1,
                       let reset = (b["reset_time"] as? String).flatMap(CodexRolloutParser.parseTimestamp)
                 else { return nil }
+                // Rounded to a millionth: (1 - 0.8) * 100 is 19.999999999999996,
+                // which would sit just under a 20% warning.
+                let used = ((1 - remaining) * 100 * 1_000_000).rounded() / 1_000_000
                 return GeminiBucket(id: id, group: name, window: b["window"] as? String ?? "unknown",
-                                    usedPercent: (1 - remaining) * 100, resetsAt: reset)
+                                    usedPercent: used, resetsAt: reset)
             }
         }
         guard !buckets.isEmpty else {

@@ -20,10 +20,19 @@ final class GeminiUsageTests: XCTestCase {
         XCTAssertEqual(s.buckets.map(\.id), ["gemini-weekly", "3p-weekly"])
         XCTAssertEqual(s.buckets.map(\.group), ["Gemini Models", "Claude and GPT models"])
         XCTAssertEqual(s.buckets.map(\.windowMinutes), [10080, 10080])
-        XCTAssertEqual(s.buckets[0].usedPercent, (1 - 0.801857590675354) * 100, accuracy: 1e-9)
+        XCTAssertEqual(s.buckets[0].usedPercent, (1 - 0.801857590675354) * 100, accuracy: 1e-6)
         XCTAssertEqual(s.buckets[1].usedPercent, 0)
         XCTAssertEqual(s.buckets[0].resetsAt, 1_795_195_518) // 2026-11-20T17:25:18Z
         XCTAssertEqual(s.buckets[0].label, "Gemini Models weekly")
+    }
+
+    func testUsedPercentCarriesNoFloatNoise() throws {
+        let s = try parse(output(
+            gemini: #"{"id":"g","window":"weekly","remaining_fraction":0.8,"reset_time":"2026-11-20T17:25:18Z"}"#,
+            thirdParty: #"{"id":"t","window":"weekly","remaining_fraction":0.34,"reset_time":"2026-11-20T17:25:18Z"}"#
+        )).get()
+        // (1 - 0.8) * 100 is 19.999999999999996: a 20% warning would not fire.
+        XCTAssertEqual(s.buckets.map(\.usedPercent), [20, 66])
     }
 
     func testToleratesNoiseAroundTheJSONLine() throws {
@@ -80,9 +89,9 @@ final class GeminiUsageTests: XCTestCase {
 
     // MARK: Alerts
 
-    private func snap(_ used: Double, resetsAt: Int64 = 1_000_000) -> GeminiSnapshot {
+    private func snap(_ used: Double, resetsAt: Int64 = 1_000_000, observedAt: Int64 = 0) -> GeminiSnapshot {
         GeminiSnapshot(buckets: [GeminiBucket(id: "gemini-weekly", group: "Gemini Models", window: "weekly",
-                                              usedPercent: used, resetsAt: resetsAt)], observedAt: 0)
+                                              usedPercent: used, resetsAt: resetsAt)], observedAt: observedAt)
     }
 
     func testCrossingsMatchBucketsDespiteResetJitter() {
@@ -91,21 +100,31 @@ final class GeminiUsageTests: XCTestCase {
         XCTAssertEqual(c.map(\.thresholds), [[80]])
     }
 
+    /// An untouched bucket's reset rolls forward with every read; after a
+    /// long sleep it has drifted by hours but is still the same window.
+    func testCrossingsMatchAcrossLongResetDrift() {
+        let c = GeminiSnapshot.crossings(previous: snap(0, resetsAt: 1_000_000, observedAt: 395_200),
+                                         current: snap(85, resetsAt: 1_036_000, observedAt: 431_200),
+                                         now: 431_200) { _ in [80] }
+        XCTAssertEqual(c.map(\.thresholds), [[80]])
+    }
+
     func testNoCrossingAcrossANewWindowOrAfterReset() {
-        XCTAssertTrue(GeminiSnapshot.crossings(previous: snap(70, resetsAt: 1_000_000), current: snap(85, resetsAt: 1_604_800),
-                                               now: 0) { _ in [80] }.isEmpty)
+        XCTAssertTrue(GeminiSnapshot.crossings(previous: snap(70, resetsAt: 1_000_000),
+                                               current: snap(85, resetsAt: 1_604_800, observedAt: 1_000_001),
+                                               now: 1_000_001) { _ in [80] }.isEmpty)
         XCTAssertTrue(GeminiSnapshot.crossings(previous: snap(70), current: snap(85), now: 2_000_000) { _ in [80] }.isEmpty)
         XCTAssertTrue(GeminiSnapshot.crossings(previous: nil, current: snap(85), now: 0) { _ in [80] }.isEmpty)
     }
 
-    func testLatchSoundsOncePerWindowDespiteJitter() {
+    func testLatchSoundsOncePerWindowDespiteDrift() {
         var latch = GeminiAlertLatch()
         let a = snap(85, resetsAt: 1_000_000).buckets[0]
-        let b = snap(85, resetsAt: 1_000_004).buckets[0]
-        XCTAssertEqual(latch.admit([80], bucket: a), [80])
-        XCTAssertEqual(latch.admit([80], bucket: b), [])
-        let next = snap(85, resetsAt: 1_604_800).buckets[0]
-        XCTAssertEqual(latch.admit([80], bucket: next), [80])
+        let b = snap(85, resetsAt: 1_036_000).buckets[0]
+        XCTAssertEqual(latch.admit([80], bucket: a, now: 0), [80])
+        XCTAssertEqual(latch.admit([80], bucket: b, now: 36_000), [], "same window, reset drifted 10 h")
+        let next = snap(85, resetsAt: 1_640_800).buckets[0]
+        XCTAssertEqual(latch.admit([80], bucket: next, now: 1_036_001), [80], "the old window is over")
     }
 
     // MARK: Store

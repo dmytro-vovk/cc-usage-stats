@@ -740,7 +740,7 @@ final class MenuViewModel: ObservableObject {
         let crossed = GeminiSnapshot.crossings(
             previous: previous, current: current, now: Int64(Date().timeIntervalSince1970)
         ) { self.alertRule(for: AlertWindowKind.forCodex(windowMinutes: $0.windowMinutes ?? 10080)).thresholds }
-            .flatMap { geminiAlertLatch.admit($0.thresholds, bucket: $0.bucket) }
+            .flatMap { geminiAlertLatch.admit($0.thresholds, bucket: $0.bucket, now: Int64(Date().timeIntervalSince1970)) }
         if crossed.contains(100) {
             SoundPlayer.play(named: reachedLimitSound)
         } else if !crossed.isEmpty {
