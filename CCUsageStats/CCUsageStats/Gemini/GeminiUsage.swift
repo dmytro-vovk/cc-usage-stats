@@ -186,13 +186,13 @@ nonisolated enum GeminiCLI {
     static func liveRead() -> Result<GeminiSnapshot, GeminiReadError> {
         read(find: liveFindCLI,
              run: { try ClaudeMCPRegistration.liveRun($0, $1, timeout: timeout) },
-             now: Int64(Date().timeIntervalSince1970))
+             now: { Int64(Date().timeIntervalSince1970) })
     }
 
     static func read(
         find: () -> String?,
         run: (String, [String]) throws -> (status: Int32, output: String),
-        now: Int64
+        now: () -> Int64
     ) -> Result<GeminiSnapshot, GeminiReadError> {
         guard let cli = find() else {
             return .failure(GeminiReadError(message: "Antigravity CLI (agy) not found. Install it and sign in, then try again."))
@@ -209,7 +209,8 @@ nonisolated enum GeminiCLI {
             return .failure(GeminiReadError(
                 message: "agy didn't answer within \(Int(timeout)) seconds. Is its network access blocked (e.g. by a firewall)?"))
         }
-        let result = GeminiUsageParser.parse(output: ran.output, observedAt: now)
+        // As of when agy answered: a read can take up to `timeout`.
+        let result = GeminiUsageParser.parse(output: ran.output, observedAt: now())
         if case .failure(let e) = result, ran.status != 0 {
             return .failure(GeminiReadError(message: "agy exited \(ran.status): \(e.message)"))
         }
