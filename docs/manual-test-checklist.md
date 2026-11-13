@@ -383,11 +383,13 @@ by design.
 
 - Accounts → **Track Gemini usage** ON (with `agy` installed and signed
   in). Within ~3s the dropdown gains a **Gemini** section (one bar per
-  quota group, `N ago` in the header) and Accounts → **Last read** shows
+  limit, titled "Group · 5-hour" / "Group · Weekly" with 5-hour first in
+  each group, `N ago` in the header) and Accounts → **Last read** shows
   an age; `~/Library/Application Support/cc-usage-stats/gemini.json`
   exists. The numbers match `agy -p /usage` (used = 100 − remaining).
 - `get_usage` (MCP) has a `gemini` section with `available: true`, one
-  window per group (`gemini-weekly`, `3p-weekly`) with `pace`.
+  window per limit (e.g. `gemini-5h` with `window_minutes: 300`,
+  `gemini-weekly` with `pace`).
 - General → **Add a Gemini band** ON: a `sparkle` band joins the pill in
   each pill mode (after the Codex band in Codex and Both). With no Claude
   token, Claude and Both show only the red triangle; Codex mode shows

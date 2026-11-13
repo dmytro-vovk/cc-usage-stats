@@ -10,22 +10,33 @@ nonisolated struct GeminiBucket: Codable, Equatable, Sendable {
     let id: String
     /// The group the bucket belongs to, e.g. "Gemini Models".
     let group: String
-    /// `agy`'s window name: "weekly" today.
+    /// `agy`'s window name: "weekly" or "5h" (agy 1.5.8).
     let window: String
     let usedPercent: Double
     let resetsAt: Int64
 
-    /// Length of the window when `agy` names a known one; nil otherwise
-    /// (no pace or 5-hour/weekly rule can be applied to an unknown length).
+    /// Length of the window when `agy` names one we can read ("weekly",
+    /// "daily", or a count and unit like "5h", "2d", "30m", "1w"); nil
+    /// otherwise (no pace or 5-hour/weekly rule for an unknown length).
     var windowMinutes: Int? {
         switch window {
         case "weekly": return 10080
         case "daily": return 1440
-        default: return nil
+        default:
+            guard let unit = window.last, let count = Int(window.dropLast()), count > 0, count <= 100_000
+            else { return nil }
+            switch unit {
+            case "m": return count
+            case "h": return count * 60
+            case "d": return count * 1440
+            case "w": return count * 10080
+            default: return nil
+            }
         }
     }
 
-    var label: String { "\(group) \(window)" }
+    /// "Gemini Models · 5-hour": a group has one bucket per window.
+    var label: String { "\(group) · \(windowMinutes.map(CodexWindow.label(minutes:)) ?? window)" }
 
     func hasReset(now: Int64) -> Bool { now >= resetsAt }
 
@@ -67,25 +78,43 @@ nonisolated struct GeminiSnapshot: Codable, Equatable, Sendable {
 /// Remembers which thresholds already sounded for a bucket's window, so a
 /// reading that bounces around a threshold sounds once per window. A
 /// window lasts until the latest reset time seen for it (see `crossings`
-/// on why reset times drift).
+/// on why reset times drift), or until usage drops: it never falls within
+/// a window, so a drop is a renewal (a plan change renews the quota before
+/// its advertised reset).
 nonisolated struct GeminiAlertLatch {
-    private var fired: [String: (resetsAt: Int64, thresholds: Set<Int>)] = [:]
+    /// Usage may come back this much lower without counting as a renewal.
+    static let renewalDrop = 1.0
+
+    private struct Entry {
+        var resetsAt: Int64
+        var peak: Double
+        var thresholds: Set<Int>
+    }
+
+    private var fired: [String: Entry] = [:]
 
     mutating func admit(_ thresholds: [Int], bucket: GeminiBucket, now: Int64) -> [Int] {
-        var entry: (resetsAt: Int64, thresholds: Set<Int>) =
-            fired[bucket.id].flatMap { $0.resetsAt > now ? $0 : nil } ?? (resetsAt: bucket.resetsAt, thresholds: [])
+        var entry = fired[bucket.id].flatMap { $0.resetsAt > now ? $0 : nil }
+            ?? Entry(resetsAt: bucket.resetsAt, peak: bucket.usedPercent, thresholds: [])
         entry.resetsAt = max(entry.resetsAt, bucket.resetsAt)
+        entry.peak = max(entry.peak, bucket.usedPercent)
         let new = thresholds.filter { entry.thresholds.insert($0).inserted }
         fired[bucket.id] = entry
         return new
     }
 
-    /// Every reading, crossing or not, extends a fired window to the latest
-    /// reset seen for it, so drift between crossings can't end it early.
+    /// Every reading, crossing or not: extends a fired window to the latest
+    /// reset seen for it, so drift between crossings can't end it early,
+    /// and forgets it once usage has dropped.
     mutating func observe(_ snapshot: GeminiSnapshot?, now: Int64) {
         for b in snapshot?.buckets ?? [] {
             guard var entry = fired[b.id], entry.resetsAt > now else { continue }
+            if b.usedPercent < entry.peak - Self.renewalDrop {
+                fired[b.id] = nil
+                continue
+            }
             entry.resetsAt = max(entry.resetsAt, b.resetsAt)
+            entry.peak = max(entry.peak, b.usedPercent)
             fired[b.id] = entry
         }
     }
@@ -121,7 +150,7 @@ nonisolated enum GeminiUsageParser {
 
         let buckets = groups.flatMap { group -> [GeminiBucket] in
             let name = group["name"] as? String ?? "Gemini"
-            return (group["buckets"] as? [[String: Any]] ?? []).compactMap { b in
+            return (group["buckets"] as? [[String: Any]] ?? []).compactMap { b -> GeminiBucket? in
                 guard let id = b["id"] as? String,
                       let remaining = CodexRolloutParser.number(b["remaining_fraction"]),
                       remaining.isFinite, remaining >= 0, remaining <= 1,
@@ -133,6 +162,11 @@ nonisolated enum GeminiUsageParser {
                 return GeminiBucket(id: id, group: name, window: b["window"] as? String ?? "unknown",
                                     usedPercent: used, resetsAt: reset)
             }
+            // Shortest window first within a group, as Claude's 5-hour row
+            // sits above its weekly one; unknown lengths last. Stable.
+            .enumerated()
+            .sorted { ($0.element.windowMinutes ?? .max, $0.offset) < ($1.element.windowMinutes ?? .max, $1.offset) }
+            .map(\.element)
         }
         guard !buckets.isEmpty else {
             return .failure(GeminiReadError(message: "agy's /usage answer had no readable quota."))

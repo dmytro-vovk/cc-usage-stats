@@ -23,7 +23,7 @@ final class GeminiUsageTests: XCTestCase {
         XCTAssertEqual(s.buckets[0].usedPercent, (1 - 0.801857590675354) * 100, accuracy: 1e-6)
         XCTAssertEqual(s.buckets[1].usedPercent, 0)
         XCTAssertEqual(s.buckets[0].resetsAt, 1_795_195_518) // 2026-11-20T17:25:18Z
-        XCTAssertEqual(s.buckets[0].label, "Gemini Models weekly")
+        XCTAssertEqual(s.buckets[0].label, "Gemini Models · Weekly")
     }
 
     func testUsedPercentCarriesNoFloatNoise() throws {
@@ -33,6 +33,35 @@ final class GeminiUsageTests: XCTestCase {
         )).get()
         // (1 - 0.8) * 100 is 19.999999999999996: a 20% warning would not fire.
         XCTAssertEqual(s.buckets.map(\.usedPercent), [20, 66])
+    }
+
+    /// Real answer after a subscription (agy 1.5.8, 2026-11-13): each group
+    /// has a 5-hour and a weekly limit, plus a separate Gemini 4 Argon group.
+    func testParsesFiveHourAndArgonBuckets() throws {
+        let text = #"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.9931829571723938,"reset_time":"2026-11-20T21:21:56Z"},{"id":"gemini-5h","window":"5h","remaining_fraction":0.9896935820579529,"reset_time":"2026-11-14T02:21:56Z"}]},{"name":"Claude and GPT models","buckets":[{"id":"3p-weekly","window":"weekly","remaining_fraction":1,"reset_time":"2026-11-20T21:24:15Z"},{"id":"3p-5h","window":"5h","remaining_fraction":1,"reset_time":"2026-11-14T02:24:15Z"}]},{"name":"Gemini 4 Argon","buckets":[{"id":"gemini-argon-wtu-weekly","window":"weekly","remaining_fraction":0.9873054623603821,"reset_time":"2026-11-20T21:22:21Z"}]}]}}}"#
+        let s = try parse(text).get()
+        // 5-hour first within each group, like Claude's windows; groups keep agy's order.
+        XCTAssertEqual(s.buckets.map(\.id), ["gemini-5h", "gemini-weekly", "3p-5h", "3p-weekly", "gemini-argon-wtu-weekly"])
+        XCTAssertEqual(s.buckets.map(\.windowMinutes), [300, 10080, 300, 10080, 10080])
+        XCTAssertEqual(s.buckets.map(\.label), [
+            "Gemini Models · 5-hour", "Gemini Models · Weekly",
+            "Claude and GPT models · 5-hour", "Claude and GPT models · Weekly",
+            "Gemini 4 Argon · Weekly",
+        ])
+    }
+
+    func testWindowNamesCarryTheirLength() {
+        func minutes(_ w: String) -> Int? {
+            GeminiBucket(id: "x", group: "G", window: w, usedPercent: 0, resetsAt: 0).windowMinutes
+        }
+        XCTAssertEqual(minutes("5h"), 300)
+        XCTAssertEqual(minutes("12h"), 720)
+        XCTAssertEqual(minutes("2d"), 2880)
+        XCTAssertEqual(minutes("30m"), 30)
+        XCTAssertEqual(minutes("1w"), 10080)
+        XCTAssertNil(minutes("0h"))
+        XCTAssertNil(minutes("h"))
+        XCTAssertNil(minutes("99999999999h"))
     }
 
     func testToleratesNoiseAroundTheJSONLine() throws {
@@ -75,7 +104,7 @@ final class GeminiUsageTests: XCTestCase {
             thirdParty: #"{"id":"odd","window":"fortnightly","remaining_fraction":0.5,"reset_time":"2026-11-20T17:25:18Z"}"#
         )).get()
         XCTAssertEqual(s.buckets.map(\.windowMinutes), [1440, nil])
-        XCTAssertEqual(s.buckets[1].label, "Claude and GPT models fortnightly")
+        XCTAssertEqual(s.buckets[1].label, "Claude and GPT models · fortnightly")
     }
 
     func testPeakUsesTheResetRule() {
@@ -132,8 +161,20 @@ final class GeminiUsageTests: XCTestCase {
     func testLatchFollowsResetDriftSeenOnQuietPolls() {
         var latch = GeminiAlertLatch()
         XCTAssertEqual(latch.admit([80], bucket: snap(85, resetsAt: 1_000_000).buckets[0], now: 0), [80])
-        latch.observe(snap(70, resetsAt: 1_200_000), now: 100_000)
+        latch.observe(snap(85.5, resetsAt: 1_200_000), now: 100_000)   // usage never drops within a window
         XCTAssertEqual(latch.admit([80], bucket: snap(85, resetsAt: 1_200_000).buckets[0], now: 1_100_000), [])
+    }
+
+    /// Usage never falls within a window: a drop is a renewal (a plan change
+    /// renews the quota before its advertised reset), and warnings that
+    /// sounded in the old window must sound again in the new one.
+    func testLatchStartsOverWhenUsageDrops() {
+        var latch = GeminiAlertLatch()
+        XCTAssertEqual(latch.admit([80], bucket: snap(85, resetsAt: 1_000_000).buckets[0], now: 0), [80])
+        latch.observe(snap(84.5, resetsAt: 1_000_000), now: 10)   // noise, not a renewal
+        XCTAssertEqual(latch.admit([80], bucket: snap(86, resetsAt: 1_000_000).buckets[0], now: 20), [])
+        latch.observe(snap(0.7, resetsAt: 1_014_000), now: 30)    // renewed early
+        XCTAssertEqual(latch.admit([80], bucket: snap(85, resetsAt: 1_014_000).buckets[0], now: 40), [80])
     }
 
     // MARK: Store

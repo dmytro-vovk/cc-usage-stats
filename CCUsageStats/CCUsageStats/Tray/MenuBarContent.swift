@@ -884,7 +884,7 @@ private struct GeminiSection: View {
             if let snapshot {
                 ForEach(snapshot.buckets, id: \.id) { b in
                     WindowSection(
-                        title: b.group,
+                        title: b.label,
                         window: WindowSnapshot(usedPercentage: b.effectivePercent(now: now), resetsAt: b.resetsAt),
                         now: now,
                         windowLength: Int64(b.windowMinutes ?? 10080) * 60,

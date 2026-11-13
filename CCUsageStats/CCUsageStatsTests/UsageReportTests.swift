@@ -186,7 +186,7 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual(g["observed_at"] as? Int64, now - 120)
         XCTAssertEqual(g["stale"] as? Bool, false)
         let weekly = try XCTUnwrap(window(r, "gemini", "gemini-weekly"))
-        XCTAssertEqual(weekly["label"] as? String, "Gemini Models weekly")
+        XCTAssertEqual(weekly["label"] as? String, "Gemini Models · Weekly")
         XCTAssertEqual(weekly["group"] as? String, "Gemini Models")
         XCTAssertEqual(weekly["used_percent"] as? Double, 20)
         XCTAssertEqual(weekly["seconds_to_reset"] as? Int64, 6 * day)

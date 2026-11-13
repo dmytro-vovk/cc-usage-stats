@@ -155,7 +155,8 @@ between the quotas. See [Codex usage](#codex-usage) and
   fallback). Reset times are row tooltips, as
   for Claude.
 - With [Gemini tracking](#gemini-usage) on, a **Gemini** section below
-  it: one bar per quota group ("Gemini Models", "Claude and GPT models"),
+  it: one bar per limit, named by group and window ("Gemini Models ·
+  5-hour", "Gemini Models · Weekly"; 5-hour first within each group),
   with the even-pace mark on weekly ones and the reading age in the
   header. If the last read failed, why is shown in red under the bars.
 - At the very top, your *active* Claude Code (and, opt-in, Codex) sessions — a status icon, the
@@ -204,8 +205,11 @@ With Codex tracking on, warnings and **Limit reached** also fire for Codex
 windows — the 5-hour rule for its 5-hour window, the weekly rule for its
 weekly one (same sounds). Resets stay Claude-only: a Codex reset is only
 noticed when the next Codex session writes a log line, so a sound would
-arrive at an arbitrary later time. Gemini quota groups (with Gemini
-tracking on) follow the weekly rule the same way, once per window.
+arrive at an arbitrary later time. Gemini limits (with Gemini
+tracking on) follow the same rules by length — 5-hour or weekly — once
+per window. Usage never falls within a window, so a Gemini limit whose
+usage drops (a plan change renews the quota early) counts as a new
+window and its warnings can sound again.
 
 ### Colour by pace
 
@@ -413,9 +417,12 @@ For Gemini used as an agent through Google's **Antigravity CLI** (`agy`).
 
 - **How it reads.** Every 5 minutes, on wake and when you click **Read
   now**, the app runs `agy -p /usage --output-format json` and shows each
-  quota group it reports — today a weekly **Gemini Models** group (Gemini
-  Flash and Pro share one limit) and a weekly **Claude and GPT models**
-  group. `agy` answers `/usage` without starting an agent turn, so a read
+  limit it reports. Models in a group share a 5-hour and a weekly limit:
+  **Gemini Models** (Gemini Flash and Pro) and **Claude and GPT models**
+  (Claude and GPT-OSS run through Antigravity); paid plans add a separate
+  weekly **Gemini 4 Argon** limit. Which limits appear depends on your
+  plan — the app shows whatever `agy` lists, labelled by group and
+  window, and reads window names like `weekly`, `5h` or `2d`. `agy` answers `/usage` without starting an agent turn, so a read
   spends none of your quota; it takes about 3 seconds. `agy` reports what
   is *left*; the app shows it as used, like the other windows.
 - **Signed in as `agy` is.** The app keeps no Google credentials: `agy`
@@ -439,8 +446,9 @@ a large fan-out.
   account has one, weekly, each
   per-model weekly window), Codex (each window of the newest reading —
   session log, app-server or endpoint, named in `source`) and Gemini
-  (each quota group from the app's last `agy /usage` read, with its
-  `group`; `available: false` while Gemini tracking is off):
+  (each limit from the app's last `agy /usage` read, with its `group`,
+  `window` and, when known, `window_minutes`; `available: false` while
+  Gemini tracking is off):
   `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace`
   (on-pace percent, ahead or not, projected time at 100% — which is not
   the reset), the 5-hour `forecast_seconds_to_cap`, plus `as_of`,
