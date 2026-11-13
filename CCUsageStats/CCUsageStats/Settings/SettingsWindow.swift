@@ -522,7 +522,7 @@ struct AlertsSettingsView: View {
             } header: {
                 Text("Warnings")
             } footer: {
-                Text("Each warning sounds once per window. Codex windows follow the 5-hour and weekly rules; Gemini quota groups follow the weekly rule.")
+                Text("Each warning sounds once per window. Codex windows follow the 5-hour and weekly rules; Gemini limits follow them by length too.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

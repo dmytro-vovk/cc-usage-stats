@@ -860,7 +860,7 @@ private struct CodexSection: View {
     }
 }
 
-/// Gemini quota groups in the dropdown, from the Antigravity CLI's
+/// Gemini limits in the dropdown (one per group and window), from the Antigravity CLI's
 /// `/usage` (polled every 5 minutes). A bucket past its reset shows 0%.
 private struct GeminiSection: View {
     let snapshot: GeminiSnapshot?

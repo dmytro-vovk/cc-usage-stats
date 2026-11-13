@@ -142,7 +142,7 @@ enum UsageReport {
         out["available"] = true
         out["source"] = "agy /usage"
         out["windows"] = windows
-        out["note"] = "Antigravity CLI quota groups: models within a group share one limit."
+        out["note"] = "Antigravity CLI limits: models within a group (window `group`) share each of its limits, e.g. a 5-hour and a weekly one."
         return out
     }
 

@@ -17,7 +17,7 @@ struct MCPServer {
 
     static let toolDescription = """
     Current Claude, Codex and Gemini usage-limit readings from the CCUsageStats menu-bar app: \
-    per window (Claude 5-hour, weekly and per-model weekly; Codex windows; Gemini quota groups \
+    per window (Claude 5-hour, weekly and per-model weekly; Codex windows; Gemini 5-hour and weekly limits per model group \
     from the Antigravity CLI) the used percent, \
     reset time, seconds to reset, weekly pace and 5-hour forecast, plus how fresh each reading \
     is (as_of, age_seconds, stale). Each time comes as epoch seconds, *_iso (UTC) and *_local \
