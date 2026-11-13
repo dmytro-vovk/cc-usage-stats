@@ -180,20 +180,38 @@ nonisolated enum GeminiCLI {
         )
     }
 
+    static let timeout: TimeInterval = 30
+
     /// One read. Blocking — the monitor calls it off the main actor.
     static func liveRead() -> Result<GeminiSnapshot, GeminiReadError> {
-        guard let cli = liveFindCLI() else {
+        read(find: liveFindCLI,
+             run: { try ClaudeMCPRegistration.liveRun($0, $1, timeout: timeout) },
+             now: Int64(Date().timeIntervalSince1970))
+    }
+
+    static func read(
+        find: () -> String?,
+        run: (String, [String]) throws -> (status: Int32, output: String),
+        now: Int64
+    ) -> Result<GeminiSnapshot, GeminiReadError> {
+        guard let cli = find() else {
             return .failure(GeminiReadError(message: "Antigravity CLI (agy) not found. Install it and sign in, then try again."))
         }
-        let run: (status: Int32, output: String)
+        let ran: (status: Int32, output: String)
         do {
-            run = try ClaudeMCPRegistration.liveRun(cli, usageArguments, timeout: 30)
+            ran = try run(cli, usageArguments)
         } catch {
             return .failure(GeminiReadError(message: "Couldn't run agy: \(error.localizedDescription)"))
         }
-        let result = GeminiUsageParser.parse(output: run.output, observedAt: Int64(Date().timeIntervalSince1970))
-        if case .failure(let e) = result, run.status != 0 {
-            return .failure(GeminiReadError(message: "agy exited \(run.status): \(e.message)"))
+        // liveRun's timeout: agy was terminated, and what it printed then
+        // ("context canceled") says nothing about why.
+        if ran.status == -1 {
+            return .failure(GeminiReadError(
+                message: "agy didn't answer within \(Int(timeout)) seconds. Is its network access blocked (e.g. by a firewall)?"))
+        }
+        let result = GeminiUsageParser.parse(output: ran.output, observedAt: now)
+        if case .failure(let e) = result, ran.status != 0 {
+            return .failure(GeminiReadError(message: "agy exited \(ran.status): \(e.message)"))
         }
         return result
     }

@@ -8,6 +8,7 @@
 - Gemini: parser only considers lines starting with `{` (Gemini/GeminiUsage.swift `GeminiUsageParser.parse`); a BOM or pretty-printed JSON from a future `agy` would read as "Unexpected answer".
 - Gemini: `get_usage` can't tell "app stopped polling" from "agy failing" — `lastError` is not persisted to gemini.json (MCP/UsageReport.swift `geminiSection`).
 - Gemini: GeminiAlertLatch (Gemini/GeminiUsage.swift `admit`) keys a bucket until the latest reset seen; if agy ever renews a quota before its advertised reset, a re-crossing in the new window stays silent (speculative).
+- Gemini: GeminiAlertLatch.observe (Gemini/GeminiUsage.swift) extends a live entry to any later reset, so a quiet reading carrying the *next* window's reset (early renewal, or local clock behind Google's at rollover) silences that bucket's alerts for the next window; and if a used bucket's reset ever rolled continuously the latch would never expire. Bounding an extension by elapsed time would close both.
 - Gemini: CCUsageStatsTests/GeminiMonitorTests.swift uses fixed sleeps in two tests; `testAReadInFlightWhenTrackingStopsIsDiscarded` may not exercise the in-flight path on a slow host.
 - `zsh -lc "command -v …"` CLI lookup (codex, agy) breaks when rc files print to stdout/stderr (Gemini/GeminiUsage.swift `liveFindCLI`, Codex/CodexAppServer.swift `liveFindCLI`).
 - Tray/PillLayout.swift (`PillComposer.plan` `.codex`) — Codex-only pill shows no Claude token-problem triangle (pre-existing).

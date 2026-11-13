@@ -159,6 +159,40 @@ final class GeminiUsageTests: XCTestCase {
         XCTAssertNil(GeminiCLI.findCLI(home: "/u", isExecutable: { _ in false }, shellLookup: { "agy not found" }))
     }
 
+    // MARK: One read
+
+    private let usageLine = #"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.5,"reset_time":"2026-11-20T17:25:18Z"}]}]}}}"#
+
+    func testReadReportsAMissingCLI() {
+        let r = GeminiCLI.read(find: { nil }, run: { _, _ in XCTFail("must not run"); return (0, "") }, now: 7)
+        guard case .failure(let e) = r else { return XCTFail("expected failure") }
+        XCTAssertTrue(e.message.contains("not found"), e.message)
+    }
+
+    /// liveRun reports a timeout as status -1; agy then prints whatever it
+    /// says when terminated ("context canceled"), which explains nothing.
+    func testReadSaysWhenAgyTimedOut() {
+        let r = GeminiCLI.read(find: { "/x/agy" }, run: { _, _ in (-1, "timed out after 30s: context canceled") }, now: 7)
+        XCTAssertEqual(r, .failure(GeminiReadError(
+            message: "agy didn't answer within 30 seconds. Is its network access blocked (e.g. by a firewall)?")))
+    }
+
+    func testReadRunsUsageAndParses() throws {
+        var seen: (String, [String])?
+        let r = GeminiCLI.read(find: { "/x/agy" }, run: { seen = ($0, $1); return (0, self.usageLine) }, now: 7)
+        XCTAssertEqual(seen?.0, "/x/agy")
+        XCTAssertEqual(seen?.1, GeminiCLI.usageArguments)
+        XCTAssertEqual(try r.get().buckets.map(\.usedPercent), [50])
+        XCTAssertEqual(try r.get().observedAt, 7)
+    }
+
+    func testReadPrefixesTheExitStatusOnFailure() {
+        let r = GeminiCLI.read(find: { "/x/agy" }, run: { _, _ in
+            (1, #"{"status":"ERROR","error":"/usage failed: not signed in"}"#)
+        }, now: 7)
+        XCTAssertEqual(r, .failure(GeminiReadError(message: "agy exited 1: /usage failed: not signed in")))
+    }
+
     func testUsageArgumentsDoNotDisableSlashCommands() {
         XCTAssertEqual(GeminiCLI.usageArguments, ["-p", "/usage", "--output-format", "json"])
     }
