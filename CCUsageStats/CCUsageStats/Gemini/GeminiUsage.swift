@@ -79,6 +79,16 @@ nonisolated struct GeminiAlertLatch {
         fired[bucket.id] = entry
         return new
     }
+
+    /// Every reading, crossing or not, extends a fired window to the latest
+    /// reset seen for it, so drift between crossings can't end it early.
+    mutating func observe(_ snapshot: GeminiSnapshot?, now: Int64) {
+        for b in snapshot?.buckets ?? [] {
+            guard var entry = fired[b.id], entry.resetsAt > now else { continue }
+            entry.resetsAt = max(entry.resetsAt, b.resetsAt)
+            fired[b.id] = entry
+        }
+    }
 }
 
 /// Why a read produced nothing, shown under the Gemini toggle.

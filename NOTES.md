@@ -7,6 +7,7 @@
 - Gemini: in Both, no Claude reading + no Codex reading + Gemini band renders a Gemini-only pill (Tray/PillLayout.swift `.both`); the same shape existed already for Codex.
 - Gemini: parser only considers lines starting with `{` (Gemini/GeminiUsage.swift `GeminiUsageParser.parse`); a BOM or pretty-printed JSON from a future `agy` would read as "Unexpected answer".
 - Gemini: `get_usage` can't tell "app stopped polling" from "agy failing" — `lastError` is not persisted to gemini.json (MCP/UsageReport.swift `geminiSection`).
+- Gemini: GeminiAlertLatch (Gemini/GeminiUsage.swift `admit`) keys a bucket until the latest reset seen; if agy ever renews a quota before its advertised reset, a re-crossing in the new window stays silent (speculative).
 - Gemini: CCUsageStatsTests/GeminiMonitorTests.swift uses fixed sleeps in two tests; `testAReadInFlightWhenTrackingStopsIsDiscarded` may not exercise the in-flight path on a slow host.
 - `zsh -lc "command -v …"` CLI lookup (codex, agy) breaks when rc files print to stdout/stderr (Gemini/GeminiUsage.swift `liveFindCLI`, Codex/CodexAppServer.swift `liveFindCLI`).
 - Tray/PillLayout.swift (`PillComposer.plan` `.codex`) — Codex-only pill shows no Claude token-problem triangle (pre-existing).

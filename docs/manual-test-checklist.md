@@ -389,7 +389,9 @@ by design.
 - `get_usage` (MCP) has a `gemini` section with `available: true`, one
   window per group (`gemini-weekly`, `3p-weekly`) with `pace`.
 - General → **Add a Gemini band** ON: a `sparkle` band joins the pill in
-  each pill mode; with no Claude token, only the red triangle.
+  each pill mode (after the Codex band in Codex and Both). With no Claude
+  token, Claude and Both show only the red triangle; Codex mode shows
+  Codex + Gemini.
 - With `agy` renamed away (or signed out): **Read now** shows the error
   in red in Accounts and the dropdown; the last reading stays.
 - Tracking OFF: Gemini section and band disappear, `gemini.json` is

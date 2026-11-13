@@ -127,6 +127,15 @@ final class GeminiUsageTests: XCTestCase {
         XCTAssertEqual(latch.admit([80], bucket: next, now: 1_036_001), [80], "the old window is over")
     }
 
+    /// Quiet polls (no crossing) still carry the window's latest reset, so
+    /// a later re-crossing in the same window stays silent.
+    func testLatchFollowsResetDriftSeenOnQuietPolls() {
+        var latch = GeminiAlertLatch()
+        XCTAssertEqual(latch.admit([80], bucket: snap(85, resetsAt: 1_000_000).buckets[0], now: 0), [80])
+        latch.observe(snap(70, resetsAt: 1_200_000), now: 100_000)
+        XCTAssertEqual(latch.admit([80], bucket: snap(85, resetsAt: 1_200_000).buckets[0], now: 1_100_000), [])
+    }
+
     // MARK: Store
 
     func testStoreRoundTripsAndClears() throws {

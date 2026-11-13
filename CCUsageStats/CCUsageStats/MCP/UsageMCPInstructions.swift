@@ -8,7 +8,7 @@ nonisolated enum UsageMCPInstructions {
         """
         ## Usage limits (cc-usage-stats MCP server)
 
-        The MCP server `cc-usage-stats` has one read-only tool, `get_usage`: my current Claude, Codex and Gemini usage limits. Per window (Claude 5-hour, weekly, per-model weekly; Codex windows; Gemini quota groups from the Antigravity CLI, present only while Gemini tracking is on) it returns `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace` (`ahead_of_pace`, `projected_cap_at`) and the 5-hour `forecast_seconds_to_cap`, plus freshness (`as_of`, `age_seconds`, `stale`). A window resets at `resets_at`; `projected_cap_at` is when it would hit 100% at the current rate, not a reset. Every time also comes as `*_local` (my wall time, weekday spelled out): quote that instead of working out a weekday from the UTC `*_iso` string.
+        The MCP server `cc-usage-stats` has one read-only tool, `get_usage`: my current Claude, Codex and Gemini usage limits. Per window (Claude 5-hour, weekly, per-model weekly; Codex windows; Gemini quota groups from the Antigravity CLI; `gemini.available` is false while Gemini tracking is off) it returns `used_percent`, `resets_at`, `seconds_to_reset`, weekly `pace` (`ahead_of_pace`, `projected_cap_at`) and the 5-hour `forecast_seconds_to_cap`, plus freshness (`as_of`, `age_seconds`, `stale`). A window resets at `resets_at`; `projected_cap_at` is when it would hit 100% at the current rate, not a reset. Every time also comes as `*_local` (my wall time, weekday spelled out): quote that instead of working out a weekday from the UTC `*_iso` string.
 
         If the tool isn't available, connect it:
         - Claude Code: `\(ClaudeMCPRegistration.manualCommand(binary: binary))`

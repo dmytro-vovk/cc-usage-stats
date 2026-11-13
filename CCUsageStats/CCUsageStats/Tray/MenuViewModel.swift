@@ -737,10 +737,12 @@ final class MenuViewModel: ObservableObject {
     /// Warning / limit-reached sounds for Gemini buckets, on the weekly (or,
     /// for a sub-day window, 5-hour) rule. No reset sound, as for Codex.
     func handleGeminiChange(previous: GeminiSnapshot?, current: GeminiSnapshot?) {
-        let crossed = GeminiSnapshot.crossings(
-            previous: previous, current: current, now: Int64(Date().timeIntervalSince1970)
-        ) { self.alertRule(for: AlertWindowKind.forCodex(windowMinutes: $0.windowMinutes ?? 10080)).thresholds }
-            .flatMap { geminiAlertLatch.admit($0.thresholds, bucket: $0.bucket, now: Int64(Date().timeIntervalSince1970)) }
+        let now = Int64(Date().timeIntervalSince1970)
+        geminiAlertLatch.observe(current, now: now)
+        let crossed = GeminiSnapshot.crossings(previous: previous, current: current, now: now) {
+            self.alertRule(for: AlertWindowKind.forCodex(windowMinutes: $0.windowMinutes ?? 10080)).thresholds
+        }
+            .flatMap { geminiAlertLatch.admit($0.thresholds, bucket: $0.bucket, now: now) }
         if crossed.contains(100) {
             SoundPlayer.play(named: reachedLimitSound)
         } else if !crossed.isEmpty {

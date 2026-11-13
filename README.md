@@ -65,8 +65,10 @@ between the quotas. See [Codex usage](#codex-usage) and
   Claude token problem still shows as the warning triangle alone.
 - With [Gemini tracking](#gemini-usage) on, **Add a Gemini band** (same
   setting) appends a `sparkle` band with the fullest Gemini quota group's
-  % to whichever pill you picked. It is left out while Claude has a token
-  problem or no reading yet, so the triangle stays visible.
+  % to whichever pill you picked. With **Claude**, it is left out while
+  Claude has a token problem or no reading yet, so the triangle stays
+  visible; with **Both**, a Claude token problem shows the triangle alone,
+  as for Codex; with **Codex**, it sits after the Codex band.
 
 ### Dropdown
 
