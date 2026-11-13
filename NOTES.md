@@ -12,6 +12,7 @@
 - Gemini: GeminiCLI.read (Gemini/GeminiUsage.swift) reports a liveRun timeout without parsing the output, so an agy that printed its /usage answer and then hung on exit loses a good reading.
 - Gemini: the renewal rule (Gemini/GeminiUsage.swift `GeminiAlertLatch.observe`) assumes usage never falls within a window; unverified for agy's new 5-hour limits — if they recover gradually (rolling), a reading hovering near a threshold could sound again after each >1-point dip.
 - Gemini: a renewal plus a climb back past the threshold between two polls (or a first reading of a renewed window already above it, or sleep across a reset) sounds no warning for that window (`GeminiSnapshot.crossings`).
+- Gemini wording: MCP/MCPServer.swift:20 and MCP/UsageMCPInstructions.swift:11 say "5-hour and weekly limits per model group" (Gemini 4 Argon has only weekly); MCP/UsageReport.swift:145 note "(window `group`)" is terse.
 - Gemini: CCUsageStatsTests/GeminiMonitorTests.swift uses fixed sleeps in two tests; `testAReadInFlightWhenTrackingStopsIsDiscarded` may not exercise the in-flight path on a slow host.
 - `zsh -lc "command -v …"` CLI lookup (codex, agy) breaks when rc files print to stdout/stderr (Gemini/GeminiUsage.swift `liveFindCLI`, Codex/CodexAppServer.swift `liveFindCLI`).
 - Tray/PillLayout.swift (`PillComposer.plan` `.codex`) — Codex-only pill shows no Claude token-problem triangle (pre-existing).
