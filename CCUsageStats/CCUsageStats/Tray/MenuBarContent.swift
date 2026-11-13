@@ -49,19 +49,22 @@ struct MenuBarLabel: View {
             now: Int64(Date().timeIntervalSince1970),
             coloring: vm.coloring
         )
-        // Codex joins (or replaces) the Claude pill per the General setting.
+        // Codex joins (or replaces) the Claude pill per the General setting;
+        // Gemini adds a band when that is on too.
         let plan = PillComposer.plan(
             mode: vm.pillMode,
             codexTracking: vm.codex.trackingEnabled,
             claudeSegments: segments,
             claudeLacksWorkingToken: vm.authState.lacksWorkingToken,
             codex: vm.codex.snapshot,
+            gemini: vm.gemini.snapshot,
+            geminiBand: vm.gemini.trackingEnabled && vm.gemini.pillBand,
             now: Int64(Date().timeIntervalSince1970),
             coloring: vm.coloring
         )
         if case .segments(let bands) = plan {
-            // Claude's staleness says nothing about a Codex-only pill.
-            let alpha: CGFloat = bands.allSatisfy { $0.kind == .codex } ? 1.0 : staleAlpha
+            // Claude's staleness says nothing about a pill without Claude bands.
+            let alpha: CGFloat = bands.allSatisfy { !$0.kind.isClaude } ? 1.0 : staleAlpha
             return MenuBarPillRenderer.renderSplitPill(
                 segments: bands,
                 style: .init(
@@ -235,13 +238,21 @@ struct MenuBarDropdown: View {
             // beyond "All Systems Operational").
             statusBanner
 
-            if vm.codex.trackingEnabled {
-                // Wide: Claude and Codex side by side.
+            if vm.codex.trackingEnabled || vm.gemini.trackingEnabled {
+                // Wide: Claude beside the other agents.
                 AdaptiveColumns(twoColumn: twoColumn, divided: true) {
                     claudeHeader
                     claudeWindows(sessionWindow: true, weeklyWindows: true)
                 } trailing: {
-                    CodexSection(snapshot: vm.codex.snapshot, now: now, coloring: vm.coloring)
+                    VStack(alignment: .leading, spacing: 12) {
+                        if vm.codex.trackingEnabled {
+                            CodexSection(snapshot: vm.codex.snapshot, now: now, coloring: vm.coloring)
+                        }
+                        if vm.gemini.trackingEnabled {
+                            GeminiSection(snapshot: vm.gemini.snapshot, error: vm.gemini.lastError,
+                                          now: now, coloring: vm.coloring)
+                        }
+                    }
                 }
             } else {
                 // Wide: the 5-hour session beside the weekly windows.
@@ -841,6 +852,55 @@ private struct CodexSection: View {
                 }
             } else {
                 Text("No Codex usage seen yet in ~/.codex/sessions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .wrapsFully()
+            }
+        }
+    }
+}
+
+/// Gemini quota groups in the dropdown, from the Antigravity CLI's
+/// `/usage` (polled every 5 minutes). A bucket past its reset shows 0%.
+private struct GeminiSection: View {
+    let snapshot: GeminiSnapshot?
+    let error: String?
+    let now: Int64
+    let coloring: UsageColoring
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Gemini").font(.headline)
+                Spacer()
+                if let snapshot {
+                    Text("\(RelativeTime.format(seconds: now - snapshot.observedAt)) ago")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .help("As of \(RelativeTime.format(seconds: now - snapshot.observedAt)) ago · agy /usage")
+                }
+            }
+            if let snapshot {
+                ForEach(snapshot.buckets, id: \.id) { b in
+                    WindowSection(
+                        title: b.group,
+                        window: WindowSnapshot(usedPercentage: b.effectivePercent(now: now), resetsAt: b.resetsAt),
+                        now: now,
+                        windowLength: Int64(b.windowMinutes ?? 10080) * 60,
+                        // Pace needs the window's length; an unknown one is coloured by usage.
+                        coloring: b.windowMinutes == nil ? .absolute : coloring,
+                        tracksPace: b.windowMinutes == 10080
+                    )
+                }
+            }
+            if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .wrapsFully()
+            } else if snapshot == nil {
+                Text("Reading the Antigravity CLI (agy)…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .wrapsFully()

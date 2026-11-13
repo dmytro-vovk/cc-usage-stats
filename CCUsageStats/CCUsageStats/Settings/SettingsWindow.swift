@@ -74,7 +74,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private static func view(for tab: SettingsTab, vm: MenuViewModel) -> AnyView {
         switch tab {
         case .general: return AnyView(GeneralSettingsView(vm: vm))
-        case .accounts: return AnyView(AccountsSettingsView(vm: vm, codex: vm.codex))
+        case .accounts: return AnyView(AccountsSettingsView(vm: vm, codex: vm.codex, gemini: vm.gemini))
         case .alerts: return AnyView(AlertsSettingsView(vm: vm))
         }
     }
@@ -125,8 +125,14 @@ struct GeneralSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if vm.gemini.trackingEnabled {
+                    Toggle("Add a Gemini band", isOn: Binding(
+                        get: { vm.gemini.pillBand },
+                        set: { vm.gemini.pillBand = $0 }
+                    ))
+                }
             } footer: {
-                Text("Both adds a Codex band to the Claude pill. A Claude token problem always shows as the warning triangle.")
+                Text("Both adds a Codex band to the Claude pill. The Gemini band (with Gemini tracking on) joins whichever you pick. A Claude token problem always shows as the warning triangle.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -363,6 +369,7 @@ private struct UsageMCPSection: View {
 struct AccountsSettingsView: View {
     @ObservedObject var vm: MenuViewModel
     @ObservedObject var codex: CodexMonitor
+    @ObservedObject var gemini: GeminiMonitor
     @State private var tokenForm: SettingsViewModel?
 
     var body: some View {
@@ -426,6 +433,29 @@ struct AccountsSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Section {
+                Toggle("Track Gemini usage", isOn: $gemini.trackingEnabled)
+                if gemini.trackingEnabled {
+                    LabeledContent("Last read") {
+                        TimelineView(.periodic(from: .now, by: 15)) { ctx in
+                            Text(geminiLastRead(now: ctx.date)).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let err = gemini.lastError {
+                        Text(err).font(.caption).foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button("Read now") { gemini.refreshNow() }
+                }
+            } header: {
+                Text("Gemini")
+            } footer: {
+                Text("Asks Google's Antigravity CLI (agy -p /usage) every 5 minutes, signed in as you are in agy. /usage answers without starting an agent turn, so reading it spends none of your quota.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .sheet(isPresented: Binding(get: { tokenForm != nil }, set: { if !$0 { tokenForm = nil } })) {
             if let form = tokenForm {
@@ -444,6 +474,11 @@ struct AccountsSettingsView: View {
         5 minutes; Codex renews its own sign-in. If the CLI can't answer, it falls back to \
         chatgpt.com with the sign-in in ~/.codex/auth.json, read-only.
         """
+    }
+
+    private func geminiLastRead(now: Date) -> String {
+        guard let s = gemini.snapshot else { return gemini.lastAttempt == nil ? "never" : "no reading yet" }
+        return "\(RelativeTime.format(seconds: Int64(now.timeIntervalSince1970) - s.observedAt)) ago"
     }
 
     private func lastSeen(now: Date) -> String {
@@ -487,7 +522,7 @@ struct AlertsSettingsView: View {
             } header: {
                 Text("Warnings")
             } footer: {
-                Text("Each warning sounds once per window. Codex windows follow the 5-hour and weekly rules.")
+                Text("Each warning sounds once per window. Codex windows follow the 5-hour and weekly rules; Gemini quota groups follow the weekly rule.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -531,7 +566,7 @@ struct AlertsSettingsView: View {
             } header: {
                 Text("Sounds")
             } footer: {
-                Text("“None” mutes that event. Limit reached sounds for every Claude window, and for Codex windows while Codex tracking is on.")
+                Text("“None” mutes that event. Limit reached sounds for every Claude window, and for Codex and Gemini windows while their tracking is on.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -123,6 +123,7 @@ enum MenuBarPillRenderer {
         case .sevenDay: return "calendar"
         case .model:    return "sparkles"
         case .codex:    return "terminal"
+        case .gemini:   return "sparkle"
         }
     }
 

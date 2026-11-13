@@ -6,6 +6,15 @@ struct PillSegment: Equatable {
         case sevenDay
         case model(String)
         case codex
+        case gemini
+
+        /// Bands that describe another provider, not Claude.
+        var isClaude: Bool {
+            switch self {
+            case .codex, .gemini: return false
+            case .fiveHour, .sevenDay, .model: return true
+            }
+        }
     }
 
     let kind: Kind
@@ -142,10 +151,12 @@ enum PillPlan: Equatable {
     case segments([PillSegment])
 }
 
-/// Combines the Claude pill with Codex according to `PillMode`.
+/// Combines the Claude pill with Codex according to `PillMode`, and adds a
+/// Gemini band when that is switched on.
 ///
-/// `.claude` hands back to the existing rendering (single pill, warning
-/// triangle, split pill) so the Claude-only pill is byte-for-byte what it was.
+/// `.claude` with no Gemini band hands back to the existing rendering
+/// (single pill, warning triangle, split pill) so the Claude-only pill is
+/// byte-for-byte what it was.
 enum PillComposer {
     static func plan(
         mode: PillMode,
@@ -153,24 +164,41 @@ enum PillComposer {
         claudeSegments: [PillSegment],
         claudeLacksWorkingToken: Bool,
         codex: CodexSnapshot?,
+        gemini: GeminiSnapshot? = nil,
+        geminiBand: Bool = false,
         now: Int64,
         coloring: UsageColoring = .absolute
     ) -> PillPlan {
-        guard codexTracking else { return .claude }
-        switch mode {
+        let gem = geminiBand ? geminiSegment(gemini, now: now, coloring: coloring) : nil
+        switch codexTracking ? mode : .claude {
         case .claude:
-            return .claude
+            // A Claude problem (no token, no reading yet) keeps Claude's own
+            // rendering; a Gemini band beside it would bury it.
+            guard let gem, !claudeLacksWorkingToken, !claudeSegments.isEmpty else { return .claude }
+            return .segments(claudeSegments + [gem])
         case .codex:
             return .segments([codexSegment(codex, now: now, coloring: coloring)
-                ?? PillSegment(kind: .codex, fraction: 0, text: "—", dimmed: true)])
+                ?? PillSegment(kind: .codex, fraction: 0, text: "—", dimmed: true)] + [gem].compactMap { $0 })
         case .both:
             // A Claude token problem renders as the red triangle; hiding it
             // behind a healthy Codex band would bury the thing to fix.
-            guard !claudeLacksWorkingToken, let codexSeg = codexSegment(codex, now: now, coloring: coloring) else {
-                return .claude
-            }
-            return .segments(claudeSegments + [codexSeg])
+            let extras = [codexSegment(codex, now: now, coloring: coloring), gem].compactMap { $0 }
+            guard !claudeLacksWorkingToken, !extras.isEmpty else { return .claude }
+            return .segments(claudeSegments + extras)
         }
+    }
+
+    /// The fullest bucket, painted at the most worrying one's colour.
+    static func geminiSegment(_ gemini: GeminiSnapshot?, now: Int64, coloring: UsageColoring = .absolute) -> PillSegment? {
+        guard let gemini, let peak = gemini.peakPercent(now: now) else { return nil }
+        let paint = gemini.buckets.map { b -> Double in
+            let used = b.effectivePercent(now: now)
+            // Pace needs the window's length; an unknown one is painted by usage.
+            guard let minutes = b.windowMinutes else { return max(0, min(1, used / 100)) }
+            return coloring.fraction(usedPercent: used, resetsAt: b.resetsAt, windowLength: Int64(minutes) * 60, now: now)
+        }.max()
+        return PillSegment(kind: .gemini, fraction: max(0, min(1, peak / 100)), text: "\(Int(peak.rounded()))%",
+                           colorFraction: coloring.byPace ? paint : nil)
     }
 
     /// Painted at the most worrying window's colour, which under pace

@@ -35,6 +35,9 @@ final class MenuViewModel: ObservableObject {
     let codex: CodexMonitor
     /// Forwards `codex`'s changes; outlives `stop()` like `codex` itself.
     private var codexForwarding: AnyCancellable?
+    /// Gemini quota, polled from the Antigravity CLI while tracking is on.
+    let gemini: GeminiMonitor
+    private var geminiForwarding: AnyCancellable?
     /// Live Claude Code sessions, reported by the hooks it installs.
     let sessions: SessionTracker
     private var sessionsForwarding: AnyCancellable?
@@ -214,6 +217,7 @@ final class MenuViewModel: ObservableObject {
         },
         connectFlow: @escaping () async throws -> OAuthSession = { try await OAuthFlow.runInteractive() },
         codex: CodexMonitor? = nil,
+        gemini: GeminiMonitor? = nil,
         sessions: SessionTracker? = nil,
         updates: UpdateChecker? = nil,
         defaults: UserDefaults = .standard
@@ -225,6 +229,7 @@ final class MenuViewModel: ObservableObject {
         // Built here rather than as a default argument: the default would be
         // evaluated in a nonisolated context, and CodexMonitor is main-actor.
         self.codex = codex ?? CodexMonitor(defaults: defaults)
+        self.gemini = gemini ?? GeminiMonitor(defaults: defaults)
         self.sessions = sessions ?? SessionTracker(defaults: defaults)
         let version = UpdateChecker.bundleVersion
         self.updates = updates ?? UpdateChecker(
@@ -253,6 +258,12 @@ final class MenuViewModel: ObservableObject {
         }
         self.codex.onSnapshotChange = { [weak self] old, new in
             self?.handleCodexChange(previous: old, current: new)
+        }
+        geminiForwarding = self.gemini.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        self.gemini.onSnapshotChange = { [weak self] old, new in
+            self?.handleGeminiChange(previous: old, current: new)
         }
         sessionsForwarding = self.sessions.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
@@ -332,6 +343,7 @@ final class MenuViewModel: ObservableObject {
         sp.start()
 
         codex.start()
+        gemini.start()
         // Verifies (and if needed installs) the session hooks.
         sessions.start()
         updates.start()
@@ -354,6 +366,7 @@ final class MenuViewModel: ObservableObject {
         clockTimer?.invalidate(); clockTimer = nil
         cacheWatcher?.stop(); cacheWatcher = nil
         codex.stop()
+        gemini.stop()
         sessions.stop()
         updates.stop()
         if let obs = wakeObserver {
@@ -373,11 +386,12 @@ final class MenuViewModel: ObservableObject {
         Task { @MainActor in await poller?.refreshNow() }
     }
 
-    /// Polls every source now: usage, Codex and the status page. For wake
-    /// from sleep and `ccusagestats://refresh`.
+    /// Polls every source now: usage, Codex, Gemini and the status page.
+    /// For wake from sleep and `ccusagestats://refresh`.
     func pollNow() {
         refreshNow()
         codex.refreshNow()
+        gemini.refreshNow()
         Task { @MainActor in await statusPoller?.refreshNow() }
     }
 
@@ -719,6 +733,22 @@ final class MenuViewModel: ObservableObject {
     }
 
     private var codexAlertLatch = CodexAlertLatch()
+
+    /// Warning / limit-reached sounds for Gemini buckets, on the weekly (or,
+    /// for a sub-day window, 5-hour) rule. No reset sound, as for Codex.
+    func handleGeminiChange(previous: GeminiSnapshot?, current: GeminiSnapshot?) {
+        let crossed = GeminiSnapshot.crossings(
+            previous: previous, current: current, now: Int64(Date().timeIntervalSince1970)
+        ) { self.alertRule(for: AlertWindowKind.forCodex(windowMinutes: $0.windowMinutes ?? 10080)).thresholds }
+            .flatMap { geminiAlertLatch.admit($0.thresholds, bucket: $0.bucket) }
+        if crossed.contains(100) {
+            SoundPlayer.play(named: reachedLimitSound)
+        } else if !crossed.isEmpty {
+            SoundPlayer.play(named: warningSound)
+        }
+    }
+
+    private var geminiAlertLatch = GeminiAlertLatch()
 
     private func handleStatusReport(_ new: StatusReport?) {
         let previous = statusReport

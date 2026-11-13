@@ -27,6 +27,8 @@ nonisolated enum Paths {
     static var stateFile: URL { appSupportDir.appendingPathComponent("state.json") }
     static var configFile: URL { appSupportDir.appendingPathComponent("config.json") }
     static var historyFile: URL { appSupportDir.appendingPathComponent("history.jsonl") }
+    /// The last Gemini quota reading, for the MCP server.
+    static var geminiFile: URL { appSupportDir.appendingPathComponent("gemini.json") }
 
     /// Claude Code's own settings file. Redirected under test as well: the
     /// migration in `CCUsageStatsApp.init` targets it, and on a machine without

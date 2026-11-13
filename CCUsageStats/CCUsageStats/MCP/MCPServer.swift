@@ -16,8 +16,9 @@ struct MCPServer {
     static let supportedProtocolVersions = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
 
     static let toolDescription = """
-    Current Claude and Codex usage-limit readings from the CCUsageStats menu-bar app: \
-    per window (Claude 5-hour, weekly and per-model weekly; Codex windows) the used percent, \
+    Current Claude, Codex and Gemini usage-limit readings from the CCUsageStats menu-bar app: \
+    per window (Claude 5-hour, weekly and per-model weekly; Codex windows; Gemini quota groups \
+    from the Antigravity CLI) the used percent, \
     reset time, seconds to reset, weekly pace and 5-hour forecast, plus how fresh each reading \
     is (as_of, age_seconds, stale). Each time comes as epoch seconds, *_iso (UTC) and *_local \
     (the user's wall time with weekday, e.g. "Monday 2026-10-19 11:00 BST"); quote *_local \
@@ -43,6 +44,7 @@ struct MCPServer {
                 stateURL: Paths.liveAppSupportDir.appendingPathComponent("state.json"),
                 historyURL: Paths.liveAppSupportDir.appendingPathComponent("history.jsonl"),
                 codexDirectory: CodexSessionReader.defaultDirectory,
+                geminiURL: Paths.liveAppSupportDir.appendingPathComponent("gemini.json"),
                 now: Int64(Date().timeIntervalSince1970),
                 codexCache: codexCache
             )
@@ -93,7 +95,7 @@ struct MCPServer {
         case "tools/list":
             return Self.encode(result: ["tools": [[
                 "name": Self.toolName,
-                "title": "Claude & Codex usage limits",
+                "title": "Claude, Codex & Gemini usage limits",
                 "description": Self.toolDescription,
                 "inputSchema": ["type": "object", "properties": [String: Any](), "additionalProperties": false],
                 "annotations": ["readOnlyHint": true, "openWorldHint": false],

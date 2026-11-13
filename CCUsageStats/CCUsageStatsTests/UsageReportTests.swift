@@ -166,6 +166,51 @@ final class UsageReportTests: XCTestCase {
         XCTAssertNil(window(r, "codex", "300m")?["pace"])
     }
 
+    func testGeminiUnavailableWithoutAReading() throws {
+        let r = UsageReport.build(state: nil, history: [], codex: nil, now: now)
+        let g = try XCTUnwrap(r["gemini"] as? [String: Any])
+        XCTAssertEqual(g["available"] as? Bool, false)
+        XCTAssertFalse((g["reason"] as? String ?? "").isEmpty)
+    }
+
+    func testGeminiWindows() throws {
+        let gemini = GeminiSnapshot(buckets: [
+            GeminiBucket(id: "gemini-weekly", group: "Gemini Models", window: "weekly", usedPercent: 20, resetsAt: now + 6 * day),
+            GeminiBucket(id: "odd", group: "Other", window: "fortnightly", usedPercent: 5, resetsAt: now + day),
+        ], observedAt: now - 120)
+        let r = UsageReport.build(state: nil, history: [], codex: nil, gemini: gemini, now: now)
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(r))
+        let g = try XCTUnwrap(r["gemini"] as? [String: Any])
+        XCTAssertEqual(g["available"] as? Bool, true)
+        XCTAssertEqual(g["source"] as? String, "agy /usage")
+        XCTAssertEqual(g["observed_at"] as? Int64, now - 120)
+        XCTAssertEqual(g["stale"] as? Bool, false)
+        let weekly = try XCTUnwrap(window(r, "gemini", "gemini-weekly"))
+        XCTAssertEqual(weekly["label"] as? String, "Gemini Models weekly")
+        XCTAssertEqual(weekly["group"] as? String, "Gemini Models")
+        XCTAssertEqual(weekly["used_percent"] as? Double, 20)
+        XCTAssertEqual(weekly["seconds_to_reset"] as? Int64, 6 * day)
+        XCTAssertNotNil(weekly["pace"])
+        XCTAssertNil(window(r, "gemini", "odd")?["pace"], "no pace without a known window length")
+    }
+
+    func testLoadReadsTheStoredGeminiReading() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("usage-report-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let geminiURL = dir.appendingPathComponent("gemini.json")
+        try GeminiStore.write(GeminiSnapshot(buckets: [
+            GeminiBucket(id: "gemini-weekly", group: "Gemini Models", window: "weekly", usedPercent: 33, resetsAt: now + day),
+        ], observedAt: now - 5), to: geminiURL)
+        let r = UsageReport.load(
+            stateURL: dir.appendingPathComponent("state.json"),
+            historyURL: dir.appendingPathComponent("history.jsonl"),
+            codexDirectory: dir.appendingPathComponent("no-codex"),
+            geminiURL: geminiURL,
+            now: now
+        )
+        XCTAssertEqual(window(r, "gemini", "gemini-weekly")?["used_percent"] as? Double, 33)
+    }
+
     func testLoadReadsFilesFromDisk() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("usage-report-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }

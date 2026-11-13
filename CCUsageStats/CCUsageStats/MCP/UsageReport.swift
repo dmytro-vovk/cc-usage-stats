@@ -13,12 +13,13 @@ enum UsageReport {
 
     /// `codexCache`: kept by a long-lived caller (the MCP server) so Codex's
     /// session logs are only re-read when they changed.
-    static func load(stateURL: URL, historyURL: URL, codexDirectory: URL, now: Int64,
+    static func load(stateURL: URL, historyURL: URL, codexDirectory: URL, geminiURL: URL? = nil, now: Int64,
                      timeZone: TimeZone = .current, codexCache: CodexSessionReader.Cache? = nil) -> [String: Any] {
         build(
             state: try? CacheStore.read(at: stateURL),
             history: readHistory(historyURL),
             codex: CodexSessionReader.latest(in: codexDirectory, cache: codexCache),
+            gemini: geminiURL.flatMap(GeminiStore.read(at:)),
             now: now,
             timeZone: timeZone
         )
@@ -27,7 +28,8 @@ enum UsageReport {
     /// Every epoch time also comes as `*_iso` (UTC) and `*_local`: the
     /// user's wall time with the weekday spelled out, so an agent never has
     /// to work out a weekday from a UTC string.
-    static func build(state: CachedState?, history: [UsageSample], codex: CodexSnapshot?, now: Int64,
+    static func build(state: CachedState?, history: [UsageSample], codex: CodexSnapshot?,
+                      gemini: GeminiSnapshot? = nil, now: Int64,
                       timeZone: TimeZone = .current) -> [String: Any] {
         let clock = Clock(timeZone: timeZone)
         return [
@@ -37,6 +39,7 @@ enum UsageReport {
             "now": now,
             "claude": claudeSection(state, history: history, now: now, clock: clock),
             "codex": codexSection(codex, now: now, clock: clock),
+            "gemini": geminiSection(gemini, now: now, clock: clock),
         ]
     }
 
@@ -112,6 +115,34 @@ enum UsageReport {
         out["windows"] = windows
         if let plan = codex.planType { out["plan_type"] = plan }
         out["note"] = "Codex readings only move while Codex runs; an old reading usually means no recent Codex activity."
+        return out
+    }
+
+    /// Written by the menu-bar app after each `agy -p /usage` poll (every
+    /// 5 minutes while Gemini tracking is on), so the usual staleness rule
+    /// applies: an old reading means the app stopped polling.
+    private static func geminiSection(_ gemini: GeminiSnapshot?, now: Int64, clock: Clock) -> [String: Any] {
+        guard let gemini else {
+            return [
+                "available": false,
+                "reason": "No Gemini reading: Gemini tracking is off in CCUsageStats (Settings → Accounts), or it has not read the Antigravity CLI (agy) yet.",
+            ]
+        }
+        let windows: [[String: Any]] = gemini.buckets.map { b in
+            let snap = WindowSnapshot(usedPercentage: b.usedPercent, resetsAt: b.resetsAt)
+            var w = b.windowMinutes == codexWeeklyMinutes
+                ? weekly(id: b.id, label: b.label, snap, now: now, clock: clock)
+                : window(id: b.id, label: b.label, used: b.usedPercent, resetsAt: b.resetsAt, now: now, clock: clock)
+            w["group"] = b.group
+            w["window"] = b.window
+            if let minutes = b.windowMinutes { w["window_minutes"] = minutes }
+            return w
+        }
+        var out = freshness(capturedAt: gemini.observedAt, key: "observed_at", now: now, clock: clock)
+        out["available"] = true
+        out["source"] = "agy /usage"
+        out["windows"] = windows
+        out["note"] = "Antigravity CLI quota groups: models within a group share one limit."
         return out
     }
 
