@@ -73,8 +73,8 @@ between the quotas. See [Codex usage](#codex-usage) and
 ### Dropdown
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.20.2-1">
-  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.20.2-1" width="280">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dropdown-dark.png?v=0.22.1">
+  <img alt="dropdown panel" src="docs/screenshots/dropdown-light.png?v=0.22.1" width="280">
 </picture>
 
 - **Resizable width**: drag either side edge of the panel (280–720 pt,
@@ -227,18 +227,18 @@ Gemini windows; the gauge needle always shows the absolute level.
 ### Settings window
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.20.2">
-  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.20.2" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.22.1">
+  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.22.1" width="460">
 </picture>
 &nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-accounts-dark.png?v=0.20.2">
-  <img alt="Settings — Accounts tab" src="docs/screenshots/settings-accounts-light.png?v=0.20.2" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-accounts-dark.png?v=0.22.1">
+  <img alt="Settings — Accounts tab" src="docs/screenshots/settings-accounts-light.png?v=0.22.1" width="460">
 </picture>
 &nbsp;
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-alerts-dark.png?v=0.20.2">
-  <img alt="Settings — Alerts tab" src="docs/screenshots/settings-alerts-light.png?v=0.20.2" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-alerts-dark.png?v=0.22.1">
+  <img alt="Settings — Alerts tab" src="docs/screenshots/settings-alerts-light.png?v=0.22.1" width="460">
 </picture>
 
 **⚙ Settings…** (⌘,) in the dropdown footer opens one window with three
