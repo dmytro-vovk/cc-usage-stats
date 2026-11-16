@@ -291,13 +291,17 @@ struct MenuBarDropdown: View {
                 // Keeps the secondary caption styling rather than the default
                 // accent-blue link look — this is a quiet footer label that
                 // happens to be clickable, not a call to action.
-                HStack(spacing: 3) {
-                    Link(versionString, destination: AppLinks.website)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .help("Open ccusagestats.app")
-                    versionStatusIcon
+                // The status mark sits inside the link, so it opens the
+                // site too.
+                Link(destination: AppLinks.website) {
+                    HStack(spacing: 3) {
+                        Text(versionString)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        versionStatusIcon
+                    }
                 }
+                .help("Open ccusagestats.app")
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")

@@ -2,7 +2,6 @@
 
 ## Observed, not fixed
 
-- Version footer (Gemini, out of scope): the status mark sits outside the Link, so clicking it does nothing (Tray/MenuBarContent.swift versionStatusIcon).
 - Version footer (Gemini, out of scope): spinner uses a fixed 11x11 frame while the marks size by font, so width may jitter slightly between states.
 - Update reminders (2026-11-16 review, P2): an announcement from launch/daily/"Check now" while the user is at the screen doesn't set remindedUpdateDay, so the next unlock that day posts it again (UpdateChecker.announce).
 - Update reminders (P2): a reminder while an earlier notify() is pending (permission prompt unanswered) is skipped until the next unlock (`announcing == nil` gate, UpdateChecker.announce).
