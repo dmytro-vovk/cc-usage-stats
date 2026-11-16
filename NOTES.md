@@ -2,6 +2,10 @@
 
 ## Observed, not fixed
 
+- Core/OutageDismissal.swift:keys — a clear-and-return the app never polls (offline, asleep, quit, or inside one 5-min interval) keeps the dismissal; the generic no-incident key `status:<sev>:<summary>` can also match a later unrelated outage (Fable P2, by design: no timestamps on the key).
+- Core/StatusReport.swift:parse ignores `scheduled_maintenances`, so maintenance has no incident ID and dismisses by the generic status key (Fable, out of scope).
+- Tray/MenuViewModel.swift:handleStatusReport plays the outage sound on every launch during an ongoing, undismissed outage (pre-existing; Fable, out of scope).
+
 - Gemini tracking (2026-11-13 review P2s, not fixed): the Gemini pill band has no staleness cue when `agy` keeps failing (Tray/PillLayout.swift `geminiSegment`; the dropdown shows age + error).
 - Gemini: pill mode Claude + Gemini band at a 5-hour countdown shares the pill with the countdown, as Both + Codex already does (Tray/PillLayout.swift `PillComposer.plan`).
 - Gemini: in Both, no Claude reading + no Codex reading + Gemini band renders a Gemini-only pill (Tray/PillLayout.swift `.both`); the same shape existed already for Codex.

@@ -100,6 +100,18 @@ final class OutageDismissalTests: XCTestCase {
         XCTAssertFalse(vm.showsOutage)
     }
 
+    /// A poll that reports operational while the incident is still
+    /// unresolved (e.g. monitoring) hasn't cleared it.
+    func testOperationalPollWithIncidentStillOpenKeepsTheDismissal() {
+        let vm = MenuViewModel(defaults: throwawayDefaults().0)
+        vm.receiveStatusReport(report(.minor, incidents: ["a1"]))
+        vm.dismissOutage()
+        vm.receiveStatusReport(report(.none, "All Systems Operational", incidents: ["a1"]))
+        XCTAssertFalse(vm.showsOutage)
+        vm.receiveStatusReport(report(.minor, incidents: ["a1"]))
+        XCTAssertFalse(vm.showsOutage)
+    }
+
     func testNoIncidentShowsAgainWhenSummaryChanges() {
         let vm = MenuViewModel(defaults: throwawayDefaults().0)
         vm.receiveStatusReport(report(.minor, "Minor Service Outage"))

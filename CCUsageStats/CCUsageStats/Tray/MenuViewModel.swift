@@ -771,10 +771,11 @@ final class MenuViewModel: ObservableObject {
     private var geminiAlertLatch = GeminiAlertLatch()
 
     /// Takes a poll result and forgets dismissals of outages it no longer
-    /// carries. A nil report (failed fetch) changes nothing.
+    /// carries. A nil report (no data yet) keeps the dismissals: it says
+    /// nothing about whether the outage cleared.
     func receiveStatusReport(_ new: StatusReport?) {
-        guard let new else { return }
         statusReport = new
+        guard let new else { return }
         let kept = OutageDismissal.pruned(dismissedOutageKeys, for: new)
         if kept != dismissedOutageKeys { dismissedOutageKeys = kept }
     }
@@ -790,7 +791,8 @@ final class MenuViewModel: ObservableObject {
         let op = StatusReport.Indicator.none
         let wasOperational = (previous?.indicator ?? op) == op
         let isOperational  = (new?.indicator ?? op) == op
-        if wasOperational, !isOperational {
+        // An outage dismissed before a relaunch stays silent too.
+        if wasOperational, !isOperational, showsOutage {
             SoundPlayer.play(named: outageSound)
         }
     }

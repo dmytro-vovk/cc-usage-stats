@@ -49,7 +49,8 @@ between the quotas. See [Codex usage](#codex-usage) and
   the window reset (single pill again — the countdown is the headline).
 - A severity-tinted SF Symbol appended to the right when
   status.claude.com reports a non-operational state, so you see an
-  outage without opening the dropdown.
+  outage without opening the dropdown. Closing the outage banner in the
+  dropdown hides this badge too.
 - A red `⚠︎` triangle (in place of the gauge) when there is nothing left
   to poll with: no token set, the token rejected, or a connected
   account's session expired with no pasted token behind it.
@@ -140,7 +141,11 @@ between the quotas. See [Codex usage](#codex-usage) and
 - Auth / connectivity / outage rows when relevant
   (`Token rejected`, `Claude account connection expired` with a
   **Reconnect** button, `Offline`, `No subscription rate-limit data`,
-  the status.claude.com banner). At most one of these shows at a time —
+  the status.claude.com banner). The status banner has a **×** that
+  hides it, and the menu bar badge, for that outage while it lasts: a new
+  incident, or the same one clearing and coming back, shows it again
+  (with no incident attached, a change of severity or summary does).
+  The dismissal survives a relaunch. At most one of these shows at a time —
   the reconnect *prompt* above is suppressed whenever one of these is
   up, so the panel never offers an optional upgrade and reports a hard
   failure in the same breath.

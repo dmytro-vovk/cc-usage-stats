@@ -10,10 +10,14 @@ import Foundation
 /// coming back counts as new.
 enum OutageDismissal {
     static func keys(for report: StatusReport?) -> Set<String> {
-        guard let r = report, r.indicator != .none else { return [] }
+        guard let r = report else { return [] }
+        // An unresolved incident keeps its key even when the page-level
+        // indicator reads operational (e.g. while it's being monitored):
+        // it hasn't cleared, so its dismissal must survive that poll.
         if !r.activeIncidentIDs.isEmpty {
             return Set(r.activeIncidentIDs.map { "incident:\($0)" })
         }
+        guard r.indicator != .none else { return [] }
         return ["status:\(r.indicator.rawValue):\(r.description)"]
     }
 
