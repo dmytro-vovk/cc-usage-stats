@@ -294,7 +294,7 @@ struct MenuBarDropdown: View {
                 HStack(spacing: 3) {
                     Link(versionString, destination: AppLinks.website)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .help("Open ccusagestats.app")
                     versionStatusIcon
                 }
@@ -411,6 +411,7 @@ struct MenuBarDropdown: View {
 
     /// Beside the version: green check when GitHub confirmed it current,
     /// orange arrow when a newer release exists, a spinner while checking.
+    /// The mark is dimmed so it sits at the version text's brightness.
     @ViewBuilder
     private var versionStatusIcon: some View {
         switch vm.updates.status {
@@ -423,12 +424,12 @@ struct MenuBarDropdown: View {
         case .current:
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption2)
-                .foregroundStyle(.green)
+                .foregroundStyle(.green.opacity(0.7))
                 .help("Up to date")
         case .outdated:
             Image(systemName: "arrow.down.circle.fill")
                 .font(.caption2)
-                .foregroundStyle(.orange)
+                .foregroundStyle(.orange.opacity(0.7))
                 .help("A newer version is available")
         case .unknown:
             EmptyView()
