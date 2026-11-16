@@ -5,6 +5,9 @@
 - Update reminders (2026-11-16 review, P2): an announcement from launch/daily/"Check now" while the user is at the screen doesn't set remindedUpdateDay, so the next unlock that day posts it again (UpdateChecker.announce).
 - Update reminders (P2): a reminder while an earlier notify() is pending (permission prompt unanswered) is skipped until the next unlock (`announcing == nil` gate, UpdateChecker.announce).
 - Update reminders (P2): `today` is captured before awaiting notify(); a prompt answered after midnight records the previous day (one extra reminder).
+- Update reminders (P2, fix-round review): an unlock during the first check after launch (lastCheckedAt nil) doesn't set remindAfterCheck (UpdateChecker.handleUnlock); next unlock reminds.
+- Update reminders (P2, Fable+Codex): UpdateNotifier.notify removes older update- banners before add; if add throws, none remains until the retry. Fix: add first, then remove the precomputed older ids.
+- Update reminders (P2, Codex): UpdateNotifier.notify clears only delivered update- notifications, not pending ones; two posts in quick succession could stack.
 - Out of scope (Fable): an unanswered permission prompt leaves `announcing` non-nil indefinitely, blocking later announcements (UpdateChecker.announce).
 - Out of scope (Fable): checkNow's task can override the 30 s re-enable timer with nextDelay when the toggle flips mid-flight (UpdateChecker.checkNow).
 - Out of scope (Gemini): UpdateNotifier.notify calls requestAuthorization on every post instead of reading settings first.
