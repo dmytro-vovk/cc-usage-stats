@@ -300,6 +300,8 @@ struct MenuBarDropdown: View {
                             .foregroundStyle(.secondary)
                         versionStatusIcon
                     }
+                    // Whole label is the click target, gap included.
+                    .contentShape(Rectangle())
                 }
                 .help("Open ccusagestats.app")
                 Spacer()
@@ -424,6 +426,8 @@ struct MenuBarDropdown: View {
                 .controlSize(.mini)
                 .scaleEffect(0.7)
                 .frame(width: 11, height: 11)
+                // AppKit-backed: would swallow the link's click.
+                .allowsHitTesting(false)
                 .help("Checking for a newer version…")
         case .current:
             Image(systemName: "checkmark.circle.fill")
