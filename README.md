@@ -151,8 +151,11 @@ between the quotas. See [Codex usage](#codex-usage) and
   failure in the same breath.
 - **Update available: vX.Y.Z** — a link to the download page at
   [ccusagestats.app](https://ccusagestats.app/),
-  shown when a newer release is out, which is also announced once with a
-  macOS notification (see [Update check](#update-check)).
+  shown when a newer release is out, which is also announced with a
+  macOS notification (see [Update check](#update-check)). Beside the
+  version at the bottom, a green check means GitHub confirmed this build
+  is current, an orange arrow that a newer release is out, and a spinner
+  that a check is running.
 - With [Codex tracking](#codex-usage) on, a **Codex** section: one bar
   per Codex window (labelled from its length — "5-hour", "Weekly"), and
   the plan and reading age in the header (`prolite · 2m ago`; hover for
@@ -523,7 +526,11 @@ Settings links as the only signal. Once the notification has actually
 been posted its tag is remembered, so daily checks and relaunches don't
 repeat it; one that never went out (the permission prompt left
 unanswered, or refused) is tried again on later checks, which is silent
-while permission stays off. Nothing is downloaded or
+while permission stays off. Unlocking the screen checks again if the
+last check is an hour old, and while a newer release is still waiting,
+the first unlock of each day posts the notification again, so it shows
+up when you sit down rather than overnight while the screen was locked.
+Nothing is downloaded or
 installed automatically — install the new version yourself.
 
 - **Off switch:** Settings → General → **Check for updates**. Off means

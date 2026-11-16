@@ -89,6 +89,8 @@ final class UpdateChecker: ObservableObject {
     private let clock: () -> Int64
     private var timer: Timer?
     private var isStarted = false
+    /// An unlock arrived while a check was in flight: that check reminds.
+    private var remindAfterCheck = false
 
     init(
         client: UpdateCheckClient,
@@ -174,7 +176,11 @@ final class UpdateChecker: ObservableObject {
     /// asked GitHub.
     @discardableResult
     func handleUnlock() async -> Bool {
-        guard enabled, canCheck, !isChecking, let last = lastCheckedAt else { return false }
+        guard enabled, canCheck, let last = lastCheckedAt else { return false }
+        if isChecking {
+            remindAfterCheck = true
+            return false
+        }
         if TimeInterval(clock() - last) >= Self.unlockRecheck && canCheckNow {
             await tick(remind: true)
             return true
@@ -212,6 +218,8 @@ final class UpdateChecker: ObservableObject {
         defer { isChecking = false }
         Self.log.notice("checking GitHub for a newer release")
         let result = await client.fetchLatest()
+        let remind = remind || remindAfterCheck
+        remindAfterCheck = false
         // Turned off while the request was in flight: drop the answer.
         guard enabled else { return }
         lastCheckedAt = clock()
@@ -228,6 +236,8 @@ final class UpdateChecker: ObservableObject {
             lastCheckFailed = true
             if case .rateLimited = result { lastCheckRateLimited = true } else { lastCheckRateLimited = false }
             Self.log.notice("update check failed (\(self.consecutiveFailures, privacy: .public) in a row)")
+            // The release found earlier is still waiting.
+            if remind, let r = available { announce(r, remind: true) }
         }
         nextDelay = Self.delay(after: result, failures: consecutiveFailures)
     }

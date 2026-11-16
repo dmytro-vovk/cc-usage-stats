@@ -2,6 +2,13 @@
 
 ## Observed, not fixed
 
+- Update reminders (2026-11-16 review, P2): an announcement from launch/daily/"Check now" while the user is at the screen doesn't set remindedUpdateDay, so the next unlock that day posts it again (UpdateChecker.announce).
+- Update reminders (P2): a reminder while an earlier notify() is pending (permission prompt unanswered) is skipped until the next unlock (`announcing == nil` gate, UpdateChecker.announce).
+- Update reminders (P2): `today` is captured before awaiting notify(); a prompt answered after midnight records the previous day (one extra reminder).
+- Out of scope (Fable): an unanswered permission prompt leaves `announcing` non-nil indefinitely, blocking later announcements (UpdateChecker.announce).
+- Out of scope (Fable): checkNow's task can override the 30 s re-enable timer with nextDelay when the toggle flips mid-flight (UpdateChecker.checkNow).
+- Out of scope (Gemini): UpdateNotifier.notify calls requestAuthorization on every post instead of reading settings first.
+
 - Core/OutageDismissal.swift:keys — while a dismissed incident stays open, a new incident-less degradation at a higher severity stays hidden too (keys can't tell it from the same incident regressing; Fable P2, trade-off of ID keying).
 - Tray/MenuViewModel.swift:handleStatusReport — a dismissed outage relaunched silently, then joined by a new incident, re-shows the banner with no sound (mid-outage changes never sound; Fable P2).
 

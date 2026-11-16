@@ -529,8 +529,16 @@ by design.
   Within ~30 s the dropdown shows **Update available: v99.0.0**; clicking
   it opens https://ccusagestats.app/ in the browser. Settings → General shows
   "Update available, checked …", and a **Download from ccusagestats.app** link (the same page).
+  The version at the bottom of the dropdown shows a spinner during the
+  check, then an orange arrow.
+- With the fake newer release still served: lock the screen (⌃⌘Q) and
+  unlock. The notification is posted again (first unlock of the day
+  only); `log show … 'category == "updates"'` shows "reminding v99.0.0".
+  A second lock/unlock the same day posts nothing. Clear the reminder
+  day with the app quit:
+  `plutil -remove 'cc-usage-stats\.remindedUpdateDay' ~/Library/Preferences/dev.dv.ccusagestats.CCUsageStats.plist`.
 - Same file with `"tag_name"` set to the installed version: no row;
-  Settings says "Up to date, checked …".
+  Settings says "Up to date, checked …"; the version shows a green check.
 - Settings → General → turn **Check for updates** off: the dropdown row
   disappears at once, and no further request is made: every check logs
   "checking GitHub for a newer release", so

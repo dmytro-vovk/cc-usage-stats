@@ -18,6 +18,7 @@ protocol UpdateNotifying: AnyObject {
 @MainActor
 final class UpdateNotifier: NSObject, UpdateNotifying, UNUserNotificationCenterDelegate {
     static let shared = UpdateNotifier()
+    private static let idPrefix = "update-"
 
     /// Becomes the notification-center delegate, so a click on the
     /// notification reaches us. Call once at launch (not in test hosts).
@@ -33,11 +34,15 @@ final class UpdateNotifier: NSObject, UpdateNotifying, UNUserNotificationCenterD
         content.title = "Update available: \(tag)"
         content.body = "A newer cc-usage-stats is out. Click to open the download page."
         content.sound = .default
-        // One identifier per tag: posting it again replaces, never stacks.
-        // A reminder clears the delivered copy first so it shows as a
-        // fresh banner rather than a silent update in Notification Center.
-        let id = "update-\(tag)"
-        center.removeDeliveredNotifications(withIdentifiers: [id])
+        // Each post gets its own identifier, so a reminder shows as a fresh
+        // banner; earlier update notifications are cleared so they never
+        // stack. Removal is asynchronous, so it only ever names the older
+        // identifiers — it cannot race away the one being added.
+        let older = await center.deliveredNotifications()
+            .map(\.request.identifier)
+            .filter { $0.hasPrefix(Self.idPrefix) }
+        if !older.isEmpty { center.removeDeliveredNotifications(withIdentifiers: older) }
+        let id = "\(Self.idPrefix)\(tag)-\(UUID().uuidString)"
         let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         do {
             try await center.add(request)

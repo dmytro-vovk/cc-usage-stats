@@ -144,9 +144,12 @@ final class UpdateCheckerTests: XCTestCase {
         var calls = 0
         /// Runs while the request is "in flight".
         var onFetch: (() -> Void)?
+        /// Awaited while the request is "in flight".
+        var whileFetching: (() async -> Void)?
         func fetchLatest() async -> UpdateFetchResult {
             calls += 1
             onFetch?()
+            if let w = whileFetching { whileFetching = nil; await w() }
             return queue.isEmpty ? .failure : queue.removeFirst()
         }
     }
@@ -571,5 +574,34 @@ final class UpdateCheckerTests: XCTestCase {
         c.enabled = false
         XCTAssertEqual(c.status, .unknown)
         XCTAssertEqual(makeChecker(current: "0.0.0", client: StubClient()).status, .unknown)
+    }
+
+    /// The morning case: wake starts a check, the unlock lands while it is
+    /// in flight. The reminder must follow that check, not be dropped.
+    func testUnlockDuringInFlightCheckRemindsAfterIt() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0")), .release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()                       // announced
+        var askedGitHub: Bool?
+        client.whileFetching = { askedGitHub = await c.handleUnlock() }
+        await c.tickForTest()                       // unlock arrives mid-fetch
+        XCTAssertEqual(askedGitHub, false)
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"])
+    }
+
+    /// Network not up yet right after unlock: the recheck fails, but the
+    /// release found earlier is still waiting, so remind anyway.
+    func testFailedUnlockRecheckStillReminds() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0")), .failure]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        now += 24 * 3600
+        await c.handleUnlockForTest()
+        XCTAssertEqual(client.calls, 2)
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"])
     }
 }
