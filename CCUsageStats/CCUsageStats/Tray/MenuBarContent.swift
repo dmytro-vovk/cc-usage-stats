@@ -434,7 +434,8 @@ struct MenuBarDropdown: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
                         .wrapsFully()
-                    Spacer(minLength: 4)
+                    // The title's wrapsFully() frame already pushes this
+                    // to the trailing edge; a Spacer would split the width.
                     // Hides this outage while it lasts; a new or returning
                     // one shows again (`OutageDismissal`).
                     Button(action: vm.dismissOutage) {
