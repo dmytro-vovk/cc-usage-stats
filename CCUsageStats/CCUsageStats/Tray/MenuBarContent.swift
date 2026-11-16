@@ -291,10 +291,13 @@ struct MenuBarDropdown: View {
                 // Keeps the tertiary caption styling rather than the default
                 // accent-blue link look — this is a quiet footer label that
                 // happens to be clickable, not a call to action.
-                Link(versionString, destination: AppLinks.website)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .help("Open ccusagestats.app")
+                HStack(spacing: 3) {
+                    Link(versionString, destination: AppLinks.website)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .help("Open ccusagestats.app")
+                    versionStatusIcon
+                }
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
@@ -403,6 +406,32 @@ struct MenuBarDropdown: View {
             }
             .font(.caption)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Beside the version: green check when GitHub confirmed it current,
+    /// orange arrow when a newer release exists, a spinner while checking.
+    @ViewBuilder
+    private var versionStatusIcon: some View {
+        switch vm.updates.status {
+        case .checking:
+            ProgressView()
+                .controlSize(.mini)
+                .scaleEffect(0.7)
+                .frame(width: 11, height: 11)
+                .help("Checking for a newer version…")
+        case .current:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .help("Up to date")
+        case .outdated:
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .help("A newer version is available")
+        case .unknown:
+            EmptyView()
         }
     }
 

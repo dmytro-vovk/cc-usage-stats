@@ -431,4 +431,145 @@ final class UpdateCheckerTests: XCTestCase {
         await checker.tickForTest()
         XCTAssertNil(defaults.string(forKey: UpdateChecker.notifiedTagKey))
     }
+
+    // MARK: screen unlock
+
+    /// Unlocking after the last check went stale asks GitHub again and
+    /// announces a newer release right then, while the user is looking.
+    func testUnlockRechecksWhenStaleAndAnnounces() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7")), .release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        now += Int64(UpdateChecker.unlockRecheck)
+        await c.handleUnlockForTest()
+        XCTAssertEqual(client.calls, 2)
+        XCTAssertEqual(spy.posted, ["v0.19.0"])
+    }
+
+    func testUnlockSoonAfterACheckDoesNotHitGitHub() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7"))]
+        let c = makeChecker(current: "0.18.7", client: client)
+        await c.tickForTest()
+        now += Int64(UpdateChecker.unlockRecheck) - 1
+        await c.handleUnlockForTest()
+        XCTAssertEqual(client.calls, 1)
+    }
+
+    /// Before the first (launch) check has run, unlock leaves it to the timer.
+    func testUnlockBeforeFirstCheckDoesNothing() async {
+        let client = StubClient()
+        let c = makeChecker(current: "0.18.7", client: client)
+        await c.handleUnlockForTest()
+        XCTAssertEqual(client.calls, 0)
+    }
+
+    /// Still behind: the first unlock of each day reminds again, even though
+    /// the release was announced already (maybe while the screen was locked).
+    func testUnlockRemindsOncePerDayWhileBehind() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()                       // announced by the timer
+        await c.handleUnlockForTest()               // same day: first unlock reminds
+        await c.handleUnlockForTest()               // same day again: quiet
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"])
+        client.queue = [.release(release("v0.19.0"))]
+        now += 24 * 3600
+        await c.handleUnlockForTest()               // next day: stale, rechecks, reminds
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0", "v0.19.0"])
+    }
+
+    func testUnlockWhenCurrentNeverNotifies() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        await c.handleUnlockForTest()
+        XCTAssertEqual(spy.posted, [])
+    }
+
+    func testUnlockWhenOffDoesNothing() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        c.enabled = false
+        now += 24 * 3600
+        await c.handleUnlockForTest()
+        XCTAssertEqual(client.calls, 1)
+        XCTAssertEqual(spy.posted, ["v0.19.0"])
+    }
+
+    /// A reminder that never reached the system does not use up the day.
+    func testFailedReminderIsRetriedOnNextUnlock() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        spy.succeeds = false
+        await c.handleUnlockForTest()
+        spy.succeeds = true
+        await c.handleUnlockForTest()
+        await c.handleUnlockForTest()
+        XCTAssertEqual(spy.posted.count, 3)
+    }
+
+    // MARK: version status (dropdown icon)
+
+    func testStatusUnknownBeforeAnyCheck() {
+        XCTAssertEqual(makeChecker(current: "0.18.7", client: StubClient()).status, .unknown)
+    }
+
+    func testStatusCurrentAfterSuccessfulCheck() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7"))]
+        let c = makeChecker(current: "0.18.7", client: client)
+        await c.tickForTest()
+        XCTAssertEqual(c.status, .current)
+    }
+
+    func testStatusOutdatedWhenNewerExists() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let c = makeChecker(current: "0.18.7", client: client)
+        await c.tickForTest()
+        XCTAssertEqual(c.status, .outdated)
+    }
+
+    func testStatusCheckingWhileInFlight() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7"))]
+        let c = makeChecker(current: "0.18.7", client: client)
+        var seen: UpdateChecker.Status?
+        client.onFetch = { seen = c.status }
+        await c.tickForTest()
+        XCTAssertEqual(seen, .checking)
+    }
+
+    /// A failed check keeps the last known answer rather than guessing.
+    func testStatusKeepsLastAnswerAfterFailure() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7")), .failure]
+        let c = makeChecker(current: "0.18.7", client: client)
+        await c.tickForTest()
+        await c.tickForTest()
+        XCTAssertEqual(c.status, .current)
+    }
+
+    func testStatusUnknownWhenOffOrDevBuild() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.18.7"))]
+        let c = makeChecker(current: "0.18.7", client: client)
+        await c.tickForTest()
+        c.enabled = false
+        XCTAssertEqual(c.status, .unknown)
+        XCTAssertEqual(makeChecker(current: "0.0.0", client: StubClient()).status, .unknown)
+    }
 }

@@ -181,6 +181,7 @@ final class MenuViewModel: ObservableObject {
     /// poller's late answers never reach the cache — see `UsagePoller.tick`.)
     private var alertsHeldUntil: Int64?
     private var wakeObserver: NSObjectProtocol?
+    private var unlockObserver: NSObjectProtocol?
     private var history: UsageHistory?
     /// `resetsAt` of the window the newest history sample belongs to.
     private var historyWindowEnd: Int64?
@@ -348,6 +349,17 @@ final class MenuViewModel: ObservableObject {
             }
         }
 
+        // Screen unlocked (the morning sit-down): recheck for a release and
+        // remind once a day while one is waiting. Wake alone may happen with
+        // the screen still locked, where a banner goes unseen.
+        unlockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsUnlocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.updates.screenUnlocked() }
+        }
+
         // status.claude.com poller — coarse 5-minute cadence, surfaces
         // outages in the dropdown without affecting the usage data path.
         let sp = StatusPoller(client: LiveStatusPollerClient())
@@ -390,6 +402,10 @@ final class MenuViewModel: ObservableObject {
         if let obs = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             wakeObserver = nil
+        }
+        if let obs = unlockObserver {
+            DistributedNotificationCenter.default().removeObserver(obs)
+            unlockObserver = nil
         }
         cancellables.removeAll()
     }

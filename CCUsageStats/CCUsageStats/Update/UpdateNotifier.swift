@@ -34,7 +34,11 @@ final class UpdateNotifier: NSObject, UpdateNotifying, UNUserNotificationCenterD
         content.body = "A newer cc-usage-stats is out. Click to open the download page."
         content.sound = .default
         // One identifier per tag: posting it again replaces, never stacks.
-        let request = UNNotificationRequest(identifier: "update-\(tag)", content: content, trigger: nil)
+        // A reminder clears the delivered copy first so it shows as a
+        // fresh banner rather than a silent update in Notification Center.
+        let id = "update-\(tag)"
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         do {
             try await center.add(request)
             return true

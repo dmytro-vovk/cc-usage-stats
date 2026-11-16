@@ -9,7 +9,10 @@ import os
 /// Cadence: first check shortly after launch, then daily. Failures back off
 /// from 30 minutes, doubling up to a day; a rate-limit answer waits for
 /// GitHub's own hint (bounded to 15 minutes…1 day). Waking from sleep checks
-/// only if a check was due while asleep.
+/// only if a check was due while asleep. Unlocking the screen checks again
+/// when the last check is an hour old, and while a newer release exists the
+/// first unlock of each day posts the notification again, so it lands when
+/// the user sits down rather than while the screen was locked.
 @MainActor
 final class UpdateChecker: ObservableObject {
     private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "updates")
@@ -17,12 +20,25 @@ final class UpdateChecker: ObservableObject {
     /// Tag of the last release a notification was posted for, so each
     /// release is announced once — not on every daily check or relaunch.
     static let notifiedTagKey = "cc-usage-stats.notifiedUpdateTag"
+    /// Local day ("yyyy-MM-dd") of the last unlock reminder.
+    static let remindedDayKey = "cc-usage-stats.remindedUpdateDay"
 
     static let launchDelay: TimeInterval = 30
     static let dailyInterval: TimeInterval = 24 * 3600
     static let failureBase: TimeInterval = 30 * 60
     static let rateLimitFloor: TimeInterval = 15 * 60
     static let rateLimitDefault: TimeInterval = 3600
+    /// On unlock, a check older than this is repeated.
+    static let unlockRecheck: TimeInterval = 3600
+
+    /// What the dropdown shows beside the version.
+    enum Status: Equatable {
+        /// Off, a dev build, or no answer yet.
+        case unknown
+        case checking
+        case current
+        case outdated
+    }
 
     /// The newer release, when there is one. Cleared when a later check
     /// finds the running version current, or when the check is turned off.
@@ -35,6 +51,16 @@ final class UpdateChecker: ObservableObject {
     /// waits out GitHub's hint like the timer does.
     @Published private(set) var lastCheckRateLimited = false
     @Published private(set) var isChecking = false
+    /// Whether the last answered check found this build current. Kept
+    /// through failed checks, like `available`.
+    @Published private(set) var confirmedCurrent = false
+
+    var status: Status {
+        guard enabled, canCheck else { return .unknown }
+        if isChecking { return .checking }
+        if available != nil { return .outdated }
+        return confirmedCurrent ? .current : .unknown
+    }
 
     @Published var enabled: Bool {
         didSet {
@@ -45,6 +71,7 @@ final class UpdateChecker: ObservableObject {
             } else {
                 timer?.invalidate(); timer = nil
                 available = nil
+                confirmedCurrent = false
             }
         }
     }
@@ -131,6 +158,37 @@ final class UpdateChecker: ObservableObject {
         checkNow()
     }
 
+    /// Screen unlocked: the user is back. See `handleUnlock`.
+    func screenUnlocked() {
+        guard isStarted else { return }
+        Task { @MainActor in
+            let checked = await handleUnlock()
+            if checked && isStarted && enabled { scheduleTimer(after: nextDelay) }
+        }
+    }
+
+    /// Rechecks when the last check is stale (and not inside a rate-limit
+    /// wait), otherwise reuses the last answer; a newer release is then
+    /// announced, or reminded once per local day. Before the first check
+    /// it does nothing: the launch timer has that. Returns whether it
+    /// asked GitHub.
+    @discardableResult
+    func handleUnlock() async -> Bool {
+        guard enabled, canCheck, !isChecking, let last = lastCheckedAt else { return false }
+        if TimeInterval(clock() - last) >= Self.unlockRecheck && canCheckNow {
+            await tick(remind: true)
+            return true
+        }
+        if let r = available { announce(r, remind: true) }
+        return false
+    }
+
+    /// For tests — `handleUnlock` and its announcement.
+    func handleUnlockForTest() async {
+        await handleUnlock()
+        await announcing?.value
+    }
+
     /// User-initiated check (Settings → "Check now").
     func checkNow() {
         guard canCheckNow else { return }
@@ -148,7 +206,7 @@ final class UpdateChecker: ObservableObject {
 
     private var announcing: Task<Void, Never>?
 
-    private func tick() async {
+    private func tick(remind: Bool = false) async {
         guard enabled, let current, !isChecking else { return }
         isChecking = true
         defer { isChecking = false }
@@ -163,7 +221,8 @@ final class UpdateChecker: ObservableObject {
             lastCheckFailed = false
             lastCheckRateLimited = false
             available = r.version > current ? r : nil
-            if let r = available { announce(r) }
+            confirmedCurrent = available == nil
+            if let r = available { announce(r, remind: remind) }
         case .failure, .rateLimited:
             consecutiveFailures += 1
             lastCheckFailed = true
@@ -178,16 +237,31 @@ final class UpdateChecker: ObservableObject {
     /// unanswered, a refusal or a failed post leaves it to the next check.
     /// Runs beside the check, not inside it — the first announcement waits
     /// on the user's answer to the permission prompt.
-    private func announce(_ r: LatestRelease) {
-        guard let notifier, announcing == nil,
-              defaults.string(forKey: Self.notifiedTagKey) != r.tag else { return }
-        Self.log.notice("announcing \(r.tag, privacy: .public)")
+    ///
+    /// `remind` (unlock): an announced release is posted again if no unlock
+    /// reminder went out today. Only unlock reminders use up the day — an
+    /// announcement made while the screen was locked must not.
+    private func announce(_ r: LatestRelease, remind: Bool = false) {
+        guard let notifier, announcing == nil else { return }
+        let today = Self.dayKey(clock())
+        let announced = defaults.string(forKey: Self.notifiedTagKey) == r.tag
+        if announced && !(remind && defaults.string(forKey: Self.remindedDayKey) != today) { return }
+        Self.log.notice("\(announced ? "reminding" : "announcing", privacy: .public) \(r.tag, privacy: .public)")
         announcing = Task { @MainActor [weak self] in
             let posted = await notifier.notify(r)
             guard let self else { return }
-            if posted { self.defaults.set(r.tag, forKey: Self.notifiedTagKey) }
+            if posted {
+                self.defaults.set(r.tag, forKey: Self.notifiedTagKey)
+                if remind { self.defaults.set(today, forKey: Self.remindedDayKey) }
+            }
             self.announcing = nil
         }
+    }
+
+    /// Local calendar day of `epoch`, e.g. "2026-11-16".
+    static func dayKey(_ epoch: Int64) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: TimeInterval(epoch)))
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
     private func scheduleTimer(after seconds: TimeInterval) {
