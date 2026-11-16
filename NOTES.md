@@ -2,6 +2,9 @@
 
 ## Observed, not fixed
 
+- Core/OutageDismissal.swift:keys — while a dismissed incident stays open, a new incident-less degradation at a higher severity stays hidden too (keys can't tell it from the same incident regressing; Fable P2, trade-off of ID keying).
+- Tray/MenuViewModel.swift:handleStatusReport — a dismissed outage relaunched silently, then joined by a new incident, re-shows the banner with no sound (mid-outage changes never sound; Fable P2).
+
 - Core/OutageDismissal.swift:keys — a clear-and-return the app never polls (offline, asleep, quit, or inside one 5-min interval) keeps the dismissal; the generic no-incident key `status:<sev>:<summary>` can also match a later unrelated outage (Fable P2, by design: no timestamps on the key).
 - Core/StatusReport.swift:parse ignores `scheduled_maintenances`, so maintenance has no incident ID and dismisses by the generic status key (Fable, out of scope).
 - Tray/MenuViewModel.swift:handleStatusReport plays the outage sound on every launch during an ongoing, undismissed outage (pre-existing; Fable, out of scope).
