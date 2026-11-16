@@ -288,7 +288,7 @@ struct MenuBarDropdown: View {
                 }
                 .keyboardShortcut(",")
                 Spacer()
-                // Keeps the tertiary caption styling rather than the default
+                // Keeps the secondary caption styling rather than the default
                 // accent-blue link look — this is a quiet footer label that
                 // happens to be clickable, not a call to action.
                 HStack(spacing: 3) {
