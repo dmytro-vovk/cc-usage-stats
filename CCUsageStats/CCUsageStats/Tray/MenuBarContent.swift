@@ -92,7 +92,7 @@ struct MenuBarLabel: View {
     }
 
     private func buildOutageIcon(staleAlpha: CGFloat) -> NSImage? {
-        guard let r = vm.statusReport else { return nil }
+        guard vm.showsOutage, let r = vm.statusReport else { return nil }
         return MenuBarPillRenderer.outageIcon(for: r.indicator, staleAlpha: staleAlpha)
     }
 
@@ -417,7 +417,7 @@ struct MenuBarDropdown: View {
 
     @ViewBuilder
     private var statusBanner: some View {
-        if let r = vm.statusReport, r.indicator != .none {
+        if vm.showsOutage, let r = vm.statusReport {
             // Outlined card variant: soft tinted fill + colored 1px border.
             // Title in label color (always legible); icon + border carry
             // the severity cue. Survives both light and dark menubars
@@ -434,6 +434,17 @@ struct MenuBarDropdown: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
                         .wrapsFully()
+                    Spacer(minLength: 4)
+                    // Hides this outage while it lasts; a new or returning
+                    // one shows again (`OutageDismissal`).
+                    Button(action: vm.dismissOutage) {
+                        Image(systemName: "xmark")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Hide until this outage changes")
+                    .accessibilityLabel("Dismiss outage alert")
                 }
                 if let inc = r.activeIncident {
                     // Capped at two lines by design — an incident headline can

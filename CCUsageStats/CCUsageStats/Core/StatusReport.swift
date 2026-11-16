@@ -12,6 +12,9 @@ struct StatusReport: Equatable {
     let description: String
     /// Title of the most recent unresolved incident, if any.
     let activeIncident: String?
+    /// Statuspage IDs of every unresolved incident, newest first. Identifies
+    /// "this outage" for dismissing the banner (see `OutageDismissal`).
+    var activeIncidentIDs: [String] = []
 
     static let allOperational = StatusReport(
         indicator: .none,
@@ -36,12 +39,14 @@ struct StatusReport: Equatable {
 
         // Newest non-resolved incident.
         let incidents = (obj["incidents"] as? [[String: Any]]) ?? []
-        let active = incidents.first { incident in
+        let unresolved = incidents.filter { incident in
             let s = (incident["status"] as? String) ?? ""
             return s != "resolved" && s != "postmortem"
         }
-        let title = active?["name"] as? String
+        let title = unresolved.first?["name"] as? String
+        let ids = unresolved.compactMap { $0["id"] as? String }
 
-        return StatusReport(indicator: indicator, description: description, activeIncident: title)
+        return StatusReport(indicator: indicator, description: description,
+                            activeIncident: title, activeIncidentIDs: ids)
     }
 }

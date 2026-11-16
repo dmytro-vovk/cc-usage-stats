@@ -103,6 +103,7 @@ final class MenuViewModel: ObservableObject {
     private static let reachedLimitSoundKey = "cc-usage-stats.reachedLimitSound"
     private static let limitResetSoundKey   = "cc-usage-stats.limitResetSound"
     private static let outageSoundKey       = "cc-usage-stats.outageSound"
+    private static let dismissedOutageKeysKey = "cc-usage-stats.dismissedOutageKeys"
     private static let weeklyWarningEnabledKey   = "cc-usage-stats.weeklyWarningEnabled"
     private static let weeklyWarningThresholdKey = "cc-usage-stats.weeklyWarningThreshold"
     private static let modelWarningEnabledKey    = "cc-usage-stats.modelWarningEnabled"
@@ -143,6 +144,22 @@ final class MenuViewModel: ObservableObject {
     @Published private(set) var forecastSecondsToCap: Int64?
     /// Settable in-module so a render can show an outage without the alert sound.
     @Published internal(set) var statusReport: StatusReport?
+    /// Outages the user closed the banner on (`OutageDismissal` keys).
+    @Published private(set) var dismissedOutageKeys: Set<String> = [] {
+        didSet { defaults.set(Array(dismissedOutageKeys).sorted(), forKey: Self.dismissedOutageKeysKey) }
+    }
+
+    /// Whether the outage banner and menu bar badge are shown: there is an
+    /// outage and the user hasn't closed it.
+    var showsOutage: Bool {
+        guard let r = statusReport, r.indicator != .none else { return false }
+        return !OutageDismissal.isDismissed(r, dismissed: dismissedOutageKeys)
+    }
+
+    /// The banner's close button: hide the current outage while it lasts.
+    func dismissOutage() {
+        dismissedOutageKeys.formUnion(OutageDismissal.keys(for: statusReport))
+    }
 
     private var poller: UsagePoller?
     private var statusPoller: StatusPoller?
@@ -253,6 +270,7 @@ final class MenuViewModel: ObservableObject {
         reachedLimitSound = Self.readSound(key: Self.reachedLimitSoundKey, default: "Bottle", from: defaults)
         limitResetSound = Self.readSound(key: Self.limitResetSoundKey, default: "Hero", from: defaults)
         outageSound = Self.readSound(key: Self.outageSoundKey, default: "Sosumi", from: defaults)
+        dismissedOutageKeys = Set(defaults.stringArray(forKey: Self.dismissedOutageKeysKey) ?? [])
         codexForwarding = self.codex.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -752,9 +770,18 @@ final class MenuViewModel: ObservableObject {
 
     private var geminiAlertLatch = GeminiAlertLatch()
 
+    /// Takes a poll result and forgets dismissals of outages it no longer
+    /// carries. A nil report (failed fetch) changes nothing.
+    func receiveStatusReport(_ new: StatusReport?) {
+        guard let new else { return }
+        statusReport = new
+        let kept = OutageDismissal.pruned(dismissedOutageKeys, for: new)
+        if kept != dismissedOutageKeys { dismissedOutageKeys = kept }
+    }
+
     private func handleStatusReport(_ new: StatusReport?) {
         let previous = statusReport
-        statusReport = new
+        receiveStatusReport(new)
         // Fire the alert sound on the transition from operational (or no
         // data) to any non-operational state. Subsequent updates within
         // an outage (e.g., minor → major) don't refire so we don't spam.
