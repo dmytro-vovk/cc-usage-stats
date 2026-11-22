@@ -240,6 +240,14 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: cappedSnap(credits: c), now: 0), 9_970)
     }
 
+    /// On credits the poll still lands just before the reset, so the pill
+    /// doesn't sit on a 0:00:00 countdown for most of a minute after it.
+    func testCadenceOnCreditsLandsBeforeReset() {
+        let c = UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: cappedSnap(credits: c), now: 9_940), 30)
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: cappedSnap(credits: c), now: 9_990), 10)
+    }
+
     func testCadenceStaysBaselineAtCapWithUnlimitedCredits() {
         let c = UsageCredits(limitCents: nil, usedCents: 1_240, currency: "USD")
         XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: cappedSnap(credits: c), now: 0), 60)

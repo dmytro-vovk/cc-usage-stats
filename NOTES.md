@@ -46,3 +46,4 @@
 - CCUsageStats/CCUsageStats/Poller/UsagePoller.swift:226 — the `.notSubscriber(fiveHourIsAbsent: true)` write uses a header-shape snapshot, which clears model windows, breakdown and usage credits from the cache.
 - CCUsageStats/CCUsageStats/Core/DisplayState.swift — a capped lead window whose reset has passed (poll failing after wake) shows a stuck `0:00:00` countdown.
 - CCUsageStats/CCUsageStats/Tray/MenuBarContent.swift:170 — `MenuBarLabel.tint()` looks unused (Gemini review, not checked).
+- CCUsageStats/CCUsageStats/Tray/MenuBarContent.swift (`CreditsSection`) — with a reading from last month (offline / polls failing), the caption still says "resets Dec 1" for a date already past; MCP flags it with `reset_passed`, the dropdown does not.

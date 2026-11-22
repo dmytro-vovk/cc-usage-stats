@@ -48,7 +48,12 @@ final class UsagePoller: ObservableObject {
     static func nextDelayAfterSuccess(snapshot: RateLimitsSnapshot, now: Int64) -> TimeInterval {
         guard let five = snapshot.fiveHour else { return baseInterval }
         let fraction = five.usedPercentage / 100.0
-        if runsOnCredits(snapshot, now: now) { return baseInterval }
+        if runsOnCredits(snapshot, now: now) {
+            // Keep the credit figure live, but still land a poll just before
+            // the reset so the pill doesn't sit on a 0:00:00 countdown.
+            let untilReset = TimeInterval(five.resetsAt - now)
+            return min(baseInterval, max(minimumIntervalAtCap, untilReset - leadBeforeReset))
+        }
         if fraction >= 1.0 {
             let untilReset = TimeInterval(five.resetsAt - now)
             return max(minimumIntervalAtCap, untilReset - leadBeforeReset)
