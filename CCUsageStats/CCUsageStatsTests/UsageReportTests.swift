@@ -270,6 +270,20 @@ final class UsageReportTests: XCTestCase {
         // now = 2033-05-18T03:33:20Z → resets 2033-06-01T00:00:00Z
         XCTAssertEqual(c["resets_at_iso"] as? String, "2033-06-01T00:00:00Z")
         XCTAssertNotNil(c["resets_at_local"] as? String)
+        XCTAssertEqual(c["reset_passed"] as? Bool, false)
+    }
+
+    func testUsageCreditsResetIsAnchoredToTheReading() throws {
+        // Reading taken 2033-04-29T12:00:00Z; now is 2033-05-18, after the 1st.
+        let taken: Int64 = 1_998_388_800
+        let st = CachedState(capturedAt: taken, snapshot: RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: now + 3_600),
+            sevenDay: nil, models: [:],
+            credits: UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")))
+        let r = UsageReport.build(state: st, history: [], codex: nil, now: now, timeZone: TimeZone(identifier: "UTC")!)
+        let c = try XCTUnwrap(credits(r))
+        XCTAssertEqual(c["resets_at_iso"] as? String, "2033-05-01T00:00:00Z")
+        XCTAssertEqual(c["reset_passed"] as? Bool, true)
     }
 
     func testUsageCreditsUnlimitedHasNulls() throws {

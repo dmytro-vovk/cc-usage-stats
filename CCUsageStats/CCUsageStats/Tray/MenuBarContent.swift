@@ -396,7 +396,7 @@ struct MenuBarDropdown: View {
                     )
                 }
                 if let credits = cached.snapshot.credits {
-                    CreditsSection(credits: credits, now: now)
+                    CreditsSection(credits: credits, now: cached.capturedAt)
                 }
             }
         } else if sessionWindow {

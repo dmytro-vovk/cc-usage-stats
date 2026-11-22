@@ -94,7 +94,7 @@ enum UsageReport {
         if let c = snap.credits {
             var cal = Calendar(identifier: .gregorian)
             cal.timeZone = timeZone
-            let reset = UsageCredits.resetsAt(now: now, calendar: cal)
+            let reset = UsageCredits.resetsAt(now: state.capturedAt, calendar: cal)
             func units(_ cents: Int64?) -> Any { cents.map { Double($0) / 100 } ?? NSNull() }
             out["usage_credits"] = [
                 "unlimited": c.isUnlimited,
@@ -106,6 +106,7 @@ enum UsageReport {
                 "resets_at": reset,
                 "resets_at_iso": clock.iso(reset),
                 "resets_at_local": clock.local(reset),
+                "reset_passed": reset <= now,
             ] as [String: Any]
         }
         return out
