@@ -333,4 +333,12 @@ final class OAuthUsageTests: XCTestCase {
         XCTAssertNil(credits(#"{"is_enabled":true,"monthly_limit":"lots","used_credits":10}"#))
         XCTAssertNil(credits(#"{"is_enabled":"yes","monthly_limit":5000,"used_credits":10}"#))
     }
+
+    func testExtraUsageJunkAmountsAreNil() {
+        XCTAssertNil(credits(#"{"is_enabled":true,"monthly_limit":1e300,"used_credits":10}"#))
+        XCTAssertNil(credits(#"{"is_enabled":true,"monthly_limit":true,"used_credits":10}"#))
+        XCTAssertNil(credits(#"{"is_enabled":true,"monthly_limit":5000,"used_credits":false}"#))
+        XCTAssertNil(credits(#"{"is_enabled":true,"monthly_limit":5000,"used_credits":-5}"#))
+        XCTAssertNil(credits(#"{"is_enabled":true,"monthly_limit":-1,"used_credits":10}"#))
+    }
 }

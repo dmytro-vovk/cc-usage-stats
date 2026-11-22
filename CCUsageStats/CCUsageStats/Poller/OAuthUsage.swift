@@ -155,12 +155,12 @@ enum OAuthUsage {
         if let extra = obj["extra_usage"] as? [String: Any], extra["is_enabled"] as? Bool == true {
             let limitValue = extra["monthly_limit"]
             let usedValue = extra["used_credits"]
-            let limitOK = limitValue == nil || limitValue is NSNull || limitValue is NSNumber
-            let usedOK = usedValue == nil || usedValue is NSNull || usedValue is NSNumber
+            let limitOK = limitValue == nil || limitValue is NSNull || Self.cents(limitValue) != nil
+            let usedOK = usedValue == nil || usedValue is NSNull || Self.cents(usedValue) != nil
             if limitOK, usedOK {
                 credits = UsageCredits(
-                    limitCents: (limitValue as? NSNumber).map { Int64($0.doubleValue.rounded()) },
-                    usedCents: (usedValue as? NSNumber).map { Int64($0.doubleValue.rounded()) } ?? 0,
+                    limitCents: Self.cents(limitValue),
+                    usedCents: Self.cents(usedValue) ?? 0,
                     currency: (extra["currency"] as? String) ?? "USD"
                 )
             }
@@ -169,5 +169,14 @@ enum OAuthUsage {
             fiveHour: five, sevenDay: seven, models: models, breakdown: breakdown,
             fiveHourIsAbsent: fiveAbsent, credits: credits
         )
+    }
+
+    /// A minor-unit amount: a real JSON number (not a boolean), finite and
+    /// within 0...1e13. Anything else is junk and yields nil.
+    private static func cents(_ value: Any?) -> Int64? {
+        guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
+        let d = n.doubleValue
+        guard d.isFinite, d >= 0, d <= 1e13 else { return nil }
+        return Int64(d.rounded())
     }
 }
