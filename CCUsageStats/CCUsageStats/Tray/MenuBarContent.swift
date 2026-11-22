@@ -47,7 +47,8 @@ struct MenuBarLabel: View {
             fiveText: vm.displayState.menuBarText,
             authState: vm.authState,
             now: Int64(Date().timeIntervalSince1970),
-            coloring: vm.coloring
+            coloring: vm.coloring,
+            credits: vm.cached?.snapshot.credits
         )
         // Codex joins (or replaces) the Claude pill per the General setting;
         // Gemini adds a band when that is on too.

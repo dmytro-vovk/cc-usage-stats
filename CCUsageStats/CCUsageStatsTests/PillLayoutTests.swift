@@ -158,4 +158,47 @@ final class PillLayoutTests: XCTestCase {
         XCTAssertEqual(segments(five: 42, seven: 92, models: [:], now: 999).map(\.kind), [.fiveHour, .sevenDay])
         XCTAssertEqual(segments(five: 42, seven: 92, models: [:], now: 1_000).map(\.kind), [.fiveHour])
     }
+
+    private let us = Locale(identifier: "en_US")
+    private let fifty = UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")
+
+    private func withCredits(five: Double?, seven: Double?, models: [String: Double], credits: UsageCredits?) -> [PillSegment] {
+        PillLayout.segments(
+            five: five.map(w), seven: seven.map(w), models: models.mapValues(w),
+            fiveText: "x", authState: .ok, now: 0, credits: credits, locale: us
+        )
+    }
+
+    func testCappedModelBandShowsCredits() {
+        let s = withCredits(five: 85, seven: 30, models: ["seven_day_fable": 100], credits: fifty)
+        XCTAssertEqual(s.map(\.kind), [.fiveHour, .model("seven_day_fable")])
+        XCTAssertEqual(s[1].text, "$37.60")
+        XCTAssertEqual(s[1].paintFraction, 0.248, accuracy: 0.0001)
+        XCTAssertFalse(s[1].dimmed)
+        XCTAssertEqual(s[0].text, "x") // uncapped bands untouched
+    }
+
+    func testCappedWeeklyBandShowsCredits() {
+        let s = withCredits(five: 90, seven: 100, models: [:], credits: fifty)
+        XCTAssertEqual(s.last?.kind, .sevenDay)
+        XCTAssertEqual(s.last?.text, "$37.60")
+    }
+
+    func testCappedLeadBandShowsCredits() {
+        let s = withCredits(five: 100, seven: 30, models: [:], credits: fifty)
+        XCTAssertEqual(s.map(\.text), ["$37.60"])
+    }
+
+    func testUnlimitedCreditsAreDimmedSpent() {
+        let s = withCredits(five: 85, seven: 100, models: [:],
+                            credits: UsageCredits(limitCents: nil, usedCents: 1_240, currency: "USD"))
+        XCTAssertEqual(s.last?.text, "$12.40")
+        XCTAssertEqual(s.last?.dimmed, true)
+    }
+
+    func testExhaustedOrAbsentCreditsLeaveBandsAlone() {
+        let gone = UsageCredits(limitCents: 5_000, usedCents: 5_000, currency: "USD")
+        XCTAssertEqual(withCredits(five: 85, seven: 100, models: [:], credits: gone).last?.text, "100%")
+        XCTAssertEqual(withCredits(five: 85, seven: 100, models: [:], credits: nil).last?.text, "100%")
+    }
 }
