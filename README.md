@@ -47,6 +47,11 @@ between the quotas. See [Codex usage](#codex-usage) and
   at 100% it counts down to the weekly reset.
 - At 100% (5h) the percentage swaps to a live `H:MM:SS` countdown to
   the window reset (single pill again — the countdown is the headline).
+- **Usage credits:** while credits are on and not used up, a capped band
+  (5h, 7d or a per-model window) shows the money left of the monthly
+  credit limit instead — e.g. `$37.60`, coloured by how much of the
+  limit is spent. With unlimited credits it shows the amount spent in
+  grey. Once credits run out, the band goes back to the countdown / 100%.
 - A severity-tinted SF Symbol appended to the right when
   status.claude.com reports a non-operational state, so you see an
   outage without opening the dropdown. Closing the outage banner in the
@@ -113,6 +118,12 @@ between the quotas. See [Codex usage](#codex-usage) and
   needed. These rows exist only while a source that can actually
   see them is reporting: the set is replaced wholesale on every scoped
   poll, and cleared entirely by any poll from the header path.
+- While usage credits are on, a **Usage credits** row closes the Claude
+  section: money left of the monthly limit (`$37.60 left`) with a bar
+  of credits spent and `$12.40 of $50 used · resets Dec 1`, or — with
+  unlimited credits — `$12.40 spent` and `Unlimited · resets Dec 1`.
+  From the usage endpoint's `extra_usage`; like the per-model rows, it
+  disappears if the app falls back to the response-header path.
 - Without a connected account, a **"Connect your account to see
   per-model weekly usage."** row with a **Connect Claude account**
   button prompts you instead; see
@@ -467,7 +478,11 @@ a large fan-out.
   comes as epoch seconds, UTC `*_iso` and `*_local` — your wall time with
   the weekday spelled out (`Monday 2026-10-19 11:00 BST`), so agents quote
   the day instead of working it out. A window whose reset has passed
-  reports 0% with `reset_passed: true`. Facts only — no advice.
+  reports 0% with `reset_passed: true`. While usage credits are on, the
+  Claude section also carries `usage_credits`: `limit`, `used` and
+  `remaining` in currency units (`limit`, `remaining` and `used_percent`
+  are null when unlimited), `currency`, and the reset on the 1st of next
+  month (`resets_at`, `*_iso`, `*_local`). Facts only — no advice.
 - **How it runs.** The agent launches
   `~/Library/Application Support/cc-usage-stats/bin/ccusagestats --mcp-server`
   — a symlink every launch of the app repoints at the running copy's
