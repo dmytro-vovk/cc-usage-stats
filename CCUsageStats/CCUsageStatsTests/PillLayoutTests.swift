@@ -201,4 +201,18 @@ final class PillLayoutTests: XCTestCase {
         XCTAssertEqual(withCredits(five: 85, seven: 100, models: [:], credits: gone).last?.text, "100%")
         XCTAssertEqual(withCredits(five: 85, seven: 100, models: [:], credits: nil).last?.text, "100%")
     }
+
+    func testNearlyCappedWeeklyBandIsNotCredits() {
+        let s = withCredits(five: 90, seven: 99.6, models: [:], credits: fifty)
+        XCTAssertEqual(s.last?.kind, .sevenDay)
+        XCTAssertEqual(s.last?.text, "100%")
+    }
+
+    func testCappedLeadWithPassedResetIsNotCredits() {
+        let s = PillLayout.segments(
+            five: WindowSnapshot(usedPercentage: 100, resetsAt: 0), seven: nil, models: [:],
+            fiveText: "x", authState: .ok, now: 0, credits: fifty, locale: us
+        )
+        XCTAssertEqual(s.map(\.text), ["x"])
+    }
 }

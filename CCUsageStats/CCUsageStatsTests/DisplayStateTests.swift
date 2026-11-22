@@ -170,4 +170,22 @@ final class DisplayStateTests: XCTestCase {
         XCTAssertEqual(s.menuBarText, "42%")
         XCTAssertNil(s.creditsBand)
     }
+
+    func testAlmostCappedWithCreditsKeepsPlainText() {
+        let cached = CachedState(capturedAt: 100, snapshot: .init(
+            fiveHour: .init(usedPercentage: 99.6, resetsAt: 7_300), sevenDay: nil, models: [:],
+            credits: UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")
+        ))
+        let s = DisplayState.compute(now: 200, cached: cached, locale: Locale(identifier: "en_US"))
+        XCTAssertNil(s.creditsBand)
+        XCTAssertEqual(s.menuBarText, RelativeTime.formatHMS(seconds: 7_100)) // the existing rounded-countdown behaviour
+    }
+
+    func testCappedButResetPassedWithCreditsHasNoBand() {
+        let cached = CachedState(capturedAt: 100, snapshot: .init(
+            fiveHour: .init(usedPercentage: 100, resetsAt: 200), sevenDay: nil, models: [:],
+            credits: UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")
+        ))
+        XCTAssertNil(DisplayState.compute(now: 200, cached: cached).creditsBand)
+    }
 }

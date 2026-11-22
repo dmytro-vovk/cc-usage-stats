@@ -33,7 +33,7 @@ struct DisplayState: Equatable {
         if pct >= 100 {
             // Credits on and not used up: work continues on credits, so the
             // money left beats a countdown to a reset that no longer blocks.
-            if let b = cached.snapshot.credits?.band(locale: locale) {
+            if UsageCredits.isCapped(five, now: now), let b = cached.snapshot.credits?.band(locale: locale) {
                 band = b
                 text = b.text
             } else {

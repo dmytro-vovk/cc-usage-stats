@@ -53,8 +53,8 @@ enum PillLayout {
         // A capped band running on usage credits shows the money left (or
         // spent, when unlimited) instead of its percentage or countdown.
         let creditsBand = credits?.band(locale: locale)
-        func onCredits(_ s: PillSegment) -> PillSegment {
-            guard s.fraction >= 1, let b = creditsBand else { return s }
+        func onCredits(_ s: PillSegment, _ w: WindowSnapshot) -> PillSegment {
+            guard UsageCredits.isCapped(w, now: now), let b = creditsBand else { return s }
             return PillSegment(kind: s.kind, fraction: s.fraction, text: b.text,
                                dimmed: b.neutral, colorFraction: b.colorFraction)
         }
@@ -72,7 +72,7 @@ enum PillLayout {
         var result = [onCredits(PillSegment(
             kind: lead.kind, fraction: fiveFraction, text: fiveText,
             colorFraction: coloring.paint(lead.window, windowLength: lead.length, now: now)
-        ))]
+        ), lead.window)]
 
         // No usable token renders a bare triangle; at cap the 5h half shows a
         // countdown that is wide enough on its own. Neither shares the pill.
@@ -91,7 +91,7 @@ enum PillLayout {
                 result.append(onCredits(.init(
                     kind: .sevenDay, fraction: f, text: percentText(seven.usedPercentage),
                     colorFraction: coloring.paint(seven, windowLength: UsageColoring.weekLength, now: now)
-                )))
+                ), seven))
             }
         }
 
@@ -117,7 +117,7 @@ enum PillLayout {
                 result.append(onCredits(.init(
                     kind: .model(top.0), fraction: f, text: percentText(top.1.usedPercentage),
                     colorFraction: coloring.paint(top.1, windowLength: UsageColoring.weekLength, now: now)
-                )))
+                ), top.1))
             }
         }
 

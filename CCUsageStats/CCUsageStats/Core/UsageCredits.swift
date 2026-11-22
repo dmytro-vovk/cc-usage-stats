@@ -30,6 +30,10 @@ nonisolated struct UsageCredits: Codable, Equatable, Sendable {
 
     var isExhausted: Bool { remainingCents == 0 }
 
+    /// A window is paid for by credits only while it is truly capped and
+    /// its reset is still ahead. One rule for the pill, the poller and MCP.
+    static func isCapped(_ w: WindowSnapshot, now: Int64) -> Bool { w.usedPercentage >= 100 && w.resetsAt > now }
+
     static func resetsAt(now: Int64, calendar: Calendar = .current) -> Int64 {
         let date = Date(timeIntervalSince1970: TimeInterval(now))
         guard let month = calendar.dateInterval(of: .month, for: date) else { return now }
