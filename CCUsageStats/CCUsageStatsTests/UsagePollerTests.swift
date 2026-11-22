@@ -224,6 +224,27 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: snap, now: 0), 10)
     }
 
+    private func cappedSnap(credits: UsageCredits?) -> RateLimitsSnapshot {
+        RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: 10_000),
+            sevenDay: nil, models: [:], credits: credits)
+    }
+
+    func testCadenceStaysBaselineAtCapWhileCreditsRemain() {
+        let c = UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: cappedSnap(credits: c), now: 0), 60)
+    }
+
+    func testCadenceSleepsAtCapWhenCreditsExhausted() {
+        let c = UsageCredits(limitCents: 5_000, usedCents: 5_000, currency: "USD")
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: cappedSnap(credits: c), now: 0), 9_970)
+    }
+
+    func testCadenceStaysBaselineAtCapWithUnlimitedCredits() {
+        let c = UsageCredits(limitCents: nil, usedCents: 1_240, currency: "USD")
+        XCTAssertEqual(UsagePoller.nextDelayAfterSuccess(snapshot: cappedSnap(credits: c), now: 0), 60)
+    }
+
     func testCadenceFallsBackToBaselineWhenNoFiveHour() {
         let snap = RateLimitsSnapshot(
             fiveHour: nil,

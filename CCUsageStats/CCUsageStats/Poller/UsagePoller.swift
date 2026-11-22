@@ -44,9 +44,11 @@ final class UsagePoller: ObservableObject {
     ///   <= 98%   → 60s baseline
     ///   > 98% & < 100% → 10s (about to hit the cap)
     ///   >= 100%   → sleep until 30s before resets_at (clamped to 10s minimum)
+    ///   >= 100% on usage credits (not used up) → 60s, so the credit figure stays live
     static func nextDelayAfterSuccess(snapshot: RateLimitsSnapshot, now: Int64) -> TimeInterval {
         guard let five = snapshot.fiveHour else { return baseInterval }
         let fraction = five.usedPercentage / 100.0
+        if runsOnCredits(snapshot, now: now) { return baseInterval }
         if fraction >= 1.0 {
             let untilReset = TimeInterval(five.resetsAt - now)
             return max(minimumIntervalAtCap, untilReset - leadBeforeReset)
@@ -55,6 +57,14 @@ final class UsagePoller: ObservableObject {
             return approachingInterval
         }
         return baseInterval
+    }
+
+    /// The 5-hour window is capped but credits (limited with money left, or
+    /// unlimited) keep paying, so there is no reason to sleep through it.
+    private static func runsOnCredits(_ snapshot: RateLimitsSnapshot, now: Int64) -> Bool {
+        guard let five = snapshot.fiveHour, UsageCredits.isCapped(five, now: now),
+              let credits = snapshot.credits else { return false }
+        return !credits.isExhausted
     }
 
     /// - Parameter primaryIsScoped: pass `true` only when `api` is an
@@ -209,6 +219,7 @@ final class UsagePoller: ObservableObject {
             transientFailureCount = 0
             currentBackoffSeconds = Self.nextDelayAfterSuccess(snapshot: snapshot, now: clock())
             sleepingUntilReset = (snapshot.fiveHour?.usedPercentage ?? 0) >= 100
+                && !Self.runsOnCredits(snapshot, now: clock())
 
         case .invalidToken:
             authState = .invalidToken
