@@ -395,6 +395,9 @@ struct MenuBarDropdown: View {
                         tracksPace: true
                     )
                 }
+                if let credits = cached.snapshot.credits {
+                    CreditsSection(credits: credits, now: now)
+                }
             }
         } else if sessionWindow {
             Text("No data captured yet.")
@@ -1053,6 +1056,40 @@ private struct WindowSection: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+        }
+    }
+}
+
+/// The usage-credit allowance, last in the Claude section while credits
+/// are on. Limited: money left and a bar of credits used. Unlimited: money
+/// spent, no bar.
+private struct CreditsSection: View {
+    let credits: UsageCredits
+    let now: Int64
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let fraction = credits.usedFraction
+        let color = fraction.map { UsageColor.gradient(t: $0, scheme: colorScheme) }
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Usage credits")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(credits.headline())
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(color ?? .primary)
+            }
+            if let fraction, let color {
+                UsageBar(fraction: fraction, color: color, pace: nil, overshootColor: color)
+            }
+            Text(credits.caption(now: now))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .wrapsFully()
         }
     }
 }
