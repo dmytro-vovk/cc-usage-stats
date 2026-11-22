@@ -44,7 +44,8 @@ final class UsagePoller: ObservableObject {
     ///   <= 98%   → 60s baseline
     ///   > 98% & < 100% → 10s (about to hit the cap)
     ///   >= 100%   → sleep until 30s before resets_at (clamped to 10s minimum)
-    ///   >= 100% on usage credits (not used up) → 60s, so the credit figure stays live
+    ///   >= 100% on usage credits (not used up) → 60s, so the credit figure
+    ///             stays live, shortening to land 30s before resets_at
     static func nextDelayAfterSuccess(snapshot: RateLimitsSnapshot, now: Int64) -> TimeInterval {
         guard let five = snapshot.fiveHour else { return baseInterval }
         let fraction = five.usedPercentage / 100.0
@@ -223,8 +224,9 @@ final class UsagePoller: ObservableObject {
             authState = .ok
             transientFailureCount = 0
             currentBackoffSeconds = Self.nextDelayAfterSuccess(snapshot: snapshot, now: clock())
+            // On credits too: that delay is never above the base, so a
+            // failure after it falls back to the base, not the pre-reset step.
             sleepingUntilReset = (snapshot.fiveHour?.usedPercentage ?? 0) >= 100
-                && !Self.runsOnCredits(snapshot, now: clock())
 
         case .invalidToken:
             authState = .invalidToken

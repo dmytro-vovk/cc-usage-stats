@@ -176,6 +176,29 @@ final class UsagePollerTests: XCTestCase {
         XCTAssertEqual(poller.currentBackoffSeconds, 60)
     }
 
+    /// Same on usage credits: the pre-reset delay is short, failures after
+    /// it poll at the base cadence and a 429 doubles from the base.
+    func testFailuresAfterAnImminentResetOnCreditsReturnToBaseInterval() async {
+        let credits = UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")
+        let capped = RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: 50), sevenDay: nil,
+            models: [:], credits: credits)
+        let api = StubAPI()
+        api.queue = [.success(capped), .transient("offline"), .transient("offline"),
+                     .success(capped), .rateLimited]
+        let poller = UsagePoller(api: api, cacheURL: tmpStateFile, clock: { 0 })
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 20)
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 60)
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 60)
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 20)
+        await poller.tickForTest()
+        XCTAssertEqual(poller.currentBackoffSeconds, 120)
+    }
+
     /// A 429 backoff is deliberate and must survive a transient failure.
     func testTransientKeepsRateLimitBackoff() async {
         let api = StubAPI(); api.queue = [.rateLimited, .rateLimited, .transient("x")]
