@@ -130,4 +130,44 @@ final class DisplayStateTests: XCTestCase {
         let fresh = CachedState(capturedAt: 10_000, snapshot: .init(fiveHour: five, sevenDay: nil))
         XCTAssertFalse(DisplayState.compute(now: 10_010, cached: fresh).isStale)
     }
+
+    private func capped(_ credits: UsageCredits?) -> DisplayState {
+        let cached = CachedState(capturedAt: 100, snapshot: .init(
+            fiveHour: .init(usedPercentage: 100, resetsAt: 7_300),
+            sevenDay: .init(usedPercentage: 40, resetsAt: 900_000),
+            models: [:], credits: credits
+        ))
+        return DisplayState.compute(now: 200, cached: cached, locale: Locale(identifier: "en_US"))
+    }
+
+    private var countdown: String { RelativeTime.formatHMS(seconds: 7_100) }
+
+    func testCappedWithCreditsShowsRemaining() {
+        let s = capped(UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD"))
+        XCTAssertEqual(s.menuBarText, "$37.60")
+        XCTAssertEqual(s.creditsBand?.colorFraction ?? -1, 0.248, accuracy: 0.0001)
+        XCTAssertEqual(s.utilizationFraction, 1) // the gauge needle still says "capped"
+    }
+
+    func testCappedWithUnlimitedCreditsShowsSpentNeutral() {
+        let s = capped(UsageCredits(limitCents: nil, usedCents: 1_240, currency: "USD"))
+        XCTAssertEqual(s.menuBarText, "$12.40")
+        XCTAssertEqual(s.creditsBand?.neutral, true)
+    }
+
+    func testCappedWithExhaustedOrNoCreditsKeepsCountdown() {
+        XCTAssertEqual(capped(UsageCredits(limitCents: 5_000, usedCents: 5_000, currency: "USD")).menuBarText, countdown)
+        XCTAssertNil(capped(nil).creditsBand)
+        XCTAssertEqual(capped(nil).menuBarText, countdown)
+    }
+
+    func testUncappedIgnoresCredits() {
+        let cached = CachedState(capturedAt: 100, snapshot: .init(
+            fiveHour: .init(usedPercentage: 42, resetsAt: 7_300), sevenDay: nil, models: [:],
+            credits: UsageCredits(limitCents: 5_000, usedCents: 1, currency: "USD")
+        ))
+        let s = DisplayState.compute(now: 200, cached: cached)
+        XCTAssertEqual(s.menuBarText, "42%")
+        XCTAssertNil(s.creditsBand)
+    }
 }

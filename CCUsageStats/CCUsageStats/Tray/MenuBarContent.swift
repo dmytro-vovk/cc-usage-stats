@@ -189,6 +189,9 @@ struct MenuBarLabel: View {
         case .offline, .ok, .unknown: break
         }
         if vm.displayState.isStale { return .secondaryLabelColor }
+        if let band = vm.displayState.creditsBand {
+            return band.neutral ? .secondaryLabelColor : UsageColor.nsColor(t: band.colorFraction ?? 1)
+        }
         guard let f = paintFraction() else { return .labelColor }
         return UsageColor.nsColor(t: f)
     }
