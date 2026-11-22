@@ -24,6 +24,7 @@ struct MCPServer {
     (the user's wall time with weekday, e.g. "Monday 2026-10-19 11:00 BST"); quote *_local \
     rather than working out a weekday yourself. A window resets at resets_at; \
     pace.projected_cap_at is when it would hit 100% at the current rate, not a reset. \
+    When usage credits are on, claude.usage_credits gives the monthly credit allowance (limit, used and remaining in currency units; null limit = unlimited; resets on the 1st): a capped window with credits remaining does not block work. \
     Facts only. Use it to plan delegation: which agent or model has headroom, and whether \
     to wait for a reset before a large fan-out.
     """

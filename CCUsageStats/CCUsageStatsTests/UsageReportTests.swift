@@ -244,4 +244,48 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual(week["age_seconds"] as? Int64, 6_060)
         XCTAssertEqual(week["stale"] as? Bool, true)
     }
+
+    private func state(credits: UsageCredits?) -> CachedState {
+        CachedState(capturedAt: now - 60, snapshot: RateLimitsSnapshot(
+            fiveHour: WindowSnapshot(usedPercentage: 100, resetsAt: now + 3_600),
+            sevenDay: nil, models: [:], credits: credits
+        ))
+    }
+
+    private func credits(_ r: [String: Any]) -> [String: Any]? {
+        (r["claude"] as? [String: Any])?["usage_credits"] as? [String: Any]
+    }
+
+    func testUsageCreditsLimited() throws {
+        let r = UsageReport.build(state: state(credits: UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")),
+                                  history: [], codex: nil, now: now, timeZone: TimeZone(identifier: "UTC")!)
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(r))
+        let c = try XCTUnwrap(credits(r))
+        XCTAssertEqual(c["unlimited"] as? Bool, false)
+        XCTAssertEqual(c["currency"] as? String, "USD")
+        XCTAssertEqual(c["limit"] as? Double, 50)
+        XCTAssertEqual(c["used"] as? Double, 12.4)
+        XCTAssertEqual(c["remaining"] as? Double, 37.6)
+        XCTAssertEqual(c["used_percent"] as? Double ?? -1, 24.8, accuracy: 0.001)
+        // now = 2033-05-18T03:33:20Z → resets 2033-06-01T00:00:00Z
+        XCTAssertEqual(c["resets_at_iso"] as? String, "2033-06-01T00:00:00Z")
+        XCTAssertNotNil(c["resets_at_local"] as? String)
+    }
+
+    func testUsageCreditsUnlimitedHasNulls() throws {
+        let r = UsageReport.build(state: state(credits: UsageCredits(limitCents: nil, usedCents: 1_240, currency: "USD")),
+                                  history: [], codex: nil, now: now)
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(r))
+        let c = try XCTUnwrap(credits(r))
+        XCTAssertEqual(c["unlimited"] as? Bool, true)
+        XCTAssertTrue(c["limit"] is NSNull)
+        XCTAssertTrue(c["remaining"] is NSNull)
+        XCTAssertTrue(c["used_percent"] is NSNull)
+        XCTAssertEqual(c["used"] as? Double, 12.4)
+    }
+
+    func testUsageCreditsAbsentWhenOff() {
+        let r = UsageReport.build(state: state(credits: nil), history: [], codex: nil, now: now)
+        XCTAssertNil(credits(r))
+    }
 }

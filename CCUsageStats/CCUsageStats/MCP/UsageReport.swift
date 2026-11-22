@@ -37,7 +37,7 @@ enum UsageReport {
             "as_of_local": clock.local(now),
             "timezone": timeZone.identifier,
             "now": now,
-            "claude": claudeSection(state, history: history, now: now, clock: clock),
+            "claude": claudeSection(state, history: history, now: now, clock: clock, timeZone: timeZone),
             "codex": codexSection(codex, now: now, clock: clock),
             "gemini": geminiSection(gemini, now: now, clock: clock),
         ]
@@ -45,7 +45,7 @@ enum UsageReport {
 
     // MARK: - Sections
 
-    private static func claudeSection(_ state: CachedState?, history: [UsageSample], now: Int64, clock: Clock) -> [String: Any] {
+    private static func claudeSection(_ state: CachedState?, history: [UsageSample], now: Int64, clock: Clock, timeZone: TimeZone) -> [String: Any] {
         guard let state else {
             return [
                 "available": false,
@@ -90,6 +90,23 @@ enum UsageReport {
         out["windows"] = windows
         if !snap.breakdown.isEmpty {
             out["weekly_breakdown"] = snap.breakdown.map { ["key": $0.key, "name": $0.name, "percent": $0.percent] }
+        }
+        if let c = snap.credits {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = timeZone
+            let reset = UsageCredits.resetsAt(now: now, calendar: cal)
+            func units(_ cents: Int64?) -> Any { cents.map { Double($0) / 100 } ?? NSNull() }
+            out["usage_credits"] = [
+                "unlimited": c.isUnlimited,
+                "currency": c.currency,
+                "limit": units(c.limitCents),
+                "used": Double(c.usedCents) / 100,
+                "remaining": units(c.remainingCents),
+                "used_percent": c.usedFraction.map { $0 * 100 } ?? NSNull(),
+                "resets_at": reset,
+                "resets_at_iso": clock.iso(reset),
+                "resets_at_local": clock.local(reset),
+            ] as [String: Any]
         }
         return out
     }
