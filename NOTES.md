@@ -41,3 +41,8 @@
 - CCUsageStats/CCUsageStats/Core/RateLimits.swift (`primaryWindow`) — a 5-hour account polled between two windows with no cached 5-hour window still leads the menubar pill with the weekly percentage (the dropdown now shows the 5-hour row as "Not yet observed").
 - Whether Claude Code fires `PostCompact` after the compaction it precomputes on an idle session was not observed live; the hook ignores it there either way (previous record is a finished turn).
 - scripts/setup-signing.sh:68 — `security import -A` lets any local process use the dev signing key. Not changed: testing a narrower import means re-creating the identity, which needs the login password at `security add-trusted-cert`.
+- CCUsageStats/CCUsageStats/Core/UsageCredits.swift (`money`) and MCP/UsageReport.swift (`usage_credits`) — amounts are divided by 100 regardless of currency; `extra_usage.decimal_places` is ignored, so a 0-decimal currency (JPY) would show 1/100 of the amount. Unverified: whether the endpoint reports such currencies in minor units at all.
+- CCUsageStats/CCUsageStats/Tray/PillLayout.swift (`onCredits`) — with two Claude windows capped at once (e.g. 7d and a model window), both bands show the same credit figure. Matches the spec's wording; possibly worth showing it once.
+- CCUsageStats/CCUsageStats/Poller/UsagePoller.swift:226 — the `.notSubscriber(fiveHourIsAbsent: true)` write uses a header-shape snapshot, which clears model windows, breakdown and usage credits from the cache.
+- CCUsageStats/CCUsageStats/Core/DisplayState.swift — a capped lead window whose reset has passed (poll failing after wake) shows a stuck `0:00:00` countdown.
+- CCUsageStats/CCUsageStats/Tray/MenuBarContent.swift:170 — `MenuBarLabel.tint()` looks unused (Gemini review, not checked).
