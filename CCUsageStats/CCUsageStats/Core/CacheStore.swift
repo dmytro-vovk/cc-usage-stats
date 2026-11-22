@@ -85,6 +85,9 @@ enum CacheStore {
     /// connect the account that used to produce it. Do not reinstate per-key
     /// preservation: an unrefreshable number presented as current is worse
     /// than no number.
+    ///
+    /// Usage credits follow the model-window rule: replaced by the endpoint,
+    /// cleared by the header path.
     static func update(at url: URL, with incoming: RateLimitsSnapshot, now: Int64) throws {
         let existingState = try read(at: url)
         let existing = existingState?.snapshot
@@ -99,7 +102,8 @@ enum CacheStore {
             sevenDay: incoming.sevenDay ?? existing?.sevenDay,
             models: incoming.modelsAreAuthoritative ? incoming.models : [:],
             breakdown: incoming.modelsAreAuthoritative ? incoming.breakdown : [],
-            fiveHourIsAbsent: fiveAbsent
+            fiveHourIsAbsent: fiveAbsent,
+            credits: incoming.modelsAreAuthoritative ? incoming.credits : nil
         )
         // A window this poll did not report keeps the time it was last seen.
         var stamps: [String: Int64] = [:]

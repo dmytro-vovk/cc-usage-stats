@@ -297,4 +297,40 @@ final class OAuthUsageTests: XCTestCase {
                        .notSubscriber(fiveHourIsAbsent: true))
         XCTAssertEqual(OAuthUsage.parse(status: 200, body: body(#"{}"#)), .notSubscriber(fiveHourIsAbsent: false))
     }
+
+    private func credits(_ extra: String) -> UsageCredits? {
+        let json = """
+        {"seven_day":{"utilization":24,"resets_at":"2026-10-05T09:59:59Z"},"extra_usage":\(extra)}
+        """
+        guard case let .success(snap) = OAuthUsage.parse(status: 200, body: body(json)) else { return nil }
+        return snap.credits
+    }
+
+    func testExtraUsageEnabledWithLimit() {
+        XCTAssertEqual(
+            credits(#"{"is_enabled":true,"monthly_limit":5000,"used_credits":1240,"utilization":24.8,"currency":"EUR"}"#),
+            UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "EUR")
+        )
+    }
+
+    func testExtraUsageUnlimitedAndNullCurrency() {
+        XCTAssertEqual(
+            credits(#"{"is_enabled":true,"monthly_limit":null,"used_credits":1240,"currency":null}"#),
+            UsageCredits(limitCents: nil, usedCents: 1_240, currency: "USD")
+        )
+    }
+
+    func testExtraUsageNullUsedCountsAsZero() {
+        XCTAssertEqual(
+            credits(#"{"is_enabled":true,"monthly_limit":5000,"used_credits":null}"#),
+            UsageCredits(limitCents: 5_000, usedCents: 0, currency: "USD")
+        )
+    }
+
+    func testExtraUsageDisabledMissingOrMalformedIsNil() {
+        XCTAssertNil(credits(#"{"is_enabled":false,"monthly_limit":5000,"used_credits":10}"#))
+        XCTAssertNil(credits("null"))
+        XCTAssertNil(credits(#"{"is_enabled":true,"monthly_limit":"lots","used_credits":10}"#))
+        XCTAssertNil(credits(#"{"is_enabled":"yes","monthly_limit":5000,"used_credits":10}"#))
+    }
 }

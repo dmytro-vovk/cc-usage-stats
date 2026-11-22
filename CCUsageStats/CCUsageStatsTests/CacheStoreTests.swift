@@ -336,4 +336,38 @@ final class CacheStoreTests: XCTestCase {
         try Data(#"{"captured_at":1000,"seven_day":{"used_percentage":50,"resets_at":9000}}"#.utf8).write(to: url)
         XCTAssertEqual(try CacheStore.read(at: url)?.snapshot.lacksFiveHourWindow, true)
     }
+
+    func testUsageCreditsRoundTripAndHeaderPathClearsThem() throws {
+        let url = tmpFile!
+        let credits = UsageCredits(limitCents: 5_000, usedCents: 1_240, currency: "USD")
+        let endpoint = RateLimitsSnapshot(
+            fiveHour: nil, sevenDay: WindowSnapshot(usedPercentage: 20, resetsAt: 9_999_999_999),
+            models: [:], credits: credits
+        )
+        try CacheStore.update(at: url, with: endpoint, now: 100)
+        XCTAssertEqual(try CacheStore.read(at: url)?.snapshot.credits, credits)
+
+        // The response-header path cannot see credits: it must not keep
+        // an unrefreshable dollar figure alive.
+        let header = RateLimitsSnapshot(fiveHour: WindowSnapshot(usedPercentage: 5, resetsAt: 9_999_999_999), sevenDay: nil)
+        try CacheStore.update(at: url, with: header, now: 200)
+        XCTAssertNil(try CacheStore.read(at: url)?.snapshot.credits)
+    }
+
+    func testAuthoritativeSnapshotWithoutCreditsClearsThem() throws {
+        let url = tmpFile!
+        let week = WindowSnapshot(usedPercentage: 20, resetsAt: 9_999_999_999)
+        try CacheStore.update(at: url, with: RateLimitsSnapshot(
+            fiveHour: nil, sevenDay: week, models: [:],
+            credits: UsageCredits(limitCents: 5_000, usedCents: 1, currency: "USD")
+        ), now: 100)
+        try CacheStore.update(at: url, with: RateLimitsSnapshot(fiveHour: nil, sevenDay: week, models: [:]), now: 200)
+        XCTAssertNil(try CacheStore.read(at: url)?.snapshot.credits)
+    }
+
+    func testOldStateFileWithoutCreditsDecodes() throws {
+        let json = #"{"seven_day":{"used_percentage":20,"resets_at":9999999999},"five_hour_absent":true}"#
+        let snap = try JSONDecoder().decode(RateLimitsSnapshot.self, from: Data(json.utf8))
+        XCTAssertNil(snap.credits)
+    }
 }

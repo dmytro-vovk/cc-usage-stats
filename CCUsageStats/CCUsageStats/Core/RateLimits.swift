@@ -75,6 +75,10 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
     /// merged by `CacheStore.update`: it stays until a 5-hour window shows up.
     let fiveHourIsAbsent: Bool
 
+    /// The usage-credit allowance, when credits are on. Same source and
+    /// authority rule as `breakdown`: only the usage endpoint reports it.
+    let credits: UsageCredits?
+
     /// Header-path shape: two windows, and no opinion about model windows.
     init(fiveHour: WindowSnapshot?, sevenDay: WindowSnapshot?, fiveHourIsAbsent: Bool = false) {
         self.fiveHour = fiveHour
@@ -83,6 +87,7 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         self.breakdown = []
         self.modelsAreAuthoritative = false
         self.fiveHourIsAbsent = fiveHourIsAbsent && fiveHour == nil
+        self.credits = nil
     }
 
     /// Usage-endpoint shape. Passing `models` at all is the claim that this
@@ -94,7 +99,8 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         sevenDay: WindowSnapshot?,
         models: [String: WindowSnapshot],
         breakdown: [UsageShare] = [],
-        fiveHourIsAbsent: Bool = false
+        fiveHourIsAbsent: Bool = false,
+        credits: UsageCredits? = nil
     ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
@@ -102,6 +108,7 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         self.breakdown = breakdown
         self.modelsAreAuthoritative = true
         self.fiveHourIsAbsent = fiveHourIsAbsent && fiveHour == nil
+        self.credits = credits
     }
 
     /// The window the menubar leads with: the 5-hour session, or — for an
@@ -144,6 +151,7 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         case models = "model_windows"
         case breakdown = "weekly_breakdown"
         case fiveHourIsAbsent = "five_hour_absent"
+        case credits = "usage_credits"
     }
 
     init(from decoder: Decoder) throws {
@@ -166,6 +174,7 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         // through `update` would otherwise clear the rows it just read back.
         // Pinned by `testDecodingDerivesAuthorityFromWhetherModelsWerePersisted`.
         modelsAreAuthoritative = !decodedModels.isEmpty
+        credits = try c.decodeIfPresent(UsageCredits.self, forKey: .credits)
         // Files written before the flag existed inferred it from the
         // windows present; keep reading them that way.
         let stored = try c.decodeIfPresent(Bool.self, forKey: .fiveHourIsAbsent)
@@ -179,5 +188,6 @@ nonisolated struct RateLimitsSnapshot: Codable, Equatable, Sendable {
         try c.encode(fiveHourIsAbsent, forKey: .fiveHourIsAbsent)
         if !models.isEmpty { try c.encode(models, forKey: .models) }
         if !breakdown.isEmpty { try c.encode(breakdown, forKey: .breakdown) }
+        try c.encodeIfPresent(credits, forKey: .credits)
     }
 }

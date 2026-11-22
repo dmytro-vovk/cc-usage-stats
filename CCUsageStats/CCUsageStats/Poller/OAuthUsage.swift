@@ -149,9 +149,25 @@ enum OAuthUsage {
         // An explicit null means the account has no 5-hour limit (verified
         // Ultra). A missing key or an object without `utilization` does not.
         let fiveAbsent = obj["five_hour"] is NSNull
+        // Usage credits: only while turned on. Amounts are minor units;
+        // a null limit is unlimited, a null spend is nothing spent yet.
+        var credits: UsageCredits?
+        if let extra = obj["extra_usage"] as? [String: Any], extra["is_enabled"] as? Bool == true {
+            let limitValue = extra["monthly_limit"]
+            let usedValue = extra["used_credits"]
+            let limitOK = limitValue == nil || limitValue is NSNull || limitValue is NSNumber
+            let usedOK = usedValue == nil || usedValue is NSNull || usedValue is NSNumber
+            if limitOK, usedOK {
+                credits = UsageCredits(
+                    limitCents: (limitValue as? NSNumber).map { Int64($0.doubleValue.rounded()) },
+                    usedCents: (usedValue as? NSNumber).map { Int64($0.doubleValue.rounded()) } ?? 0,
+                    currency: (extra["currency"] as? String) ?? "USD"
+                )
+            }
+        }
         return RateLimitsSnapshot(
             fiveHour: five, sevenDay: seven, models: models, breakdown: breakdown,
-            fiveHourIsAbsent: fiveAbsent
+            fiveHourIsAbsent: fiveAbsent, credits: credits
         )
     }
 }
