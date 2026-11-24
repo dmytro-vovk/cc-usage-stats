@@ -399,11 +399,15 @@ final class SessionTracker: ObservableObject {
 
     /// agy has no session-end event, and one agy process moves between
     /// conversations (`/resume`, a new one): only each process's latest
-    /// conversation is current. The ones it left stay on disk until it exits.
-    nonisolated static func latestGeminiConversations(_ records: [SessionRecord]) -> [SessionRecord] {
-        var newest: [Int32: Int64] = [:]
-        for r in records where r.client == .gemini { newest[r.pid] = max(newest[r.pid] ?? .min, r.updatedAt) }
-        return records.filter { $0.client != .gemini || $0.updatedAt >= newest[$0.pid] ?? .min }
+    /// conversation is current — the one written last, by `time` (the file's
+    /// full-precision modification time, so events in one second still
+    /// order). The ones it left are hidden, background work included, and
+    /// stay on disk until the process exits.
+    nonisolated static func latestGeminiConversations(_ records: [SessionRecord],
+                                                      time: (SessionRecord) -> Double) -> [SessionRecord] {
+        var newest: [Int32: Double] = [:]
+        for r in records where r.client == .gemini { newest[r.pid] = max(newest[r.pid] ?? -.infinity, time(r)) }
+        return records.filter { $0.client != .gemini || time($0) >= newest[$0.pid] ?? -.infinity }
     }
 
     nonisolated static func scan(
@@ -420,6 +424,7 @@ final class SessionTracker: ObservableObject {
         let fm = FileManager.default
         let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         var records: [SessionRecord] = []
+        var modifiedAt: [String: Double] = [:]
         func isRegularFile(_ url: URL) -> Bool {
             (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType == .typeRegular
         }
@@ -452,6 +457,7 @@ final class SessionTracker: ObservableObject {
                 // records are still cleaned up.
                 if clients.contains(record.client), !isCodexHousekeeping(record, codexHome: codexHomePath) {
                     records.append(record)
+                    modifiedAt[record.sessionID] = modified?.timeIntervalSince1970 ?? Double(mtime)
                 }
             } else if now - mtime >= staleAfter {
                 if modified != nil, modificationDate(url) == modified { try? fm.removeItem(at: url) }
@@ -460,7 +466,7 @@ final class SessionTracker: ObservableObject {
         func modificationDate(_ url: URL) -> Date? {
             (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         }
-        records = latestGeminiConversations(records)
+        records = latestGeminiConversations(records) { modifiedAt[$0.sessionID] ?? Double($0.updatedAt) }
         let codexNames = records.contains { $0.client == .codex } ? (codexTitles?.all() ?? [:]) : [:]
         return RunningSessions.build(records, isAlive: { _ in true }, now: now) { r in
             switch r.client {

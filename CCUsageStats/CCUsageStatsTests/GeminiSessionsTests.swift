@@ -326,6 +326,24 @@ final class GeminiSessionTrackingTests: XCTestCase {
         XCTAssertEqual(scan().map(\.id), ["cl"])
     }
 
+    /// The left conversation's last event and the new one's first can fall
+    /// in the same second; the order within it still decides.
+    func testWithinOneSecondTheLaterConversationStillWins() throws {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let dir = root.appendingPathComponent("sessions")
+        let second = (Date().timeIntervalSince1970 + 60).rounded(.down)
+        func put(_ sid: String, event: String, extra: String = "", at fraction: Double) throws {
+            let url = dir.appendingPathComponent("\(sid).json")
+            try #"{"v":1,"pid":\#(me),"session_id":"\#(sid)","hook_event":"\#(event)","cwd":"/x/proj","client":"gemini"\#(extra)}"#
+                .write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: second + fraction)],
+                                                  ofItemAtPath: url.path)
+        }
+        try put("old", event: "Stop", extra: #","error":"ERROR","last_message":"boom""#, at: 0.2)
+        try put("new", event: "SessionStart", at: 0.7)
+        XCTAssertEqual(scan().map(\.id), [], "the stale error is gone; the fresh conversation is idle")
+    }
+
     private func makeTracker(_ defaults: UserDefaults) -> SessionTracker {
         SessionTracker(sessionsDir: root.appendingPathComponent("sessions"),
                        settingsURL: root.appendingPathComponent("settings.json"),

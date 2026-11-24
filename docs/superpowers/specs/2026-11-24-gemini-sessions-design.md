@@ -53,11 +53,18 @@ bundled `agy-customizations/docs/hooks.md`:
 - Liveness: the PID's executable path contains `antigravity` (or is
   `agy`) and started before the record was written.
 - Opt-in toggle, off by default (`cc-usage-stats.geminiSessionTracking`).
+- One row per agy process: agy has no session-end event and `/resume`
+  moves a process to another conversation, so only the conversation whose
+  record was written last (full-precision file time) is listed; the ones
+  it left are hidden — background work included — until the process exits.
 
 ## Known gaps
 
 - A permission prompt shows as Working (no event).
 - Titles are the folder; agy's conversation titles live in an internal
   SQLite database (`conversation_summaries.db`) that isn't read.
+- If agy fires a late event for a conversation it left (e.g. its
+  background work finishing), that conversation is briefly "latest" and
+  hides the current one until the current one's next event. Unverified.
 - Only the CLI was measured. The Antigravity desktop app/IDE may read the
   same file; its hook parent process is unverified.
