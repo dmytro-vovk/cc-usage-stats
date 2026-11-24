@@ -29,9 +29,20 @@ nonisolated enum SessionStatus: String, Equatable, Sendable {
 /// Which agent a session belongs to. Each has its own hook script and
 /// settings file; their records share one directory.
 nonisolated enum SessionClient: String, Equatable, Hashable, Sendable, CaseIterable {
-    case claude, codex
+    /// `gemini`: the Antigravity CLI (`agy`), whatever model it runs.
+    case claude, codex, gemini
 
-    var name: String { self == .claude ? "Claude Code" : "Codex" }
+    var name: String {
+        switch self {
+        case .claude: return "Claude Code"
+        case .codex: return "Codex"
+        case .gemini: return "Gemini"
+        }
+    }
+
+    /// Names the row's client in its tooltip and for VoiceOver; nil for
+    /// Claude, the default.
+    var badge: String? { self == .claude ? nil : name }
 }
 
 /// One session's latest record, as written by `SessionHookScript`.
@@ -57,6 +68,9 @@ nonisolated struct SessionRecord: Equatable, Sendable {
     let error: String?
     /// `Stop`: work still running after the reply ended.
     let backgroundTasks: [BackgroundTask]
+    /// Gemini `Stop`: false while background work still runs. agy says
+    /// only that, not what or how many.
+    let fullyIdle: Bool?
     /// Epoch seconds of the event (the file's modification time).
     let updatedAt: Int64
 
@@ -67,7 +81,7 @@ nonisolated struct SessionRecord: Equatable, Sendable {
         func s(_ k: String) -> String? { (o[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         return SessionRecord(
             sessionID: sid,
-            client: s("client") == SessionClient.codex.rawValue ? .codex : .claude,
+            client: s("client").flatMap(SessionClient.init(rawValue:)) ?? .claude,
             pid: Int32(truncatingIfNeeded: (o["pid"] as? NSNumber)?.int64Value ?? 0),
             event: s("hook_event") ?? "",
             toolName: s("tool_name"),
@@ -81,6 +95,7 @@ nonisolated struct SessionRecord: Equatable, Sendable {
             lastMessage: s("last_message"),
             error: s("error"),
             backgroundTasks: ((o["background_tasks"] as? [[String: Any]]) ?? []).compactMap(BackgroundTask.init(json:)),
+            fullyIdle: o["fully_idle"] as? Bool,
             updatedAt: updatedAt
         )
     }
@@ -91,10 +106,18 @@ nonisolated struct SessionRecord: Equatable, Sendable {
         backgroundTasks.filter { $0.isInFlight && !$0.isLongLivedService }.count
     }
 
-    /// Why a `StopFailure` turn failed; nil for any other event.
+    /// Why a `StopFailure` turn failed (a Gemini `Stop` that ended on an
+    /// error); nil for any other event.
     var failure: StopFailureReason? {
-        event == "StopFailure" ? StopFailureReason(error: error, message: lastMessage) : nil
+        if client == .gemini {
+            return isGeminiError ? StopFailureReason(geminiMessage: lastMessage) : nil
+        }
+        return event == "StopFailure" ? StopFailureReason(error: error, message: lastMessage) : nil
     }
+
+    /// agy reports a failed turn as a `Stop` whose termination reason is
+    /// `ERROR`; the hook keeps that reason in `error`.
+    private var isGeminiError: Bool { client == .gemini && event == "Stop" && error == "ERROR" }
 
     /// Claude Code fires `PreCompact` for a compaction it precomputes on an
     /// idle session, and nothing after it. A compaction this old isn't
@@ -112,8 +135,9 @@ nonisolated struct SessionRecord: Equatable, Sendable {
         // The turn finished. Done, unless it ended on a question for the
         // user, or left work running that will wake it again.
         case "Stop":
+            if isGeminiError { return .error }
             if ClosingQuestion.asksUser(lastMessage) { return .waitingForInput }
-            return backgroundTaskCount > 0 ? .background : .done
+            return backgroundTaskCount > 0 || fullyIdle == false ? .background : .done
         case "StopFailure": return .error
         // Claude put a question to the user and is blocked on the answer.
         case "PreToolUse" where toolName == "AskUserQuestion": return .waitingForInput
@@ -129,7 +153,7 @@ nonisolated struct SessionRecord: Equatable, Sendable {
                 return message?.localizedCaseInsensitiveContains("permission") == true
                     ? .needsPermission : .done
             }
-        default: return .working  // UserPromptSubmit, Pre/PostToolUse, anything new
+        default: return .working  // UserPromptSubmit, Pre/PostToolUse, Pre/PostInvocation, anything new
         }
     }
 }
@@ -143,15 +167,17 @@ nonisolated struct RunningSession: Identifiable, Equatable, Sendable {
     /// The status spelled out: background work counted, a failure's reason.
     var statusText: String {
         switch status {
-        case .background: return "\(status.label) (\(record.backgroundTaskCount))"
-        case .error: return record.failure?.label ?? status.label
+        case .background:
+            let n = record.backgroundTaskCount
+            return n > 0 ? "\(status.label) (\(n))" : status.label
+        case .error: return record.failure?.label(for: record.client) ?? status.label
         default: return status.label
         }
     }
 
     /// VoiceOver's reading of the row; names the client when it isn't Claude.
     var accessibilityText: String {
-        (record.client == .codex ? "Codex, " : "") + "\(title), \(statusText)"
+        (record.client.badge.map { "\($0), " } ?? "") + "\(title), \(statusText)"
     }
 
     /// The row's hover text: what it's doing, and where.
@@ -162,11 +188,13 @@ nonisolated struct RunningSession: Identifiable, Equatable, Sendable {
     /// goes on a second line.
     func tooltip(limits: RateLimitsSnapshot?, now: Int64) -> String {
         var head = statusText
-        if record.failure == .usageLimit,
+        // The app's usage data is Claude's: it can't say when another
+        // agent's limit lifts.
+        if record.client == .claude, record.failure == .usageLimit,
            let reset = limits?.limitResetsAt(now: now, message: record.lastMessage) {
             head += ", resets in \(RelativeTime.format(seconds: reset - now))"
         }
-        if record.client == .codex { head = "Codex · " + head }
+        if let badge = record.client.badge { head = "\(badge) · " + head }
         var text = "\(head) — \(record.cwd ?? title)"
         if record.failure != nil, let message = record.lastMessage { text += "\n\(message)" }
         return text
@@ -256,15 +284,28 @@ nonisolated enum StopFailureReason: Equatable, Sendable {
         }
     }
 
+    /// A failed agy turn carries only Google's error text, e.g.
+    /// "RESOURCE_EXHAUSTED: You have exhausted your capacity…".
+    init(geminiMessage message: String?) {
+        let text = message?.lowercased() ?? ""
+        if ["resource_exhausted", "quota", "exhausted your capacity", "rate limit"].contains(where: text.contains) {
+            self = .usageLimit
+        } else {
+            self.init(error: nil, message: message)
+        }
+    }
+
     private static let connectionHints = [
         "unable to connect", "can't reach", "cannot reach", "connection", "timeout", "timed out",
         "enotfound", "econnrefused", "econnreset", "network",
     ]
 
-    var label: String {
+    var label: String { label(for: .claude) }
+
+    func label(for client: SessionClient) -> String {
         switch self {
         case .usageLimit: return "Usage limit reached"
-        case .unreachable: return "Can't reach Claude"
+        case .unreachable: return client == .gemini ? "Can't reach Gemini" : "Can't reach Claude"
         case .auth: return "Sign-in or account problem"
         case .other: return SessionStatus.error.label
         }

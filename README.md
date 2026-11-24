@@ -265,7 +265,8 @@ toolbar tabs:
 
 - **General** — Launch at login; Menu-bar pill shows Claude / Codex /
   Both, and **Add a Gemini band** while Gemini tracking is on; Show active Claude Code sessions (with the hook status); Show
-  active Codex sessions (hook status and whether Codex trusts them); Usage
+  active Codex sessions (hook status and whether Codex trusts them); Show
+  active Gemini sessions (hook status); Usage
   MCP server for Claude Code / Codex (see [Usage MCP server](#usage-mcp-server));
   Check for updates (status, **Check now**, and a **Download from
   ccusagestats.app** link when a newer release is out — see
@@ -390,6 +391,39 @@ hand, or move them to the end of each event and switch it off again.
 
 Codex 0.149 fires no hook when you interrupt a turn (Esc), so an
 interrupted session shows Working until its next event.
+
+#### Gemini sessions
+
+Optional, off by default: **Settings → General → Show active Gemini
+sessions**. Sessions of Google's **Antigravity CLI** (`agy`, interactive or
+`agy -p`) then join the same list with a **Gemini** badge after the title
+(the tooltip starts with "Gemini ·"), whichever model the session runs.
+Rows show the folder. They show:
+
+- **Working** from the prompt to the end of the turn;
+- **Waiting for input** when the reply ends on a question for you;
+- **In background** when agy reports work still running after the reply
+  (it doesn't say how much, so there's no count);
+- **Error** when the turn failed — **Usage limit reached** for a quota
+  error (`RESOURCE_EXHAUSTED`), **Can't reach Gemini** for a network one —
+  with agy's message on hover.
+
+agy has no hook for a permission prompt, so a session waiting for your
+approval shows Working; an interrupted turn (Esc) shows as Done. Clicking
+works as for Claude: an `agy` run inside a Claude desktop session opens
+that session; otherwise its terminal app comes forward.
+
+The app adds one named hook, `cc-usage-stats`, to agy's global
+`~/.gemini/config/hooks.json` for SessionStart, Pre/PostInvocation,
+Pre/PostToolUse and Stop, pointing at its own copy of the script
+(`…/cc-usage-stats/hooks/gemini-session-hook.sh`). Your other named hooks
+are left as they are, a one-time `hooks.json.cc-usage-stats.bak` is saved
+first, and turning the toggle off removes ours. agy runs hooks without a
+trust step, so sessions started afterwards show up. agy's `Stop` event
+carries no reply text: at the end of a turn the script reads the last line
+of that conversation's transcript (the reply that ended it) to spot a
+closing question. Switching our hook off in agy's `/hooks` doesn't stick —
+the app repairs it at its next launch; use the toggle instead.
 
 ### Codex usage
 
@@ -837,6 +871,10 @@ security delete-generic-password -s cc-usage-stats -a oauth-session
 # codex-session-hook.sh from ~/.codex/hooks.json, and their
 # [hooks.state."…"] tables from ~/.codex/config.toml)
 
+# Same for Gemini, if you turned it on: turn off Settings → General → Show
+# active Gemini sessions (or delete the "cc-usage-stats" entry from
+# ~/.gemini/config/hooks.json)
+
 # Unregister the usage MCP server first: turn off Settings → General →
 # Usage MCP server (or: claude mcp remove --scope user cc-usage-stats, and
 # delete the [mcp_servers.cc-usage-stats] table from ~/.codex/config.toml)
@@ -872,6 +910,11 @@ security delete-identity -c "CCUsageStats Dev"
   running background tasks' descriptions and commands, and any error
   message) to `~/Library/Application Support/cc-usage-stats/sessions/` and
   nowhere else. No prompts, tool input or output are stored.
+- Gemini session tracking (off by default) adds a hook to
+  `~/.gemini/config/hooks.json` that writes the same kind of record: the
+  conversation id, folder, event name, and at the end of a turn the last
+  few hundred characters of the reply (read from that conversation's
+  transcript) or agy's error message.
 - Codex tracking (off by default) reads `~/.codex/sessions` locally.
   Opt-in live polling runs the Codex CLI (`codex app-server`) every 5
   minutes; Codex itself contacts OpenAI and may renew its sign-in in

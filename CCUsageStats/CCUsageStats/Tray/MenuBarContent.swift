@@ -692,7 +692,7 @@ struct MenuBarDropdown: View {
     }
 }
 
-/// Active Claude Code and Codex sessions, from the hooks. Rows open their session.
+/// Active Claude Code, Codex and Gemini sessions, from the hooks. Rows open their session.
 /// No header: the rows' icons say what they are. Frozen while hovered (see
 /// `SessionListFreeze`), and it stays on screen until the pointer leaves
 /// even if every session finishes meanwhile.
@@ -720,6 +720,12 @@ private struct SessionsSection: View {
                 }
                 if case .failed(let why) = tracker.codexHookState {
                     Text("Codex session hooks couldn't be installed: \(why)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .wrapsFully()
+                }
+                if case .failed(let why) = tracker.geminiHookState {
+                    Text("Gemini session hooks couldn't be installed: \(why)")
                         .font(.caption)
                         .foregroundStyle(.red)
                         .wrapsFully()
@@ -764,7 +770,7 @@ private struct SessionRow: View {
                     .sessionStatusStyle(session.status)
                     .frame(width: 14)
                 MarqueeText(text: session.title, active: hovering)
-                if session.record.client == .codex { CodexBadge() }
+                if let badge = session.record.client.badge { ClientBadge(text: badge) }
                 Spacer(minLength: 6)
                 // Just the timer; the status is the icon, spelled out on hover.
                 Text(RelativeTime.format(seconds: now - session.record.updatedAt))
@@ -785,10 +791,12 @@ private struct SessionRow: View {
     }
 }
 
-/// Tells Codex rows from Claude Code ones.
-private struct CodexBadge: View {
+/// Tells Codex and Gemini rows from Claude Code ones.
+private struct ClientBadge: View {
+    let text: String
+
     var body: some View {
-        Text("Codex")
+        Text(text)
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)

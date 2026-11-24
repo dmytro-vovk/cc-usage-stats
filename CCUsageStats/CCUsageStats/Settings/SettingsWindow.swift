@@ -160,6 +160,7 @@ struct GeneralSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             CodexSessionsSection(tracker: vm.sessions)
+            GeminiSessionsSection(tracker: vm.sessions)
             UsageMCPSection()
             UpdatesSection(updates: vm.updates)
         }
@@ -243,6 +244,42 @@ private struct CodexSessionsSection: View {
         case .untrusted(let trusted, let of): return ("Not trusted yet (\(trusted) of \(of))", false)
         case .disabled(let n): return ("\(n) turned off in /hooks", false)
         case .unknown: return nil
+        }
+    }
+}
+
+/// Opt-in Gemini session tracking through the Antigravity CLI's hooks.
+private struct GeminiSessionsSection: View {
+    @ObservedObject var tracker: SessionTracker
+
+    var body: some View {
+        Section {
+            Toggle("Show active Gemini sessions", isOn: $tracker.geminiEnabled)
+            if tracker.geminiEnabled || tracker.geminiHookFailed {
+                LabeledContent("Hooks") {
+                    HStack(spacing: 8) {
+                        Text(hookStatus).foregroundStyle(tracker.geminiHookFailed ? Color.red : Color.secondary)
+                        if tracker.geminiHookFailed {
+                            Button(tracker.geminiEnabled ? "Repair" : "Retry removal") { tracker.reinstall(.gemini) }
+                        }
+                    }
+                }
+            }
+        } footer: {
+            Text("For the Antigravity CLI (agy). Adds a hook named cc-usage-stats to ~/.gemini/config/hooks.json (your other hooks are kept; a backup is saved first); sessions started afterwards show up. Turning this off removes it. Gemini rows carry a Gemini badge.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var hookStatus: String {
+        switch tracker.geminiHookState {
+        case .unknown: return "Not checked yet"
+        case .installed: return "Installed"
+        case .installedNow: return "Installed just now"
+        case .removed: return "Removed"
+        case .failed(let why): return why
         }
     }
 }

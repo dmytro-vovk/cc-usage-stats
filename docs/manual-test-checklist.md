@@ -472,6 +472,24 @@ by design.
 - Toggle OFF: our groups leave `hooks.json` and our trust tables leave
   `config.toml` (others untouched); Codex rows disappear; Claude rows stay.
 
+### 16b. Gemini sessions
+
+- Settings → General → **Show active Gemini sessions** ON: Hooks
+  "Installed just now"; `~/.gemini/config/hooks.json` gains one named hook
+  `cc-usage-stats` (SessionStart, PreInvocation, PostInvocation, Stop as
+  plain handler lists; PreToolUse, PostToolUse as one `.*` matcher group)
+  whose command is `'…/cc-usage-stats/hooks/gemini-session-hook.sh'`,
+  timeout 5; your other named hooks are unchanged;
+  `hooks.json.cc-usage-stats.bak` holds the original if there was one.
+- Send a prompt in `agy`: a row with the **Gemini** badge shows
+  **Working** (tooltip "Gemini · Working — ~/path", folder as title); a
+  reply ending "Shall I …?" → **Waiting for input**; a plain reply →
+  drops off. `agy -p "…"` from a Claude desktop session shows a row that
+  opens that session.
+- Quit `agy` (or kill it): the row disappears within ~5 s.
+- Toggle OFF: the `cc-usage-stats` entry leaves `hooks.json` (others
+  untouched); Gemini rows disappear; Claude and Codex rows stay.
+
 ### 17. Usage MCP server
 
 - Settings → General → **Usage MCP server for Claude Code** ON: a spinner,

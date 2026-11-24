@@ -32,7 +32,11 @@ nonisolated enum SessionHookInstaller {
     static let ownMarker = "/cc-usage-stats/hooks/session-hook.sh"
 
     static func scriptName(for client: SessionClient) -> String {
-        client == .claude ? scriptName : "codex-session-hook.sh"
+        switch client {
+        case .claude: return scriptName
+        case .codex: return "codex-session-hook.sh"
+        case .gemini: return GeminiHookInstaller.scriptName
+        }
     }
 
     static func ownMarker(for client: SessionClient) -> String {
@@ -272,7 +276,10 @@ nonisolated enum SessionHookInstaller {
     /// between our read and our write (Claude Code, a dotfiles sync), start
     /// over from the new contents rather than overwrite them.
     /// `transform` returns nil when there is nothing to write.
-    static func update(_ link: URL, _ transform: ([String: Any]) throws -> [String: Any]?) throws {
+    /// `validate` vets the parsed file before `transform` sees it; the
+    /// default checks the `hooks` shape Claude Code and Codex share.
+    static func update(_ link: URL, validate: ([String: Any]) throws -> Void = validate,
+                       _ transform: ([String: Any]) throws -> [String: Any]?) throws {
         // Resolved once, so every step sees the same file even if the link moves.
         let url = link.resolvingSymlinksInPath()
         for _ in 0..<3 {
@@ -301,7 +308,7 @@ nonisolated enum SessionHookInstaller {
         throw InstallError.changedWhileWriting(url.path)
     }
 
-    private static func writeScriptIfNeeded(at url: URL, contents: String) throws -> Bool {
+    static func writeScriptIfNeeded(at url: URL, contents: String) throws -> Bool {
         if (try? String(contentsOf: url, encoding: .utf8)) == contents { return false }
         try Paths.ensureDirectory(url.deletingLastPathComponent())
         try contents.write(to: url, atomically: true, encoding: .utf8)

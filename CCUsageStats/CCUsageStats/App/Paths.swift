@@ -55,6 +55,14 @@ nonisolated enum Paths {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
     }
 
+    /// The Antigravity CLI's global hooks file, shared by its terminal UI
+    /// and backend. Redirected under test, like `codexHome`.
+    static var geminiHooks: URL {
+        TestEnvironment.isRunningTests
+            ? testAppSupportDir.appendingPathComponent("gemini-config/hooks.json")
+            : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini/config/hooks.json")
+    }
+
     static var liveClaudeSettings: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")

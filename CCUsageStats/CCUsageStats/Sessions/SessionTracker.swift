@@ -39,6 +39,13 @@ nonisolated enum ProcessProbe {
         guard let path, !path.isEmpty else { return false }
         return path.lowercased().contains("codex")
     }
+
+    /// The Antigravity CLI: Homebrew's `…/antigravity-cli/<ver>/antigravity`,
+    /// or an install that kept the `agy` name.
+    static func looksLikeGemini(path: String?) -> Bool {
+        guard let path, !path.isEmpty else { return false }
+        return path.lowercased().contains("antigravity") || URL(fileURLWithPath: path).lastPathComponent == "agy"
+    }
 }
 
 /// Codex thread names, from `$CODEX_HOME/session_index.jsonl` (one line per
@@ -60,13 +67,14 @@ nonisolated struct CodexSessionTitles {
     }
 }
 
-/// Lists live Claude Code and Codex sessions from the records
+/// Lists live Claude Code, Codex and Gemini (agy) sessions from the records
 /// `SessionHookScript` writes, and keeps each client's hooks installed while
 /// its toggle is on.
 @MainActor
 final class SessionTracker: ObservableObject {
     static let enabledKey = "cc-usage-stats.sessionTracking"
     static let codexEnabledKey = "cc-usage-stats.codexSessionTracking"
+    static let geminiEnabledKey = "cc-usage-stats.geminiSessionTracking"
     static let livenessInterval: TimeInterval = 5
 
     enum HookState: Equatable {
@@ -94,9 +102,17 @@ final class SessionTracker: ObservableObject {
             if started { apply(.codex) }
         }
     }
+    /// Gemini sessions in the Antigravity CLI. Opt-in, like Codex.
+    @Published var geminiEnabled: Bool {
+        didSet {
+            defaults.set(geminiEnabled, forKey: Self.geminiEnabledKey)
+            if started { apply(.gemini) }
+        }
+    }
     @Published private(set) var sessions: [RunningSession] = []
     @Published private(set) var hookState: HookState = .unknown
     @Published private(set) var codexHookState: HookState = .unknown
+    @Published private(set) var geminiHookState: HookState = .unknown
     /// Re-read with every scan while Codex tracking is on, so it follows the
     /// user trusting the hooks in Codex.
     @Published private(set) var codexTrust: CodexHookTrust.State = .unknown
@@ -110,7 +126,11 @@ final class SessionTracker: ObservableObject {
         if case .failed = codexHookState { return true }
         return false
     }
-    var anyHookFailed: Bool { hookFailed || codexHookFailed }
+    var geminiHookFailed: Bool {
+        if case .failed = geminiHookState { return true }
+        return false
+    }
+    var anyHookFailed: Bool { hookFailed || codexHookFailed || geminiHookFailed }
 
     nonisolated let sessionsDir: URL
     let settingsURL: URL
@@ -120,6 +140,8 @@ final class SessionTracker: ObservableObject {
     let codexScriptURL: URL
     var codexHooksURL: URL { codexHome.appendingPathComponent("hooks.json") }
     var codexConfigURL: URL { codexHome.appendingPathComponent("config.toml") }
+    let geminiHooksURL: URL
+    let geminiScriptURL: URL
     private let defaults: UserDefaults
     private var started = false
     private var source: DispatchSourceFileSystemObject?
@@ -136,6 +158,8 @@ final class SessionTracker: ObservableObject {
         titlesRoot: URL = DesktopSessionTitles.defaultRoot,
         codexHome: URL? = nil,
         codexScriptURL: URL? = nil,
+        geminiHooksURL: URL? = nil,
+        geminiScriptURL: URL? = nil,
         defaults: UserDefaults = .standard
     ) {
         self.sessionsDir = sessionsDir
@@ -145,9 +169,12 @@ final class SessionTracker: ObservableObject {
         self.titlesRoot = titlesRoot
         self.codexHome = codexHome ?? Paths.codexHome
         self.codexScriptURL = codexScriptURL ?? SessionHookInstaller.defaultScriptURL(for: .codex)
+        self.geminiHooksURL = geminiHooksURL ?? Paths.geminiHooks
+        self.geminiScriptURL = geminiScriptURL ?? GeminiHookInstaller.defaultScriptURL
         self.defaults = defaults
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
         codexEnabled = defaults.object(forKey: Self.codexEnabledKey) as? Bool ?? false
+        geminiEnabled = defaults.object(forKey: Self.geminiEnabledKey) as? Bool ?? false
     }
 
     func start() {
@@ -155,6 +182,7 @@ final class SessionTracker: ObservableObject {
         started = true
         apply(.claude)
         apply(.codex)
+        apply(.gemini)
     }
 
     func stop() {
@@ -182,7 +210,11 @@ final class SessionTracker: ObservableObject {
     }
 
     func isEnabled(_ client: SessionClient) -> Bool {
-        client == .claude ? enabled : codexEnabled
+        switch client {
+        case .claude: return enabled
+        case .codex: return codexEnabled
+        case .gemini: return geminiEnabled
+        }
     }
 
     private var enabledClients: Set<SessionClient> {
@@ -207,7 +239,7 @@ final class SessionTracker: ObservableObject {
     private func apply(_ client: SessionClient) {
         if isEnabled(client) { installHooks(client) } else { removeHooks(client) }
         if client == .codex, !codexEnabled { codexTrust = .unknown }
-        if enabled || codexEnabled {
+        if !enabledClients.isEmpty {
             startWatching()
             rescan()
         } else {
@@ -217,15 +249,27 @@ final class SessionTracker: ObservableObject {
     }
 
     private func settingsURL(for client: SessionClient) -> URL {
-        client == .claude ? settingsURL : codexHooksURL
+        switch client {
+        case .claude: return settingsURL
+        case .codex: return codexHooksURL
+        case .gemini: return geminiHooksURL
+        }
     }
 
     private func scriptURL(for client: SessionClient) -> URL {
-        client == .claude ? scriptURL : codexScriptURL
+        switch client {
+        case .claude: return scriptURL
+        case .codex: return codexScriptURL
+        case .gemini: return geminiScriptURL
+        }
     }
 
     private func setHookState(_ state: HookState, for client: SessionClient) {
-        if client == .claude { hookState = state } else { codexHookState = state }
+        switch client {
+        case .claude: hookState = state
+        case .codex: codexHookState = state
+        case .gemini: geminiHookState = state
+        }
     }
 
     private func removeHooks(_ client: SessionClient) {
@@ -254,7 +298,11 @@ final class SessionTracker: ObservableObject {
             }
         }
         do {
-            try SessionHookInstaller.uninstall(settingsURL: url, client: client)
+            if client == .gemini {
+                try GeminiHookInstaller.uninstall(hooksURL: url)
+            } else {
+                try SessionHookInstaller.uninstall(settingsURL: url, client: client)
+            }
             setHookState(.removed, for: client)
         } catch {
             setHookState(.failed("\(error)"), for: client)
@@ -263,8 +311,11 @@ final class SessionTracker: ObservableObject {
 
     private func installHooks(_ client: SessionClient) {
         do {
-            switch try SessionHookInstaller.ensureInstalled(
-                settingsURL: settingsURL(for: client), scriptURL: scriptURL(for: client), client: client) {
+            let outcome = client == .gemini
+                ? try GeminiHookInstaller.ensureInstalled(hooksURL: geminiHooksURL, scriptURL: geminiScriptURL)
+                : try SessionHookInstaller.ensureInstalled(
+                    settingsURL: settingsURL(for: client), scriptURL: scriptURL(for: client), client: client)
+            switch outcome {
             case .alreadyInstalled: setHookState(.installed, for: client)
             case .installed, .updatedScript: setHookState(.installedNow, for: client)
             }
@@ -302,7 +353,7 @@ final class SessionTracker: ObservableObject {
     }
 
     private func rescan() {
-        guard started, enabled || codexEnabled else { return }
+        guard started, !enabledClients.isEmpty else { return }
         if scanning { rescanPending = true; return }
         scanning = true
         let dir = sessionsDir
@@ -354,6 +405,7 @@ final class SessionTracker: ObservableObject {
         clients: Set<SessionClient> = Set(SessionClient.allCases),
         isClaude: (Int32) -> Bool = { ProcessProbe.looksLikeClaude(path: ProcessProbe.executablePath(of: $0)) },
         isCodex: (Int32) -> Bool = { ProcessProbe.looksLikeCodex(path: ProcessProbe.executablePath(of: $0)) },
+        isGemini: (Int32) -> Bool = { ProcessProbe.looksLikeGemini(path: ProcessProbe.executablePath(of: $0)) },
         now: Int64 = Int64(Date().timeIntervalSince1970)
     ) -> [RunningSession] {
         let fm = FileManager.default
@@ -379,7 +431,13 @@ final class SessionTracker: ObservableObject {
                   let record = SessionRecord.decode(data, updatedAt: mtime)
             else { continue }
             let live = (ProcessProbe.startTime(of: record.pid).map { $0 <= mtime + 1 } ?? false)
-                && (record.client == .codex ? isCodex(record.pid) : isClaude(record.pid))
+                && {
+                    switch record.client {
+                    case .claude: return isClaude(record.pid)
+                    case .codex: return isCodex(record.pid)
+                    case .gemini: return isGemini(record.pid)
+                    }
+                }()
             if live {
                 // A switched-off client's sessions aren't listed; its dead
                 // records are still cleaned up.
@@ -395,9 +453,12 @@ final class SessionTracker: ObservableObject {
         }
         let codexNames = records.contains { $0.client == .codex } ? (codexTitles?.all() ?? [:]) : [:]
         return RunningSessions.build(records, isAlive: { _ in true }, now: now) { r in
-            r.client == .codex
-                ? codexNames[r.sessionID]
-                : r.hostSessionID.flatMap(titles.title(forHostSession:))
+            switch r.client {
+            case .codex: return codexNames[r.sessionID]
+            // A Gemini run inside a Claude desktop session isn't that session.
+            case .gemini: return nil
+            case .claude: return r.hostSessionID.flatMap(titles.title(forHostSession:))
+            }
         }
     }
 }
