@@ -246,8 +246,8 @@ Gemini windows; the gauge needle always shows the absolute level.
 ### Settings window
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.22.1">
-  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.22.1" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-general-dark.png?v=0.24.0">
+  <img alt="Settings — General tab" src="docs/screenshots/settings-general-light.png?v=0.24.0" width="460">
 </picture>
 &nbsp;
 <picture>
