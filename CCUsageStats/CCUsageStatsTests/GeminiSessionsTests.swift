@@ -302,6 +302,30 @@ final class GeminiSessionTrackingTests: XCTestCase {
         XCTAssertEqual(scan().first { $0.id == "gm" }?.title, "proj")
     }
 
+    /// agy has no session-end event, and `/resume` moves one process to
+    /// another conversation: the one it left must not linger in the list.
+    func testOnlyTheLatestConversationOfAnAgyProcessIsListed() throws {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let dir = root.appendingPathComponent("sessions")
+        // Written after the process started (else it's a recycled PID), so
+        // dated forward: "new" is the later one.
+        func put(_ sid: String, client: String, event: String, extra: String = "", at offset: TimeInterval) throws {
+            let url = dir.appendingPathComponent("\(sid).json")
+            try #"{"v":1,"pid":\#(me),"session_id":"\#(sid)","hook_event":"\#(event)","cwd":"/x/proj","client":"\#(client)"\#(extra)}"#
+                .write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: offset)], ofItemAtPath: url.path)
+        }
+        try put("old", client: "gemini", event: "Stop", extra: #","error":"ERROR","last_message":"boom""#, at: 0)
+        try put("new", client: "gemini", event: "PreInvocation", at: 60)
+        try put("cl", client: "claude", event: "UserPromptSubmit", at: 0)
+        XCTAssertEqual(Set(scan().map(\.id)), ["new", "cl"], "the conversation agy left is gone; Claude's isn't touched")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("old.json").path), "hidden, not deleted")
+
+        // The newest is a fresh conversation not yet prompted: nothing shows.
+        try put("new", client: "gemini", event: "SessionStart", at: 60)
+        XCTAssertEqual(scan().map(\.id), ["cl"])
+    }
+
     private func makeTracker(_ defaults: UserDefaults) -> SessionTracker {
         SessionTracker(sessionsDir: root.appendingPathComponent("sessions"),
                        settingsURL: root.appendingPathComponent("settings.json"),

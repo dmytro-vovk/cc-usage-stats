@@ -397,6 +397,15 @@ final class SessionTracker: ObservableObject {
         return cwd == home || cwd.hasPrefix(home.hasSuffix("/") ? home : home + "/")
     }
 
+    /// agy has no session-end event, and one agy process moves between
+    /// conversations (`/resume`, a new one): only each process's latest
+    /// conversation is current. The ones it left stay on disk until it exits.
+    nonisolated static func latestGeminiConversations(_ records: [SessionRecord]) -> [SessionRecord] {
+        var newest: [Int32: Int64] = [:]
+        for r in records where r.client == .gemini { newest[r.pid] = max(newest[r.pid] ?? .min, r.updatedAt) }
+        return records.filter { $0.client != .gemini || $0.updatedAt >= newest[$0.pid] ?? .min }
+    }
+
     nonisolated static func scan(
         dir: URL,
         titles: DesktopSessionTitles,
@@ -451,6 +460,7 @@ final class SessionTracker: ObservableObject {
         func modificationDate(_ url: URL) -> Date? {
             (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         }
+        records = latestGeminiConversations(records)
         let codexNames = records.contains { $0.client == .codex } ? (codexTitles?.all() ?? [:]) : [:]
         return RunningSessions.build(records, isAlive: { _ in true }, now: now) { r in
             switch r.client {

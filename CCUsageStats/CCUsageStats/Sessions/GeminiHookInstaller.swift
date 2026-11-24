@@ -5,8 +5,9 @@ import Foundation
 ///
 /// agy's file is an object of *named* hooks, each mapping events to
 /// handlers, so ours is one name, `cc-usage-stats`, that we own outright:
-/// installing sets it, removing deletes it, and nothing else in the file is
-/// read or moved. Writes go through `SessionHookInstaller.update` (merge,
+/// installing sets it, removing deletes it, and no other entry's contents
+/// change (the file is rewritten with its keys sorted, so named hooks may
+/// change places). Writes go through `SessionHookInstaller.update` (merge,
 /// compare-and-swap, one-time backup, symlinks written through). agy has
 /// no trust step: hooks in the file run from the next session on.
 nonisolated enum GeminiHookInstaller {
