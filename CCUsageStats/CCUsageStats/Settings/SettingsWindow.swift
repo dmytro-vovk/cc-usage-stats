@@ -62,14 +62,19 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
             tvc.addTabViewItem(item)
         }
-        let win = NSWindow(contentViewController: tvc)
-        win.styleMask = [.titled, .closable]
+        // `window` is set before the tabs load, so the first tab's height
+        // cap reads the same screen `center()` then places the window on.
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                           backing: .buffered, defer: true)
         win.toolbarStyle = .preference
         win.isReleasedWhenClosed = false
         win.delegate = self
-        win.center()
         window = win
         tabs = tvc
+        win.contentViewController = tvc
+        // `init(contentViewController:)` would bind this; the setter doesn't.
+        win.bind(.title, to: tvc, withKeyPath: "title")
+        win.center()
     }
 
     private static func view(for tab: SettingsTab, vm: MenuViewModel) -> AnyView {
