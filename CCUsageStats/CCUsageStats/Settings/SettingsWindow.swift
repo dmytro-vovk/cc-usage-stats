@@ -80,12 +80,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// The screen Settings is on (or will open on), which the tab height
+    /// cap and the on-screen fit both follow.
+    var screen: NSScreen? { window?.screen ?? NSScreen.main ?? NSScreen.screens.first }
+
+    nonisolated func windowDidChangeScreen(_ notification: Notification) {
+        Task { @MainActor in self.keepOnScreen() }
+    }
+
     nonisolated func windowDidResize(_ notification: Notification) {
         Task { @MainActor in self.keepOnScreen() }
     }
 
     private func keepOnScreen() {
-        guard let win = window, let visible = (win.screen ?? NSScreen.main)?.visibleFrame else { return }
+        guard let win = window, let visible = screen?.visibleFrame else { return }
         let fitted = SettingsHeight.fitted(win.frame, in: visible)
         if fitted != win.frame { win.setFrame(fitted, display: true) }
     }
@@ -122,7 +130,7 @@ enum SettingsHeight {
     }
 
     @MainActor static var current: CGFloat {
-        maxPane(visibleHeight: (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800)
+        maxPane(visibleHeight: SettingsWindowController.shared.screen?.visibleFrame.height ?? 800)
     }
 }
 
