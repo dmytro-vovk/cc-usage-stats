@@ -48,6 +48,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// A window already placed on `screen` (a zero-size one has no screen),
+    /// so the first tab's height cap and `center()` both use that screen.
+    static func makeWindow(on screen: NSScreen?) -> NSWindow {
+        let size = NSSize(width: settingsWidth, height: SettingsHeight.minimum)
+        let vf = screen?.visibleFrame ?? NSRect(origin: .zero, size: size)
+        let rect = NSRect(x: vf.midX - size.width / 2, y: vf.midY - size.height / 2,
+                          width: size.width, height: size.height)
+        return NSWindow(contentRect: rect, styleMask: [.titled, .closable], backing: .buffered, defer: true)
+    }
+
     private func build(vm: MenuViewModel) {
         let tvc = NSTabViewController()
         tvc.tabStyle = .toolbar
@@ -62,10 +72,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
             tvc.addTabViewItem(item)
         }
-        // `window` is set before the tabs load, so the first tab's height
-        // cap reads the same screen `center()` then places the window on.
-        let win = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
-                           backing: .buffered, defer: true)
+        // `window` is set, on the focused screen, before the tabs load, so
+        // the first tab's height cap reads the screen it opens on.
+        let win = Self.makeWindow(on: NSScreen.main ?? NSScreen.screens.first)
         win.toolbarStyle = .preference
         win.isReleasedWhenClosed = false
         win.delegate = self

@@ -59,3 +59,15 @@ final class SettingsHeightTests: XCTestCase {
         XCTAssertGreaterThan(tall, capped + 40, "height follows the content below the cap")
     }
 }
+
+/// The first tab measures its height cap while the window is being built,
+/// so the window must already be on its screen by then.
+@MainActor
+final class SettingsWindowScreenTests: XCTestCase {
+    func testNewWindowIsOnItsScreenBeforeContentLoads() throws {
+        let screen = try XCTUnwrap(NSScreen.screens.last)
+        let win = SettingsWindowController.makeWindow(on: screen)
+        win.isReleasedWhenClosed = false
+        XCTAssertEqual(win.screen, screen)
+    }
+}
