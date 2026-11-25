@@ -44,6 +44,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // "Last seen" should be current while the user is looking at it.
         vm.codex.refreshNow()
         window?.makeKeyAndOrderFront(nil)
+        keepOnScreen()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -79,6 +80,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    nonisolated func windowDidResize(_ notification: Notification) {
+        Task { @MainActor in self.keepOnScreen() }
+    }
+
+    private func keepOnScreen() {
+        guard let win = window, let visible = (win.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let fitted = SettingsHeight.fitted(win.frame, in: visible)
+        if fitted != win.frame { win.setFrame(fitted, display: true) }
+    }
+
     nonisolated func windowWillClose(_ notification: Notification) {
         // Rebuilt on next open, so a half-filled token sheet doesn't linger.
         Task { @MainActor in
@@ -90,15 +101,48 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
 private let settingsWidth: CGFloat = 460
 
-/// Shared look for the tabs: grouped form at a fixed width, sized to content.
-private struct SettingsPane<Content: View>: View {
+/// How tall a Settings tab may get: the window sizes itself to the tab, so
+/// a tab taller than the screen would push the window off it.
+enum SettingsHeight {
+    /// Room left for the title bar and the tab toolbar.
+    static let chrome: CGFloat = 100
+    static let minimum: CGFloat = 320
+
+    static func maxPane(visibleHeight: CGFloat) -> CGFloat { max(minimum, visibleHeight - chrome) }
+
+    /// `frame` moved (never resized) so it lies within `visible`; a window
+    /// taller than `visible` keeps its title bar on screen. The window grows
+    /// downward when a tab's content arrives, which can push it off the
+    /// bottom of the screen.
+    static func fitted(_ frame: NSRect, in visible: NSRect) -> NSRect {
+        var f = frame
+        if f.maxY > visible.maxY { f.origin.y = visible.maxY - f.height }
+        if f.minY < visible.minY { f.origin.y = min(visible.minY, visible.maxY - f.height) }
+        return f
+    }
+
+    @MainActor static var current: CGFloat {
+        maxPane(visibleHeight: (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800)
+    }
+}
+
+/// Shared look for the tabs: grouped form at a fixed width, sized to its
+/// content up to `maxHeight`, scrolling beyond that.
+struct SettingsPane<Content: View>: View {
+    var maxHeight: CGFloat = SettingsHeight.current
     @ViewBuilder let content: Content
+    @State private var contentHeight: CGFloat?
+
     var body: some View {
-        Form { content }
-            .formStyle(.grouped)
-            .scrollDisabled(true)
-            .frame(width: settingsWidth)
-            .fixedSize(horizontal: false, vertical: true)
+        ScrollView(.vertical) {
+            Form { content }
+                .formStyle(.grouped)
+                .scrollDisabled(true)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        }
+        .scrollDisabled((contentHeight ?? 0) <= maxHeight)
+        .frame(width: settingsWidth, height: min(contentHeight ?? maxHeight, maxHeight))
     }
 }
 

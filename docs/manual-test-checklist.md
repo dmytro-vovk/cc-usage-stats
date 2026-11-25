@@ -349,6 +349,9 @@ by design.
   toggles or pickers remain in the dropdown. ⌘, opens Settings.
 - Toolbar tabs **General / Accounts / Alerts**; each resizes the window
   to its content. Reopening while open brings the same window forward.
+- On a short screen (e.g. a 13" laptop) **General** stops at the
+  screen's height and scrolls; the whole window stays on screen, and
+  switching to a shorter tab shrinks it again.
 - **General → Menu-bar pill shows**: Claude / Codex / Both. Codex and
   Both only change the pill while Codex tracking is on (a hint says so).
 
