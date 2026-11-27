@@ -177,7 +177,7 @@ final class UpdateChecker: ObservableObject {
     /// starts the wait over.
     func screenUnlocked() {
         guard isStarted else { return }
-        unlockedAt = clock()
+        postedSinceUnlock = false
         pendingUnlock?.cancel()
         pendingUnlock = Task { @MainActor [weak self] in
             guard let sleep = self?.sleep else { return }
@@ -194,10 +194,11 @@ final class UpdateChecker: ObservableObject {
     }
 
     private var pendingUnlock: Task<Void, Never>?
-    /// When the screen was last unlocked, and when a notification last
-    /// went out. See `announce`.
-    private var unlockedAt: Int64?
-    private var lastPostedAt: Int64?
+    /// Whether a notification has gone out since the last unlock; `nil`
+    /// until the first unlock. An order of events, not two clock readings:
+    /// those tie within a second and move with the wall clock. See
+    /// `announce`.
+    private var postedSinceUnlock: Bool?
 
     /// For tests — the unlock wait, what it led to, and its announcement.
     func unlockSettledForTest() async {
@@ -294,7 +295,7 @@ final class UpdateChecker: ObservableObject {
         // Posted since the user came back (a check that announced during
         // the unlock wait): that was this unlock's reminder, not a reason
         // for a second banner a few seconds later.
-        if remind, announced, let unlockedAt, let lastPostedAt, lastPostedAt >= unlockedAt {
+        if remind, announced, postedSinceUnlock == true {
             defaults.set(today, forKey: Self.remindedDayKey)
             return
         }
@@ -304,7 +305,7 @@ final class UpdateChecker: ObservableObject {
             let posted = await notifier.notify(r)
             guard let self else { return }
             if posted {
-                self.lastPostedAt = self.clock()
+                if self.postedSinceUnlock != nil { self.postedSinceUnlock = true }
                 self.defaults.set(r.tag, forKey: Self.notifiedTagKey)
                 if remind { self.defaults.set(today, forKey: Self.remindedDayKey) }
             }

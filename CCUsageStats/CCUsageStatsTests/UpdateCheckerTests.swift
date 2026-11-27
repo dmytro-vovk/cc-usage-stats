@@ -453,7 +453,6 @@ final class UpdateCheckerTests: XCTestCase {
             postedWhenTheWaitBegan = spy.posted.count
         })
         await c.tickForTest()                       // announced by the timer
-        now += 600
         c.start()
         defer { c.stop() }
         c.screenUnlocked()
@@ -475,7 +474,6 @@ final class UpdateCheckerTests: XCTestCase {
             if waits == 1 { try await Task.sleep(nanoseconds: 30_000_000_000) }
         })
         await c.tickForTest()
-        now += 600
         c.start()
         defer { c.stop() }
         c.screenUnlocked()
@@ -499,7 +497,6 @@ final class UpdateCheckerTests: XCTestCase {
             if waits == 1 { try await Task.sleep(nanoseconds: 30_000_000_000) }
         })
         await c.tickForTest()
-        now += 600
         c.start()
         defer { c.stop() }
         c.screenUnlocked()
@@ -562,8 +559,7 @@ final class UpdateCheckerTests: XCTestCase {
         client.queue = [.release(release("v0.19.0"))]
         let spy = SpyNotifier()
         let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
-        await c.tickForTest()
-        now += 1
+        await c.tickForTest()                       // same second as the unlock
         c.start()
         defer { c.stop() }
         c.screenUnlocked()

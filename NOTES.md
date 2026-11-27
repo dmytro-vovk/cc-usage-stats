@@ -68,3 +68,5 @@
 - CCUsageStats/CCUsageStats/Update/UpdateChecker.swift (`checkIfDue` at wake) — a first announcement can still go out at wake/overnight with no unlock delay (Fable, out of scope).
 - CCUsageStats/CCUsageStats/Update/UpdateChecker.swift (`announce`) — a reminder is dropped silently while an earlier announcement waits on the permission prompt; a failed or muted post is not logged (out of scope).
 - CCUsageStats/CCUsageStats/Tray/MenuViewModel.swift — no `deinit` removing the distributed-notification observers if released without `stop()` (Gemini, out of scope).
+- CCUsageStats/CCUsageStats/Update/UpdateChecker.swift (`announce`, `announcing == nil` guard) — if a check's post is still in flight when the unlock wait ends, the unlock returns without marking the day, so a later unlock that day can post a second banner (Fable P2, v0.24.3).
+- CCUsageStats/CCUsageStats/Update/UpdateChecker.swift (`stop`) — leaves `postedSinceUnlock` and `remindAfterCheck` set across a restart (Fable, out of scope).
