@@ -127,7 +127,11 @@ between the quotas. See [Codex usage](#codex-usage) and
 - Without a connected account, a **"Connect your account to see
   per-model weekly usage."** row with a **Connect Claude account**
   button prompts you instead; see
-  [Connect Claude account](#connect-claude-account).
+  [Connect Claude account](#connect-claude-account). If an account was
+  connected and Claude has since refused its session, the row reads
+  **"Claude account connection expired. Reconnect to see per-model
+  weekly usage."** with a **Reconnect Claude account** button, and the
+  app keeps running on the pasted token behind it.
 - For the 5-hour row, a **filled-area sparkline** of the last samples
   with a dashed forecast line following a linear regression of the
   recent trend (to 100% if it caps before reset, else to the projected

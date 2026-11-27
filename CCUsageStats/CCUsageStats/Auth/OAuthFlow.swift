@@ -153,6 +153,33 @@ enum OAuthFlow {
         case refresh(previous: OAuthSession)
     }
 
+    /// What a refused token request is logged as: the status, plus the error
+    /// code when the body names one (`error` as a string per RFC 6749 §5.2,
+    /// or Anthropic's `error.type`).
+    ///
+    /// Without it a dead grant (`400 invalid_grant`) and any other refusal
+    /// were indistinguishable after the fact. Only a code-shaped value is
+    /// echoed, never `error_description` or `message`: the result is logged
+    /// `.public`, and free text from the server may quote the request.
+    static func failureSummary(status: Int, body: Data) -> String {
+        guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return "\(status)"
+        }
+        let code = (obj["error"] as? String) ?? ((obj["error"] as? [String: Any])?["type"] as? String)
+        guard let code, (1...64).contains(code.utf8.count),
+              code.utf8.allSatisfy({ byte in
+                  switch byte {
+                  case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
+                       UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "_"):
+                      return true
+                  default:
+                      return false
+                  }
+              })
+        else { return "\(status)" }
+        return "\(status) \(code)"
+    }
+
     private static func post(
         body: [String: Any],
         decoding: Decoding,
@@ -169,6 +196,8 @@ enum OAuthFlow {
             throw FlowError.badResponse(0)
         }
         guard http.statusCode == 200 else {
+            let summary = failureSummary(status: http.statusCode, body: data)
+            log.error("token request refused: \(summary, privacy: .public)")
             throw FlowError.badResponse(http.statusCode)
         }
         let decoded: OAuthSession?

@@ -623,22 +623,24 @@ struct MenuBarDropdown: View {
 
     @ViewBuilder
     private var reauthorizeRow: some View {
-        // Suppressed when there is no working token at all — "connect for the
-        // model meter" is noise next to "token rejected, set a token".
         // The action lives in the row itself: a prompt that only names the
         // fix sent users hunting for the button in Settings.
-        if vm.needsReauthorization, !vm.authState.lacksWorkingToken {
+        if let prompt = ReconnectPrompt.decide(
+            needsReauthorization: vm.needsReauthorization,
+            authState: vm.authState,
+            source: vm.claudeSource
+        ) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: prompt == .reconnect ? "person.crop.circle.badge.exclamationmark" : "sparkles")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Connect your account to see per-model weekly usage.")
+                    Text(prompt.message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                connectButtons(label: "Connect Claude account")
+                connectButtons(label: prompt.buttonLabel)
             }
         }
     }
