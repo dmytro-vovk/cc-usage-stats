@@ -453,6 +453,7 @@ final class UpdateCheckerTests: XCTestCase {
             postedWhenTheWaitBegan = spy.posted.count
         })
         await c.tickForTest()                       // announced by the timer
+        now += 600
         c.start()
         defer { c.stop() }
         c.screenUnlocked()
@@ -474,6 +475,7 @@ final class UpdateCheckerTests: XCTestCase {
             if waits == 1 { try await Task.sleep(nanoseconds: 30_000_000_000) }
         })
         await c.tickForTest()
+        now += 600
         c.start()
         defer { c.stop() }
         c.screenUnlocked()
@@ -497,10 +499,11 @@ final class UpdateCheckerTests: XCTestCase {
             if waits == 1 { try await Task.sleep(nanoseconds: 30_000_000_000) }
         })
         await c.tickForTest()
+        now += 600
         c.start()
         defer { c.stop() }
         c.screenUnlocked()
-        await Task.yield()
+        while waits == 0 { await Task.yield() }     // the first wait has begun
         c.screenUnlocked()
         await c.unlockSettledForTest()
         XCTAssertEqual(waits, 2)
@@ -522,9 +525,55 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(spy.posted, ["v0.19.0"])
     }
 
-    /// Update banners stay until dismissed unless the user picks otherwise:
-    /// a temporary one is gone in seconds, seen or not.
-    func testNotificationsDefaultToThePersistentStyle() {
+    /// A check that announces the release while the unlock wait is running
+    /// has already shown it to the user who just came back: the wait must
+    /// not follow it with a second banner, and the day's reminder is used.
+    func testAnAnnouncementDuringTheWaitIsTheReminder() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        var waiting: CheckedContinuation<Void, Never>?
+        var gated = true
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy, sleep: { _ in
+            if gated { await withCheckedContinuation { waiting = $0 } }
+        })
+        c.start()
+        defer { c.stop() }
+        c.screenUnlocked()
+        while waiting == nil { await Task.yield() }
+        now += 30
+        await c.tickForTest()                       // the launch timer announces
+        XCTAssertEqual(spy.posted, ["v0.19.0"])
+        waiting?.resume()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(spy.posted, ["v0.19.0"], "no second banner half a minute later")
+
+        gated = false
+        now += 600
+        c.screenUnlocked()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(spy.posted, ["v0.19.0"], "and it counted as today's reminder")
+    }
+
+    /// An announcement made before the unlock (overnight, screen locked)
+    /// does not count: the unlock still reminds.
+    func testAnAnnouncementBeforeTheUnlockStillGetsAReminder() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy)
+        await c.tickForTest()
+        now += 1
+        c.start()
+        defer { c.stop() }
+        c.screenUnlocked()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"])
+    }
+
+    /// The bundle asks for the persistent alert style. Whether macOS grants
+    /// it to a new registration is not something a unit test can see.
+    func testBundleAsksForThePersistentAlertStyle() {
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "NSUserNotificationAlertStyle") as? String, "alert")
     }
 

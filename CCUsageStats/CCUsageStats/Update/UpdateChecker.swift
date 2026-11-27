@@ -9,10 +9,11 @@ import os
 /// Cadence: first check shortly after launch, then daily. Failures back off
 /// from 30 minutes, doubling up to a day; a rate-limit answer waits for
 /// GitHub's own hint (bounded to 15 minutes…1 day). Waking from sleep checks
-/// only if a check was due while asleep. Unlocking the screen checks again
-/// when the last check is an hour old, and while a newer release exists the
-/// first unlock of each day posts the notification again, so it lands when
-/// the user sits down rather than while the screen was locked.
+/// only if a check was due while asleep. A minute after the screen is
+/// unlocked it checks again when the last check is an hour old, and while
+/// a newer release exists the first unlock of each day posts the
+/// notification again, so it lands when the user sits down rather than
+/// while the screen was locked.
 @MainActor
 final class UpdateChecker: ObservableObject {
     private static let log = Logger(subsystem: "dev.dv.ccusagestats", category: "updates")
@@ -176,6 +177,7 @@ final class UpdateChecker: ObservableObject {
     /// starts the wait over.
     func screenUnlocked() {
         guard isStarted else { return }
+        unlockedAt = clock()
         pendingUnlock?.cancel()
         pendingUnlock = Task { @MainActor [weak self] in
             guard let sleep = self?.sleep else { return }
@@ -192,6 +194,10 @@ final class UpdateChecker: ObservableObject {
     }
 
     private var pendingUnlock: Task<Void, Never>?
+    /// When the screen was last unlocked, and when a notification last
+    /// went out. See `announce`.
+    private var unlockedAt: Int64?
+    private var lastPostedAt: Int64?
 
     /// For tests — the unlock wait, what it led to, and its announcement.
     func unlockSettledForTest() async {
@@ -285,12 +291,20 @@ final class UpdateChecker: ObservableObject {
         guard let notifier, announcing == nil else { return }
         let today = Self.dayKey(clock())
         let announced = defaults.string(forKey: Self.notifiedTagKey) == r.tag
+        // Posted since the user came back (a check that announced during
+        // the unlock wait): that was this unlock's reminder, not a reason
+        // for a second banner a few seconds later.
+        if remind, announced, let unlockedAt, let lastPostedAt, lastPostedAt >= unlockedAt {
+            defaults.set(today, forKey: Self.remindedDayKey)
+            return
+        }
         if announced && !(remind && defaults.string(forKey: Self.remindedDayKey) != today) { return }
         Self.log.notice("\(announced ? "reminding" : "announcing", privacy: .public) \(r.tag, privacy: .public)")
         announcing = Task { @MainActor [weak self] in
             let posted = await notifier.notify(r)
             guard let self else { return }
             if posted {
+                self.lastPostedAt = self.clock()
                 self.defaults.set(r.tag, forKey: Self.notifiedTagKey)
                 if remind { self.defaults.set(today, forKey: Self.remindedDayKey) }
             }

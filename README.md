@@ -584,10 +584,11 @@ app checks again if the last check is an hour old, and while a newer
 release is still waiting, the first unlock of each day posts the
 notification again, so it shows up when you sit down rather than
 overnight while the screen was locked (locking again inside that minute
-cancels it). New installs get the persistent alert style, so the banner
-stays until dismissed; a Mac where the app was already registered keeps
-its setting: choose **Persistent** in System Settings → Notifications →
-CCUsageStats. A Focus still mutes it; it is then only in Notification
+cancels it). A temporary banner is gone in a few seconds, seen or not:
+to keep it on screen until dismissed, choose **Persistent** in System
+Settings → Notifications → CCUsageStats. (The app asks macOS for that
+style by default, but a Mac where it is already registered keeps its
+setting.) A Focus still mutes it; it is then only in Notification
 Centre.
 Nothing is downloaded or
 installed automatically — install the new version yourself.
