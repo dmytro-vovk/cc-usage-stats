@@ -182,6 +182,7 @@ final class MenuViewModel: ObservableObject {
     private var alertsHeldUntil: Int64?
     private var wakeObserver: NSObjectProtocol?
     private var unlockObserver: NSObjectProtocol?
+    private var lockObserver: NSObjectProtocol?
     private var history: UsageHistory?
     /// `resetsAt` of the window the newest history sample belongs to.
     private var historyWindowEnd: Int64?
@@ -359,6 +360,14 @@ final class MenuViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.updates.screenUnlocked() }
         }
+        // Locked again before that unlock was acted on: drop it.
+        lockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsLocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.updates.screenLocked() }
+        }
 
         // status.claude.com poller — coarse 5-minute cadence, surfaces
         // outages in the dropdown without affecting the usage data path.
@@ -406,6 +415,10 @@ final class MenuViewModel: ObservableObject {
         if let obs = unlockObserver {
             DistributedNotificationCenter.default().removeObserver(obs)
             unlockObserver = nil
+        }
+        if let obs = lockObserver {
+            DistributedNotificationCenter.default().removeObserver(obs)
+            lockObserver = nil
         }
         cancellables.removeAll()
     }

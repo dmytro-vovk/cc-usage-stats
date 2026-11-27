@@ -183,9 +183,12 @@ final class UpdateCheckerTests: XCTestCase {
         }
     }
 
-    private func makeChecker(current: String?, client: StubClient, notifier: UpdateNotifying? = nil) -> UpdateChecker {
+    private func makeChecker(
+        current: String?, client: StubClient, notifier: UpdateNotifying? = nil,
+        sleep: @escaping (TimeInterval) async throws -> Void = { _ in }
+    ) -> UpdateChecker {
         UpdateChecker(client: client, currentVersion: current, defaults: defaults, notifier: notifier,
-                      clock: { [unowned self] in self.now })
+                      clock: { [unowned self] in self.now }, sleep: sleep)
     }
 
     // MARK: delays
@@ -433,6 +436,96 @@ final class UpdateCheckerTests: XCTestCase {
         let checker = makeChecker(current: "0.18.0", client: client)
         await checker.tickForTest()
         XCTAssertNil(defaults.string(forKey: UpdateChecker.notifiedTagKey))
+    }
+
+    // MARK: unlock delay
+
+    /// A banner posted the instant the screen unlocks lands on a desktop
+    /// that is still coming up. The unlock is acted on a minute later.
+    func testUnlockRemindsOnlyAfterTheDelay() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        var waits: [TimeInterval] = []
+        var postedWhenTheWaitBegan = -1
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy, sleep: {
+            waits.append($0)
+            postedWhenTheWaitBegan = spy.posted.count
+        })
+        await c.tickForTest()                       // announced by the timer
+        c.start()
+        defer { c.stop() }
+        c.screenUnlocked()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(waits, [60])
+        XCTAssertEqual(postedWhenTheWaitBegan, 1, "nothing is posted before the wait")
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"])
+    }
+
+    /// Locked again inside the minute: nobody is there to see it, and the
+    /// day's reminder must be left for the next unlock.
+    func testLockingAgainWithinTheDelayCancelsTheReminder() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        var waits = 0
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy, sleep: { _ in
+            waits += 1
+            if waits == 1 { try await Task.sleep(nanoseconds: 30_000_000_000) }
+        })
+        await c.tickForTest()
+        c.start()
+        defer { c.stop() }
+        c.screenUnlocked()
+        c.screenLocked()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(spy.posted, ["v0.19.0"], "cancelled: no reminder")
+
+        c.screenUnlocked()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"], "the next unlock still reminds today")
+    }
+
+    /// Two unlocks inside the minute are one sit-down, not two.
+    func testASecondUnlockRestartsTheWait() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        var waits = 0
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy, sleep: { _ in
+            waits += 1
+            if waits == 1 { try await Task.sleep(nanoseconds: 30_000_000_000) }
+        })
+        await c.tickForTest()
+        c.start()
+        defer { c.stop() }
+        c.screenUnlocked()
+        await Task.yield()
+        c.screenUnlocked()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(waits, 2)
+        XCTAssertEqual(spy.posted, ["v0.19.0", "v0.19.0"])
+    }
+
+    func testStoppingCancelsAPendingUnlock() async {
+        let client = StubClient()
+        client.queue = [.release(release("v0.19.0"))]
+        let spy = SpyNotifier()
+        let c = makeChecker(current: "0.18.7", client: client, notifier: spy, sleep: { _ in
+            try await Task.sleep(nanoseconds: 30_000_000_000)
+        })
+        await c.tickForTest()
+        c.start()
+        c.screenUnlocked()
+        c.stop()
+        await c.unlockSettledForTest()
+        XCTAssertEqual(spy.posted, ["v0.19.0"])
+    }
+
+    /// Update banners stay until dismissed unless the user picks otherwise:
+    /// a temporary one is gone in seconds, seen or not.
+    func testNotificationsDefaultToThePersistentStyle() {
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "NSUserNotificationAlertStyle") as? String, "alert")
     }
 
     // MARK: screen unlock

@@ -30,6 +30,8 @@ final class UpdateChecker: ObservableObject {
     static let rateLimitDefault: TimeInterval = 3600
     /// On unlock, a check older than this is repeated.
     static let unlockRecheck: TimeInterval = 3600
+    /// How long after an unlock it is acted on.
+    static let unlockDelay: TimeInterval = 60
 
     /// What the dropdown shows beside the version.
     enum Status: Equatable {
@@ -87,6 +89,7 @@ final class UpdateChecker: ObservableObject {
     private let defaults: UserDefaults
     private let notifier: UpdateNotifying?
     private let clock: () -> Int64
+    private let sleep: (TimeInterval) async throws -> Void
     private var timer: Timer?
     private var isStarted = false
     /// An unlock arrived while a check was in flight: that check reminds.
@@ -97,12 +100,16 @@ final class UpdateChecker: ObservableObject {
         currentVersion: String?,
         defaults: UserDefaults = .standard,
         notifier: UpdateNotifying? = nil,
-        clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }
+        clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) },
+        sleep: @escaping (TimeInterval) async throws -> Void = {
+            try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
+        }
     ) {
         self.client = client
         self.defaults = defaults
         self.notifier = notifier
         self.clock = clock
+        self.sleep = sleep
         let parsed = currentVersion.flatMap(AppVersion.init)
         self.current = (parsed.map { $0 > AppVersion(major: 0, minor: 0, patch: 0) } ?? false) ? parsed : nil
         self.enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
@@ -150,6 +157,7 @@ final class UpdateChecker: ObservableObject {
 
     func stop() {
         isStarted = false
+        pendingUnlock?.cancel()
         timer?.invalidate()
         timer = nil
     }
@@ -161,12 +169,34 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// Screen unlocked: the user is back. See `handleUnlock`.
+    ///
+    /// Acted on `unlockDelay` later, not at once: a banner posted in the
+    /// same second as the unlock lands on a desktop that is still coming
+    /// up. Locking again inside that time cancels it, and a second unlock
+    /// starts the wait over.
     func screenUnlocked() {
         guard isStarted else { return }
-        Task { @MainActor in
-            let checked = await handleUnlock()
-            if checked && isStarted && enabled { scheduleTimer(after: nextDelay) }
+        pendingUnlock?.cancel()
+        pendingUnlock = Task { @MainActor [weak self] in
+            guard let sleep = self?.sleep else { return }
+            do { try await sleep(Self.unlockDelay) } catch { return }
+            guard let self, !Task.isCancelled, self.isStarted else { return }
+            let checked = await self.handleUnlock()
+            if checked && self.isStarted && self.enabled { self.scheduleTimer(after: self.nextDelay) }
         }
+    }
+
+    /// Screen locked again. See `screenUnlocked`.
+    func screenLocked() {
+        pendingUnlock?.cancel()
+    }
+
+    private var pendingUnlock: Task<Void, Never>?
+
+    /// For tests — the unlock wait, what it led to, and its announcement.
+    func unlockSettledForTest() async {
+        await pendingUnlock?.value
+        await announcing?.value
     }
 
     /// Rechecks when the last check is stale (and not inside a rate-limit

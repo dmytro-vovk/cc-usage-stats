@@ -554,8 +554,10 @@ by design.
   The version at the bottom of the dropdown shows a spinner during the
   check, then an orange arrow.
 - With the fake newer release still served: lock the screen (⌃⌘Q) and
-  unlock. The notification is posted again (first unlock of the day
-  only); `log show … 'category == "updates"'` shows "reminding v99.0.0".
+  unlock. A minute later the notification is posted again (first
+  unlock of the day only); `log show … 'category == "updates"'` shows
+  "reminding v99.0.0". Locking again inside that minute posts nothing
+  and leaves the day's reminder for the next unlock.
   A second lock/unlock the same day posts nothing. Clear the reminder
   day with the app quit:
   `plutil -remove 'cc-usage-stats\.remindedUpdateDay' ~/Library/Preferences/dev.dv.ccusagestats.CCUsageStats.plist`.
