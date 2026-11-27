@@ -284,8 +284,9 @@ by design.
         freezing at their last value under a ticking "Last updated" tooltip
         that no source can refresh;
       - the 5h/7d numbers **keep updating** from the pasted token;
-      - the "Connect your account to see per-model weekly usage" row
-        returns;
+      - a "Claude account connection expired. Reconnect to see per-model
+        weekly usage." row appears with a **Reconnect Claude account**
+        button (not the never-connected "Connect your account" wording);
       - polling does **not** stop and no error state appears.
 - [ ] **Revocation with no pasted token.** Start from a connected account
       and **no** pasted token: delete the `oauth-token` item
